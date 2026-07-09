@@ -19,7 +19,7 @@ const process_governor = @import("../processes/process_governor.zig");
 const git_status = @import("../scm/git_status.zig");
 const prefs_mod = @import("../core/prefs.zig");
 
-pub const header_natural_height: f32 = 44;
+pub const header_natural_height: f32 = 36;
 pub const max_command_query = 64;
 pub const max_agent_prompt = 160;
 pub const max_document = workspace_store.max_editor_bytes;
@@ -364,8 +364,9 @@ pub const Model = struct {
     command_palette_open: bool = false,
     command_query: canvas.TextBuffer(max_command_query) = .{},
     agent_prompt: canvas.TextBuffer(max_agent_prompt) = .{},
-    show_terminal: bool = true,
-    show_agent_panel: bool = true,
+    show_terminal: bool = false,
+    show_agent_panel: bool = false,
+    show_find_panel: bool = false,
     show_perf_hud: bool = false,
     safe_mode: bool = false,
     runtime_mode_label: []const u8 = "Core",
@@ -610,6 +611,7 @@ pub const Model = struct {
         "pinned_tab_id",
         "show_terminal",
         "show_agent_panel",
+        "show_find_panel",
         "breadcrumb",
         "breadcrumb_buf",
         "quick_query",
@@ -704,7 +706,7 @@ pub const Model = struct {
     }
 
     pub fn agentsSelected(model: *const Model) bool {
-        return model.selected_activity == .agents;
+        return model.show_agent_panel;
     }
 
     pub fn terminalSelected(model: *const Model) bool {
@@ -748,11 +750,11 @@ pub const Model = struct {
     }
 
     pub fn isSearch(model: *const Model) bool {
-        return model.current_view == .search or model.selected_activity == .search;
+        return model.selected_activity == .search and model.showLeftPanel();
     }
 
     pub fn isScm(model: *const Model) bool {
-        return model.current_view == .scm or model.selected_activity == .scm;
+        return model.selected_activity == .scm and model.showLeftPanel();
     }
 
     pub fn isDebug(model: *const Model) bool {
@@ -764,11 +766,23 @@ pub const Model = struct {
     }
 
     pub fn isProblems(model: *const Model) bool {
-        return model.current_view == .problems or model.selected_activity == .problems;
+        return model.selected_activity == .problems and model.showLeftPanel();
+    }
+
+    pub fn showSidebarExplorer(model: *const Model) bool {
+        return model.showLeftPanel() and model.selected_activity == .explorer;
+    }
+
+    pub fn showFindPanel(model: *const Model) bool {
+        return model.show_find_panel and model.showIdeChrome();
     }
 
     pub fn showPlaceholderPanel(model: *const Model) bool {
-        return model.current_view == .search or model.current_view == .scm or model.current_view == .debug or model.current_view == .testing or model.current_view == .features or model.current_view == .processes or model.current_view == .problems;
+        return model.current_view == .debug or model.current_view == .testing or model.current_view == .features or model.current_view == .processes;
+    }
+
+    pub fn hasLastWorkspace(model: *const Model) bool {
+        return model.prefs.last_path_len > 0;
     }
 
     pub fn gitDiffText(model: *const Model) []const u8 {
@@ -956,11 +970,11 @@ pub const Model = struct {
     }
 
     pub fn showAgentChrome(model: *const Model) bool {
-        return model.show_agent_panel and !model.focus_mode;
+        return model.show_agent_panel and !model.focus_mode and model.showIdeChrome();
     }
 
     pub fn showTerminalChrome(model: *const Model) bool {
-        return model.show_terminal and !model.focus_mode;
+        return model.show_terminal and !model.focus_mode and model.showIdeChrome();
     }
 
     pub fn findCaseLabel(model: *const Model) []const u8 {
@@ -1033,7 +1047,12 @@ pub const Model = struct {
     }
 
     pub fn showLeftPanel(model: *const Model) bool {
-        return model.current_view == .ide and model.selected_activity == .explorer and model.show_sidebar and !model.focus_mode;
+        if (!model.show_sidebar or model.focus_mode) return false;
+        if (model.current_view != .ide and model.current_view != .perf) return false;
+        return switch (model.selected_activity) {
+            .explorer, .search, .scm, .problems => true,
+            else => false,
+        };
     }
 
     pub fn showIdeChrome(model: *const Model) bool {
@@ -1520,12 +1539,14 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             } else if (std.mem.eql(u8, id, "run_terminal")) {
                 runTerminalFromModel(model, fx);
             } else if (std.mem.eql(u8, id, "run_search")) {
-                model.current_view = .search;
+                model.current_view = .ide;
                 model.selected_activity = .search;
+                model.show_sidebar = true;
                 runWorkspaceSearch(model);
             } else if (std.mem.eql(u8, id, "refresh_git")) {
-                model.current_view = .scm;
+                model.current_view = .ide;
                 model.selected_activity = .scm;
+                model.show_sidebar = true;
                 refreshGitStatus(model);
             } else if (std.mem.eql(u8, id, "stage_all")) {
                 stageAllChanges(model);
@@ -1607,37 +1628,66 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             }
         },
         .select_activity => |activity| {
-            model.selected_activity = activity;
             switch (activity) {
-                .plugins => model.current_view = .plugins,
-                .settings => model.current_view = .settings,
+                .plugins => {
+                    model.selected_activity = activity;
+                    model.current_view = .plugins;
+                },
+                .settings => {
+                    model.selected_activity = activity;
+                    model.current_view = .settings;
+                },
                 .search => {
-                    model.current_view = .search;
+                    model.selected_activity = .search;
+                    model.current_view = .ide;
+                    model.show_sidebar = true;
                     if (model.workspace_from_disk and model.search_hits.len == 0 and model.search_query.text().len > 0) {
                         runWorkspaceSearch(model);
                     }
                 },
                 .scm => {
-                    model.current_view = .scm;
+                    model.selected_activity = .scm;
+                    model.current_view = .ide;
+                    model.show_sidebar = true;
                     refreshGitStatus(model);
                 },
-                .debug => model.current_view = .debug,
-                .testing => model.current_view = .testing,
-                .features => model.current_view = .features,
-                .processes => model.current_view = .processes,
+                .debug => {
+                    model.selected_activity = activity;
+                    model.current_view = .debug;
+                },
+                .testing => {
+                    model.selected_activity = activity;
+                    model.current_view = .testing;
+                },
+                .features => {
+                    model.selected_activity = activity;
+                    model.current_view = .features;
+                },
+                .processes => {
+                    model.selected_activity = activity;
+                    model.current_view = .processes;
+                },
                 .problems => {
-                    model.current_view = .problems;
+                    model.selected_activity = .problems;
+                    model.current_view = .ide;
+                    model.show_sidebar = true;
                     if (model.workspace_from_disk and model.problems.len == 0) scanProblems(model);
                 },
                 .terminal => {
                     model.current_view = .ide;
-                    model.show_terminal = true;
+                    model.show_terminal = !model.show_terminal;
+                    persistPrefs(model);
                 },
                 .agents => {
                     model.current_view = .ide;
-                    model.show_agent_panel = true;
+                    model.show_agent_panel = !model.show_agent_panel;
+                    persistPrefs(model);
                 },
-                else => model.current_view = .ide,
+                .explorer => {
+                    model.selected_activity = .explorer;
+                    model.current_view = .ide;
+                    model.show_sidebar = true;
+                },
             }
         },
         .toggle_terminal => {
@@ -2577,8 +2627,9 @@ fn runWorkspaceSearch(model: *Model) void {
     model.governor.killFeature("feature.search");
     model.process_count = model.governor.aliveCount();
     model.toast = bufs.status;
-    model.current_view = .search;
+    model.current_view = .ide;
     model.selected_activity = .search;
+    model.show_sidebar = true;
 }
 
 fn openSearchHit(model: *Model, hit_id: u32) void {
@@ -2664,8 +2715,9 @@ fn previewGitDiff(model: *Model, entry_id: u32) void {
     bufs.loadDiff(modelIo(model), model.project_path, entry_id);
     model.git_diff_text = bufs.diffText();
     model.git_diff_status = bufs.diff_status;
-    model.current_view = .scm;
+    model.current_view = .ide;
     model.selected_activity = .scm;
+    model.show_sidebar = true;
     model.toast = bufs.diff_status;
 }
 
@@ -2675,6 +2727,7 @@ fn clearFind(model: *Model) void {
     model.find_matches = &.{};
     model.find_active_label = "";
     model.find_status = "idle";
+    model.show_find_panel = false;
     if (model.find_bufs) |f| f.clear();
     model.toast = "Find cleared";
 }
@@ -2682,6 +2735,11 @@ fn clearFind(model: *Model) void {
 fn dismissOverlay(model: *Model) void {
     if (model.shortcuts_help_visible) {
         model.shortcuts_help_visible = false;
+        model.toast = "";
+        return;
+    }
+    if (model.notifications_panel_open) {
+        model.notifications_panel_open = false;
         model.toast = "";
         return;
     }
@@ -2695,6 +2753,10 @@ fn dismissOverlay(model: *Model) void {
     if (model.quick_open_visible) {
         model.quick_open_visible = false;
         model.toast = "";
+        return;
+    }
+    if (model.show_find_panel) {
+        clearFind(model);
         return;
     }
     if (model.focus_mode) {
@@ -2857,8 +2919,9 @@ fn scanProblems(model: *Model) void {
     bufs.scan(modelIo(model), ws);
     model.problems = bufs.itemsSlice();
     model.problems_status = bufs.status;
-    model.current_view = .problems;
+    model.current_view = .ide;
     model.selected_activity = .problems;
+    model.show_sidebar = true;
     model.toast = bufs.status;
 }
 
@@ -3107,10 +3170,15 @@ fn updateFindLabel(model: *Model) void {
 }
 
 fn runFindInDocument(model: *Model) void {
+    model.show_find_panel = true;
     const bufs = ensureFindBuffers(model) catch {
         model.toast = "Find alloc failed";
         return;
     };
+    if (model.find_query.text().len == 0) {
+        model.toast = "Find";
+        return;
+    }
     bufs.findWithFullOptions(model.document.text(), model.find_query.text(), model.find_case_sensitive, model.find_whole_word);
     model.find_matches = bufs.matchesSlice();
     model.find_status = bufs.status;
@@ -3500,8 +3568,9 @@ fn stageAllChanges(model: *Model) void {
     model.git_branch = bufs.branch();
     model.governor.killFeature("feature.scm");
     model.process_count = model.governor.aliveCount();
-    model.current_view = .scm;
+    model.current_view = .ide;
     model.selected_activity = .scm;
+    model.show_sidebar = true;
     model.toast = status;
 }
 
@@ -3526,8 +3595,9 @@ fn commitChanges(model: *Model) void {
     model.git_branch = bufs.branch();
     model.governor.killFeature("feature.scm");
     model.process_count = model.governor.aliveCount();
-    model.current_view = .scm;
+    model.current_view = .ide;
     model.selected_activity = .scm;
+    model.show_sidebar = true;
     if (std.mem.eql(u8, status, "committed")) {
         model.git_commit_message.clear();
     }
@@ -3550,8 +3620,9 @@ fn unstageAllChanges(model: *Model) void {
     model.git_branch = bufs.branch();
     model.governor.killFeature("feature.scm");
     model.process_count = model.governor.aliveCount();
-    model.current_view = .scm;
+    model.current_view = .ide;
     model.selected_activity = .scm;
+    model.show_sidebar = true;
     model.toast = status;
 }
 
@@ -3575,8 +3646,9 @@ fn discardWorkingTreeChanges(model: *Model) void {
     model.git_branch = bufs.branch();
     model.governor.killFeature("feature.scm");
     model.process_count = model.governor.aliveCount();
-    model.current_view = .scm;
+    model.current_view = .ide;
     model.selected_activity = .scm;
+    model.show_sidebar = true;
     // Reload active editor from disk after discard when clean.
     if (std.mem.eql(u8, status, "discarded changes") and !model.document_dirty) {
         if (model.workspace) |ws| {
@@ -4149,9 +4221,7 @@ pub fn ensurePrefsOnBoot(model: *Model) void {
     applyPrefsToModel(model);
     refreshDocStats(model);
     refreshBreadcrumb(model);
-    // Dev update notification on launch — mirrors Cursor's "you're up to date" toast.
-    runUpdateCheck(model);
-    normalizeToastState(model);
+    // Quiet boot: no update banner/toast until the user checks Settings → About.
 }
 
 fn persistPrefs(model: *Model) void {

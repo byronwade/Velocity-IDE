@@ -89,10 +89,12 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Word wrap pref | Toggle + persist soft wrap preference (label; textarea wrap later). |
 | Close tab shortcut | `Cmd+W` closes the active tab. |
 | Notifications | Toast bar above status, auto-dismiss (sticky for soft-confirms), bounded history panel. |
-| Update check | Boot + Settings “Check for Updates” shows in-app banner/toast (dev stub; no network). |
+| Update check | Settings “Check for Updates” shows in-app banner/toast (dev stub; quiet boot — no banner on launch). |
 | Window chrome | Trailing inset spacer; Minimize/Close via Effects; fullscreen toast when chrome insets clear. |
 | Settings page | Cursor-like grouped sections (Appearance / Editor / Workspace / Features / About) with search. |
 | File tree polish | Indent + folder/file marks; selecting a folder does not open an editor. |
+| Editor-first layout | Search / SCM / Problems live in the left sidebar; editor stays centered (Cursor-like). |
+| Quiet chrome | Tab transforms + find/replace hidden by default; Cmd+F opens find; agent/terminal closed by default. |
 | Trim blank lines | Strip leading/trailing blank lines from the document. |
 | Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |

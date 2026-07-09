@@ -199,14 +199,16 @@ test "workspace search finds auth helper" {
     model.search_query.set("createSession");
     main.update(&model, .run_search);
     try testing.expect(model.search_hits.len > 0);
-    try testing.expect(model.current_view == .search);
+    try testing.expect(model.current_view == .ide);
+    try testing.expect(model.selected_activity == .search);
 }
 
 test "git status refresh on scm activity" {
     var model = main.initialModel();
     main.update(&model, .{ .open_project = "acme-dashboard" });
     main.update(&model, .{ .select_activity = .scm });
-    try testing.expect(model.current_view == .scm);
+    try testing.expect(model.current_view == .ide);
+    try testing.expect(model.selected_activity == .scm);
     // Fixture is not a real git repo (nested .git not committed); expect graceful summary.
     try testing.expect(model.git_summary.len > 0);
 }
@@ -923,6 +925,43 @@ test "toast notification history and update check" {
     try testing.expect(!model.hasUpdateBanner());
     main.update(&model, .toggle_notifications_panel);
     try testing.expect(model.notifications_panel_open);
+}
+
+test "sidebar keeps editor for search scm problems" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    try testing.expect(model.showIdeChrome());
+    main.update(&model, .{ .select_activity = .search });
+    try testing.expect(model.current_view == .ide);
+    try testing.expect(model.isSearch());
+    try testing.expect(model.showLeftPanel());
+    try testing.expect(model.showIdeChrome());
+    main.update(&model, .{ .select_activity = .scm });
+    try testing.expect(model.current_view == .ide);
+    try testing.expect(model.isScm());
+    try testing.expect(model.showIdeChrome());
+    main.update(&model, .{ .select_activity = .problems });
+    try testing.expect(model.current_view == .ide);
+    try testing.expect(model.isProblems());
+    try testing.expect(model.showIdeChrome());
+}
+
+test "find panel opens on find command and clears on escape" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    try testing.expect(!model.show_find_panel);
+    main.update(&model, .run_find);
+    try testing.expect(model.show_find_panel);
+    main.update(&model, .dismiss_overlay);
+    try testing.expect(!model.show_find_panel);
+}
+
+test "quiet boot defaults hide agent and terminal" {
+    var model = main.initialModel();
+    try testing.expect(!model.show_terminal);
+    try testing.expect(!model.show_agent_panel);
+    model_mod.ensurePrefsOnBoot(&model);
+    try testing.expect(!model.update_banner_visible);
 }
 
 test "file tree indent marks and folder select" {

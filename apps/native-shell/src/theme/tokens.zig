@@ -9,29 +9,29 @@ const Color = canvas.Color;
 
 pub const ThemePreference = enum { dark, light, high_contrast };
 
-/// Dark canvas: #050505 / surfaces #0A0A0A / #111111 / #161616
+/// Dark canvas: near-black with slightly lifted surfaces for Cursor-like depth.
 pub const dark_colors = canvas.ColorTokens{
-    .background = Color.rgb8(5, 5, 5),
-    .surface = Color.rgb8(10, 10, 10),
-    .surface_subtle = Color.rgb8(17, 17, 17),
-    .surface_pressed = Color.rgba8(255, 255, 255, 28),
-    .text = Color.rgb8(245, 245, 245),
-    .text_muted = Color.rgb8(115, 115, 115),
-    .border = Color.rgba8(255, 255, 255, 20),
-    .accent = Color.rgb8(245, 245, 245),
-    .accent_text = Color.rgb8(10, 10, 10),
+    .background = Color.rgb8(9, 9, 11),
+    .surface = Color.rgb8(14, 14, 16),
+    .surface_subtle = Color.rgb8(22, 22, 24),
+    .surface_pressed = Color.rgba8(255, 255, 255, 24),
+    .text = Color.rgb8(250, 250, 250),
+    .text_muted = Color.rgb8(113, 113, 122),
+    .border = Color.rgba8(255, 255, 255, 18),
+    .accent = Color.rgb8(250, 250, 250),
+    .accent_text = Color.rgb8(9, 9, 11),
     .destructive = Color.rgb8(239, 68, 68),
     .destructive_text = Color.rgb8(250, 250, 250),
     .success = Color.rgb8(34, 197, 94),
     .success_text = Color.rgb8(9, 9, 11),
     .warning = Color.rgb8(245, 158, 11),
     .warning_text = Color.rgb8(9, 9, 11),
-    .info = Color.rgb8(59, 130, 246),
+    .info = Color.rgb8(96, 165, 250),
     .info_text = Color.rgb8(9, 9, 11),
-    .focus_ring = Color.rgb8(161, 161, 161),
-    .shadow = Color.rgba8(0, 0, 0, 160),
-    .scrim = Color.rgba8(0, 0, 0, 140),
-    .disabled = Color.rgb8(38, 38, 38),
+    .focus_ring = Color.rgb8(161, 161, 170),
+    .shadow = Color.rgba8(0, 0, 0, 180),
+    .scrim = Color.rgba8(0, 0, 0, 160),
+    .disabled = Color.rgb8(39, 39, 42),
 };
 
 pub const light_colors = canvas.ColorTokens{
@@ -77,8 +77,8 @@ pub fn tokens(preference: ThemePreference, high_contrast: bool, reduce_motion: b
             .dark, .high_contrast => dark_colors,
         };
     }
-    // Compact IDE density
-    out.radius = .{ .sm = 4, .md = 6, .lg = 8, .xl = 12 };
+    // Compact IDE density — tighter radii for Cursor-like chrome
+    out.radius = .{ .sm = 3, .md = 5, .lg = 7, .xl = 10 };
     out.pixel_snap = .{ .geometry = true, .text = true, .scale = 1 };
     return out;
 }

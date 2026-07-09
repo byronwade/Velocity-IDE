@@ -1,227 +1,212 @@
-<!-- Velocity IDE shell - launch screen + IDE chrome + overlays.
-     Tokenized via theme/tokens.zig. Mock data only. Hot-reloads in native dev. -->
+<!-- Velocity IDE shell — Cursor-like density: editor-first, palette-centric.
+     Tokenized via theme/tokens.zig. Hot-reloads in native dev. -->
 <stack>
   <column background="background" grow="1">
-    <!-- Titlebar / drag band -->
-    <row height="{header_height}" padding="10" gap="10" cross="center" background="surface" window-drag="true" label="Velocity header">
+    <!-- Minimal titlebar -->
+    <row height="{header_height}" padding="6" gap="8" cross="center" background="surface" window-drag="true" label="Velocity header">
       <spacer width="{chrome_leading}" />
       <text size="sm" wrap="false">Velocity</text>
-      <text size="sm" foreground="text_muted" wrap="false">native ide</text>
       <spacer grow="1" />
       <button size="sm" variant="ghost" on-press="open_command_palette" label="Command palette">Cmd+K</button>
-      <button size="sm" variant="ghost" on-press="toggle_notifications_panel" label="Notifications">Bell</button>
-      <button size="sm" variant="ghost" on-press="switch_theme" label="Switch theme">{themeLabel}</button>
-      <button size="sm" variant="ghost" on-press="minimize_window" label="Minimize">_</button>
-      <button size="sm" variant="ghost" on-press="close_window" label="Close">x</button>
       <spacer width="{chrome_trailing}" />
     </row>
     <separator />
 
     <!-- Launch screen -->
     <if test="{isLaunch}">
-      <column grow="1" gap="16" padding="32" main="center" cross="center">
-        <column gap="8" cross="center" width="420">
+      <column grow="1" gap="20" padding="40" main="center" cross="center">
+        <column gap="6" cross="center" width="440">
           <text size="lg">Velocity</text>
           <text foreground="text_muted" wrap="true">Native IDE for fast software creation</text>
-          <text size="sm" foreground="text_muted">Press Cmd+K or Ctrl+K for commands</text>
         </column>
         <row gap="8" main="center">
           <button variant="primary" on-press="open_project:{project_acme}">Open Folder</button>
           <button variant="secondary" on-press="reopen_last_workspace">Reopen Last</button>
-          <button variant="ghost" on-press="open_command_palette">Clone Repo</button>
-          <button variant="ghost" on-press="open_project:{project_scratch}">New Scratch</button>
         </row>
-        <column gap="6" width="480" padding="12" background="surface_subtle">
-          <text size="sm" foreground="text_muted">Open path (relative or absolute)</text>
-          <text-field text="{openPathText}" placeholder="fixtures/acme-dashboard" on-input="update_open_path" on-submit="submit_open_path" label="Folder path" />
-          <button size="sm" variant="secondary" on-press="submit_open_path">Open Path</button>
-        </column>
-        <column gap="6" width="480" padding="12" background="surface_subtle">
-          <text size="sm" foreground="text_muted">Recent projects</text>
+        <column gap="6" width="440" padding="12" background="surface_subtle">
+          <text size="sm" foreground="text_muted">Recent</text>
           <for each="recent" as="p">
             <list-item on-press="open_project:{p.path}" padding="8" gap="8" cross="center" label="{p.name}">
               <column gap="2" grow="1">
                 <text wrap="false">{p.name}</text>
-                <text size="sm" foreground="text_muted" wrap="false">{p.path} / {p.branch}</text>
+                <text size="sm" foreground="text_muted" wrap="false">{p.path}</text>
               </column>
             </list-item>
           </for>
-          <button size="sm" variant="ghost" on-press="clear_recent_projects">Clear Recent</button>
         </column>
-        <text size="sm" foreground="text_muted">dev build 0.1.0 / no telemetry / plugins locked</text>
+        <text size="sm" foreground="text_muted">Cmd+K for commands · path open via palette</text>
       </column>
     </if>
 
-    <!-- IDE / plugins / settings / perf -->
+    <!-- IDE shell -->
     <if test="{showShell}">
       <row grow="1">
-        <!-- Activity rail -->
-        <column width="48" gap="4" padding="6" background="surface" cross="center">
+        <!-- Slim activity rail -->
+        <column width="44" gap="2" padding="4" background="surface" cross="center">
           <button size="sm" variant="ghost" selected="{explorerSelected}" on-press="select_activity:{activity_explorer}" label="Explorer">Ex</button>
           <button size="sm" variant="ghost" selected="{searchSelected}" on-press="select_activity:{activity_search}" label="Search">Se</button>
           <button size="sm" variant="ghost" selected="{scmSelected}" on-press="select_activity:{activity_scm}" label="Source Control">Sc</button>
           <button size="sm" variant="ghost" selected="{problemsSelected}" on-press="select_activity:{activity_problems}" label="Problems">Pb</button>
-          <button size="sm" variant="ghost" selected="{debugSelected}" on-press="select_activity:{activity_debug}" label="Debug">Db</button>
-          <button size="sm" variant="ghost" selected="{testingSelected}" on-press="select_activity:{activity_testing}" label="Testing">Ts</button>
           <button size="sm" variant="ghost" selected="{agentsSelected}" on-press="select_activity:{activity_agents}" label="Agents">Ag</button>
-          <button size="sm" variant="ghost" selected="{terminalSelected}" on-press="select_activity:{activity_terminal}" label="Terminal">Te</button>
           <spacer grow="1" />
-          <button size="sm" variant="ghost" selected="{featuresSelected}" on-press="select_activity:{activity_features}" label="Features">Ft</button>
-          <button size="sm" variant="ghost" selected="{processesSelected}" on-press="select_activity:{activity_processes}" label="Processes">Pr</button>
-          <button size="sm" variant="ghost" selected="{pluginsSelected}" on-press="select_activity:{activity_plugins}" label="Plugins">Pl</button>
+          <button size="sm" variant="ghost" on-press="toggle_terminal" label="Terminal">Te</button>
           <button size="sm" variant="ghost" selected="{settingsSelected}" on-press="select_activity:{activity_settings}" label="Settings">St</button>
         </column>
         <separator />
 
-        <!-- Left panel: explorer -->
+        <!-- Left sidebar: activity panels (editor stays center) -->
         <if test="{showLeftPanel}">
-          <column width="240" gap="8" padding="10" background="surface">
-            <row gap="8" cross="center">
-              <text grow="1" wrap="false">{project_name}</text>
-              <badge variant="secondary">{project_branch}</badge>
-              <badge variant="secondary">{workspaceStatus}</badge>
-            </row>
-            <text size="sm" foreground="text_muted" wrap="false">{project_path}</text>
-            <text size="sm" foreground="text_muted" wrap="false">{workspaceFilesLabel}</text>
-            <row gap="4" cross="center">
-              <text-field text="{newFilePathText}" placeholder="src/new.ts" on-input="update_new_file_path" on-submit="create_new_file" grow="1" label="New file path" />
-              <button size="sm" variant="secondary" on-press="create_new_file">New</button>
-              <button size="sm" variant="ghost" on-press="create_folder">Dir</button>
-              <button size="sm" variant="ghost" on-press="rename_selected_file">Ren</button>
-              <button size="sm" variant="ghost" on-press="duplicate_selected_file">Dup</button>
-              <button size="sm" variant="ghost" on-press="delete_selected_file">Del</button>
-              <button size="sm" variant="ghost" on-press="reveal_in_explorer">Loc</button>
-              <button size="sm" variant="ghost" on-press="refresh_explorer">Ref</button>
-            </row>
-            <text-field text="{explorerFilterText}" placeholder="Filter files..." on-input="update_explorer_filter" label="Explorer filter" />
-            <separator />
-            <scroll grow="1" label="File explorer">
-              <column gap="1">
-                <for each="file_nodes" key="id" as="n">
-                  <list-item on-press="select_file:{n.id}" selected="{n.id == selected_file_id}" padding="4" gap="4" cross="center" label="{n.name}">
-                    <text size="sm" foreground="text_muted" wrap="false">{n.indent}</text>
-                    <text size="sm" foreground="text_muted" wrap="false">{n.kind_mark}</text>
-                    <text grow="1" wrap="false">{n.name}</text>
-                  </list-item>
-                </for>
+          <column width="260" gap="6" padding="8" background="surface">
+            <if test="{showSidebarExplorer}">
+              <row gap="6" cross="center">
+                <text grow="1" wrap="false">{project_name}</text>
+                <button size="sm" variant="ghost" on-press="refresh_explorer" label="Refresh">↻</button>
+                <button size="sm" variant="ghost" on-press="create_new_file" label="New file">+</button>
+              </row>
+              <text-field text="{explorerFilterText}" placeholder="Filter files..." on-input="update_explorer_filter" label="Explorer filter" />
+              <text-field text="{newFilePathText}" placeholder="path/to/file.ts" on-input="update_new_file_path" on-submit="create_new_file" label="New file path" />
+              <scroll grow="1" label="File explorer">
+                <column gap="1">
+                  <for each="file_nodes" key="id" as="n">
+                    <list-item on-press="select_file:{n.id}" selected="{n.id == selected_file_id}" padding="4" gap="4" cross="center" label="{n.name}">
+                      <text size="sm" foreground="text_muted" wrap="false">{n.indent}</text>
+                      <text size="sm" foreground="text_muted" wrap="false">{n.kind_mark}</text>
+                      <text grow="1" wrap="false">{n.name}</text>
+                    </list-item>
+                  </for>
+                </column>
+              </scroll>
+            </if>
+
+            <if test="{isSearch}">
+              <row gap="6" cross="center">
+                <text grow="1">Search</text>
+                <badge variant="secondary">{searchStatus}</badge>
+              </row>
+              <text-field text="{searchQueryText}" placeholder="Search workspace..." on-input="update_search_query" on-submit="run_search" label="Search query" />
+              <row gap="4">
+                <button size="sm" variant="ghost" on-press="toggle_search_case">{searchCaseLabel}</button>
+                <button size="sm" variant="primary" on-press="run_search">Search</button>
+              </row>
+              <scroll grow="1" label="Search results">
+                <column gap="2">
+                  <for each="search_hits" key="id" as="hit">
+                    <list-item on-press="open_search_hit:{hit.id}" padding="6" gap="4" label="{hit.path}">
+                      <column gap="2" grow="1">
+                        <text size="sm" wrap="false">{hit.path}:{hit.line}</text>
+                        <text size="sm" foreground="text_muted" wrap="true">{hit.preview}</text>
+                      </column>
+                    </list-item>
+                  </for>
+                </column>
+              </scroll>
+            </if>
+
+            <if test="{isScm}">
+              <row gap="6" cross="center">
+                <text grow="1">Source Control</text>
+                <button size="sm" variant="ghost" on-press="refresh_git">↻</button>
+              </row>
+              <text size="sm" foreground="text_muted">{git_summary}</text>
+              <text-field text="{commitMessageText}" placeholder="Commit message..." on-input="update_commit_message" on-submit="commit_changes" label="Commit message" />
+              <row gap="4">
+                <button size="sm" variant="ghost" on-press="stage_all">Stage</button>
+                <button size="sm" variant="ghost" on-press="unstage_all">Unstage</button>
+                <button size="sm" variant="primary" on-press="commit_changes">Commit</button>
+              </row>
+              <scroll grow="1" label="Git changes">
+                <column gap="2">
+                  <for each="git_entries" key="id" as="entry">
+                    <list-item on-press="open_git_entry:{entry.id}" padding="6" gap="6" cross="center" label="{entry.path}">
+                      <badge variant="secondary">{entry.status}</badge>
+                      <text grow="1" wrap="false">{entry.path}</text>
+                    </list-item>
+                  </for>
+                </column>
+              </scroll>
+              <column gap="4" padding="6" background="surface_subtle">
+                <text size="sm" foreground="text_muted">{git_diff_status}</text>
+                <scroll height="120" label="Git diff">
+                  <text size="sm" wrap="true">{gitDiffText}</text>
+                </scroll>
               </column>
-            </scroll>
+            </if>
+
+            <if test="{isProblems}">
+              <row gap="6" cross="center">
+                <text grow="1">Problems</text>
+                <badge variant="secondary">{problemsStatus}</badge>
+                <button size="sm" variant="ghost" on-press="scan_problems">Scan</button>
+              </row>
+              <scroll grow="1" label="Problems list">
+                <column gap="2">
+                  <for each="problems" key="id" as="p">
+                    <list-item on-press="open_problem:{p.id}" padding="6" gap="4" label="{p.path}">
+                      <badge variant="secondary">{p.kind}</badge>
+                      <column gap="2" grow="1">
+                        <text size="sm" wrap="false">{p.path}:{p.line}</text>
+                        <text size="sm" foreground="text_muted" wrap="true">{p.preview}</text>
+                      </column>
+                    </list-item>
+                  </for>
+                </column>
+              </scroll>
+            </if>
           </column>
           <separator />
         </if>
 
-        <!-- Center + right -->
+        <!-- Center + agent -->
         <column grow="1">
           <if test="{showIdeChrome}">
-            <!-- Tabs -->
-            <row gap="4" padding="6" background="surface" cross="center">
+            <!-- Tabs only -->
+            <row gap="2" padding="4" background="surface" cross="center">
               <for each="open_tabs" key="id" as="t">
                 <button size="sm" variant="ghost" selected="{t.id == active_tab_id}" on-press="select_tab:{t.id}">{t.title}</button>
               </for>
-              <button size="sm" variant="ghost" on-press="close_active_tab">x</button>
-              <button size="sm" variant="ghost" on-press="close_other_tabs">Others</button>
-              <button size="sm" variant="ghost" on-press="close_saved_tabs">Saved</button>
-              <button size="sm" variant="ghost" on-press="close_all_tabs">All</button>
-              <button size="sm" variant="ghost" on-press="pin_active_tab">{pinLabel}</button>
-              <button size="sm" variant="ghost" on-press="reopen_closed_tab">Reopen</button>
-              <button size="sm" variant="ghost" on-press="prev_tab">PrevTab</button>
-              <button size="sm" variant="ghost" on-press="next_tab">NextTab</button>
+              <button size="sm" variant="ghost" on-press="close_active_tab" label="Close tab">×</button>
               <spacer grow="1" />
-              <button size="sm" variant="ghost" on-press="toggle_line_comment">//</button>
-              <button size="sm" variant="ghost" on-press="indent_document">In</button>
-              <button size="sm" variant="ghost" on-press="outdent_document">Out</button>
-              <button size="sm" variant="ghost" on-press="transform_upper">AA</button>
-              <button size="sm" variant="ghost" on-press="transform_lower">aa</button>
-              <button size="sm" variant="ghost" on-press="transform_title">Aa</button>
-              <button size="sm" variant="ghost" on-press="transform_sort_lines">Sort</button>
-              <button size="sm" variant="ghost" on-press="transform_sort_unique">Uniq</button>
-              <button size="sm" variant="ghost" on-press="transform_reverse_lines">Rev</button>
-              <button size="sm" variant="ghost" on-press="delete_last_line">DelLn</button>
-              <button size="sm" variant="ghost" on-press="join_lines">Join</button>
-              <button size="sm" variant="ghost" on-press="move_line_up">LnUp</button>
-              <button size="sm" variant="ghost" on-press="move_line_down">LnDn</button>
-              <button size="sm" variant="ghost" on-press="remove_blank_lines">NoBlank</button>
-              <button size="sm" variant="ghost" on-press="collapse_blank_lines">Collapse</button>
-              <button size="sm" variant="ghost" on-press="trim_blank_lines">TrimBlank</button>
-              <button size="sm" variant="ghost" on-press="insert_blank_line">+Blank</button>
-              <button size="sm" variant="ghost" on-press="convert_tabs_to_spaces">Tab>Sp</button>
-              <button size="sm" variant="ghost" on-press="convert_spaces_to_tabs">Sp>Tab</button>
-              <button size="sm" variant="ghost" on-press="convert_to_lf">LF</button>
-              <button size="sm" variant="ghost" on-press="convert_to_crlf">CRLF</button>
-              <button size="sm" variant="ghost" on-press="insert_timestamp">Time</button>
-              <button size="sm" variant="ghost" on-press="insert_uuid">UUID</button>
-              <button size="sm" variant="ghost" on-press="format_document">Fmt</button>
-              <button size="sm" variant="ghost" on-press="hard_wrap">Wrap80</button>
-              <button size="sm" variant="ghost" on-press="copy_document">CopyDoc</button>
-              <button size="sm" variant="ghost" on-press="go_to_symbol">Sym</button>
-              <button size="sm" variant="ghost" on-press="undo_edit">Undo</button>
-              <text-field text="{gotoLineText}" placeholder="Line" on-input="update_goto_line" on-submit="goto_line" width="72" label="Go to line" />
-              <button size="sm" variant="ghost" on-press="goto_line">Go</button>
-              <button size="sm" variant="ghost" on-press="toggle_sidebar">{sidebarLabel}</button>
-              <button size="sm" variant="ghost" on-press="toggle_focus_mode">{focusModeLabel}</button>
-              <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Keys</button>
-              <button size="sm" variant="ghost" on-press="toggle_agent_panel">Agent</button>
-              <button size="sm" variant="ghost" on-press="toggle_terminal">Terminal</button>
+              <button size="sm" variant="ghost" on-press="toggle_agent_panel">{agentPanelLabel}</button>
             </row>
             <separator />
             <row grow="1">
-              <!-- Editor island (native textarea MVP; Monaco later) -->
-              <column grow="1" gap="8" padding="12">
-                <row gap="8" cross="center">
+              <column grow="1" gap="4" padding="8">
+                <row gap="6" cross="center">
                   <text size="sm" foreground="text_muted" wrap="false" grow="1">{breadcrumbText}</text>
                   <badge variant="secondary">{dirtyLabel}</badge>
-                  <badge variant="secondary">{editor_mode_label}</badge>
                   <button size="sm" variant="ghost" on-press="run_quick_open">Go to</button>
-                  <button size="sm" variant="ghost" on-press="reveal_in_explorer">Reveal</button>
-                  <button size="sm" variant="ghost" on-press="copy_active_path">Path</button>
-                  <button size="sm" variant="ghost" on-press="copy_absolute_path">Abs</button>
-                  <button size="sm" variant="ghost" on-press="copy_filename">Name</button>
-                  <button size="sm" variant="ghost" on-press="copy_all_tab_paths">Tabs</button>
-                  <button size="sm" variant="ghost" on-press="compare_with_saved">DiffDisk</button>
-                  <button size="sm" variant="ghost" on-press="show_file_size">Size</button>
-                  <button size="sm" variant="ghost" on-press="new_untitled">Untitled</button>
-                  <button size="sm" variant="ghost" on-press="show_word_count">Words</button>
-                  <button size="sm" variant="ghost" on-press="revert_file">Revert</button>
-                  <button size="sm" variant="ghost" on-press="save_all">Save All</button>
                   <button size="sm" variant="primary" on-press="save_file">Save</button>
                 </row>
-                <row gap="4" cross="center">
-                  <text-field text="{findQueryText}" placeholder="Find in file..." on-input="update_find_query" on-submit="run_find" grow="1" label="Find in file" />
-                  <badge variant="secondary">{find_active_label}</badge>
-                  <button size="sm" variant="ghost" on-press="toggle_find_case">{findCaseLabel}</button>
-                  <button size="sm" variant="ghost" on-press="toggle_find_whole_word">{findWholeWordLabel}</button>
-                  <button size="sm" variant="ghost" on-press="find_prev">Prev</button>
-                  <button size="sm" variant="ghost" on-press="find_next">Next</button>
-                  <button size="sm" variant="secondary" on-press="run_find">Find</button>
-                  <button size="sm" variant="ghost" on-press="clear_find">Clear</button>
-                </row>
-                <row gap="4" cross="center">
-                  <text-field text="{replaceText}" placeholder="Replace with..." on-input="update_replace_text" grow="1" label="Replace" />
-                  <button size="sm" variant="ghost" on-press="replace_once">Once</button>
-                  <button size="sm" variant="secondary" on-press="replace_all">All</button>
-                  <button size="sm" variant="ghost" on-press="copy_active_path">Copy path</button>
-                </row>
-                <column grow="1" gap="4" padding="8" background="surface_subtle">
+                <if test="{showFindPanel}">
+                  <row gap="4" cross="center">
+                    <text-field text="{findQueryText}" placeholder="Find..." on-input="update_find_query" on-submit="run_find" grow="1" label="Find in file" />
+                    <badge variant="secondary">{find_active_label}</badge>
+                    <button size="sm" variant="ghost" on-press="find_prev">↑</button>
+                    <button size="sm" variant="ghost" on-press="find_next">↓</button>
+                    <button size="sm" variant="secondary" on-press="run_find">Find</button>
+                    <button size="sm" variant="ghost" on-press="clear_find">×</button>
+                  </row>
+                  <row gap="4" cross="center">
+                    <text-field text="{replaceText}" placeholder="Replace..." on-input="update_replace_text" grow="1" label="Replace" />
+                    <button size="sm" variant="ghost" on-press="replace_once">Once</button>
+                    <button size="sm" variant="secondary" on-press="replace_all">All</button>
+                  </row>
+                </if>
+                <column grow="1" gap="0" padding="6" background="background">
                   <textarea text="{documentText}" placeholder="Open a file to edit..." on-input="edit_document" grow="1" label="Editor" />
                 </column>
               </column>
 
-              <!-- Agent panel -->
               <if test="{showAgentChrome}">
                 <separator />
-                <column width="320" gap="8" padding="10" background="surface">
-                  <row gap="8" cross="center">
+                <column width="300" gap="8" padding="10" background="surface">
+                  <row gap="6" cross="center">
                     <text grow="1">Agent</text>
-                    <badge variant="secondary">mock</badge>
+                    <button size="sm" variant="ghost" on-press="toggle_agent_panel">×</button>
                   </row>
-                  <text size="sm" foreground="text_muted">Model: placeholder / Autonomy: review</text>
-                  <text-field text="{agentPrompt}" placeholder="Ask the agent...  /commands  @files" on-input="update_agent_prompt" on-submit="create_agent_task" label="Agent prompt" />
-                  <row gap="6">
-                    <button size="sm" variant="primary" on-press="create_agent_task">Run</button>
-                    <button size="sm" variant="ghost" on-press="run_perf_check_placeholder">Perf</button>
-                  </row>
+                  <text-field text="{agentPrompt}" placeholder="Ask the agent..." on-input="update_agent_prompt" on-submit="create_agent_task" label="Agent prompt" />
+                  <button size="sm" variant="primary" on-press="create_agent_task">Run</button>
                   <separator />
-                  <text size="sm" foreground="text_muted">Tasks</text>
                   <scroll grow="1" label="Agent tasks">
                     <column gap="6">
                       <for each="tasks" key="id" as="task">
@@ -239,24 +224,23 @@
               </if>
             </row>
 
-            <!-- Terminal (pipe runner MVP) -->
             <if test="{showTerminalChrome}">
               <separator />
-              <column height="200" gap="4" padding="8" background="surface">
-                <row gap="8" cross="center">
+              <column height="160" gap="4" padding="6" background="surface">
+                <row gap="6" cross="center">
                   <text size="sm" grow="1">Terminal</text>
                   <badge variant="secondary">{terminalStatus}</badge>
-                  <text size="sm" foreground="text_muted">pipe / async sh -c</text>
                   <button size="sm" variant="ghost" on-press="clear_terminal">Clear</button>
+                  <button size="sm" variant="ghost" on-press="toggle_terminal">×</button>
                 </row>
-                <row gap="6" cross="center">
+                <row gap="4" cross="center">
                   <text-field text="{terminalCommandText}" placeholder="echo hello" on-input="update_terminal_command" on-submit="run_terminal_command" grow="1" label="Terminal command" />
                   <button size="sm" variant="ghost" on-press="terminal_history_older">↑</button>
                   <button size="sm" variant="ghost" on-press="terminal_history_newer">↓</button>
                   <button size="sm" variant="primary" on-press="run_terminal_command">Run</button>
                 </row>
                 <scroll grow="1" label="Terminal output">
-                  <column gap="2">
+                  <column gap="1">
                     <for each="term_lines" as="line">
                       <text size="sm" wrap="false">{line}</text>
                     </for>
@@ -266,148 +250,38 @@
             </if>
           </if>
 
-          <!-- Search -->
-          <if test="{isSearch}">
-            <column grow="1" gap="10" padding="16">
-              <row gap="8" cross="center">
-                <text grow="1">Search</text>
-                <badge variant="secondary">{searchStatus}</badge>
-              </row>
-              <row gap="6" cross="center">
-                <text-field text="{searchQueryText}" placeholder="Search workspace..." on-input="update_search_query" on-submit="run_search" grow="1" label="Search query" />
-                <button size="sm" variant="ghost" on-press="toggle_search_case">{searchCaseLabel}</button>
-                <button size="sm" variant="primary" on-press="run_search">Search</button>
-              </row>
-              <text size="sm" foreground="text_muted">Bounded in-process scan (no ripgrep). Caps at 64 hits.</text>
-              <scroll grow="1" label="Search results">
-                <column gap="4">
-                  <for each="search_hits" key="id" as="hit">
-                    <list-item on-press="open_search_hit:{hit.id}" padding="8" gap="6" label="{hit.path}">
-                      <column gap="2" grow="1">
-                        <text wrap="false">{hit.path}:{hit.line}</text>
-                        <text size="sm" foreground="text_muted" wrap="true">{hit.preview}</text>
-                      </column>
-                    </list-item>
-                  </for>
-                </column>
-              </scroll>
-            </column>
-          </if>
-
-          <!-- SCM -->
-          <if test="{isScm}">
-            <column grow="1" gap="10" padding="16">
-              <row gap="8" cross="center">
-                <text grow="1">Source Control</text>
-                <badge variant="secondary">{git_summary}</badge>
-                <button size="sm" variant="secondary" on-press="refresh_git">Refresh</button>
-              </row>
-              <row gap="6" cross="center">
-                <text-field text="{commitMessageText}" placeholder="Commit message..." on-input="update_commit_message" on-submit="commit_changes" grow="1" label="Commit message" />
-                <button size="sm" variant="ghost" on-press="stage_all">Stage</button>
-                <button size="sm" variant="ghost" on-press="unstage_all">Unstage</button>
-                <button size="sm" variant="ghost" on-press="discard_changes">Discard</button>
-                <button size="sm" variant="ghost" on-press="copy_git_branch">Branch</button>
-                <button size="sm" variant="primary" on-press="commit_changes">Commit</button>
-              </row>
-              <text size="sm" foreground="text_muted">branch={git_branch} / Stage Unstage Discard Commit / click entry to open + load diff</text>
-              <row grow="1" gap="8">
-                <scroll grow="1" label="Git changes">
-                  <column gap="4">
-                    <for each="git_entries" key="id" as="entry">
-                      <list-item on-press="open_git_entry:{entry.id}" padding="6" gap="8" cross="center" label="{entry.path}">
-                        <badge variant="secondary">{entry.status}</badge>
-                        <text grow="1" wrap="false">{entry.path}</text>
-                      </list-item>
-                    </for>
-                  </column>
-                </scroll>
-                <column width="360" gap="6" padding="8" background="surface_subtle">
-                  <row gap="8" cross="center">
-                    <text size="sm" grow="1">Diff preview</text>
-                    <badge variant="secondary">{git_diff_status}</badge>
-                  </row>
-                  <scroll grow="1" label="Git diff">
-                    <text size="sm" wrap="true">{gitDiffText}</text>
-                  </scroll>
-                </column>
-              </row>
-            </column>
-          </if>
-
-          <!-- Problems (TODO/FIXME markers) -->
-          <if test="{isProblems}">
-            <column grow="1" gap="10" padding="16">
-              <row gap="8" cross="center">
-                <text grow="1">Problems</text>
-                <badge variant="secondary">{problemsStatus}</badge>
-                <button size="sm" variant="secondary" on-press="scan_problems">Scan</button>
-              </row>
-              <text size="sm" foreground="text_muted">TODO / FIXME / HACK / XXX markers (no LSP yet)</text>
-              <scroll grow="1" label="Problems list">
-                <column gap="4">
-                  <for each="problems" key="id" as="p">
-                    <list-item on-press="open_problem:{p.id}" padding="8" gap="6" label="{p.path}">
-                      <badge variant="secondary">{p.kind}</badge>
-                      <column gap="2" grow="1">
-                        <text wrap="false">{p.path}:{p.line}</text>
-                        <text size="sm" foreground="text_muted" wrap="true">{p.preview}</text>
-                      </column>
-                    </list-item>
-                  </for>
-                </column>
-              </scroll>
-            </column>
-          </if>
-
-          <!-- Debug placeholder -->
+          <!-- Full-page secondary views (settings / plugins / placeholders) -->
           <if test="{isDebug}">
             <column grow="1" gap="10" padding="16">
               <text>Debug</text>
-              <badge variant="secondary">placeholder</badge>
-              <text foreground="text_muted">DAP adapters start only onDebugStart via Process Governor.</text>
+              <text foreground="text_muted">DAP adapters start only on demand via Process Governor.</text>
             </column>
           </if>
-
-          <!-- Testing placeholder -->
           <if test="{isTesting}">
             <column grow="1" gap="10" padding="16">
               <text>Testing</text>
-              <badge variant="secondary">placeholder</badge>
-              <text foreground="text_muted">Test discovery is lazy. No scanner before testing panel or command.</text>
+              <text foreground="text_muted">Test discovery is lazy. No scanner before this panel.</text>
             </column>
           </if>
-
-          <!-- Feature toggle matrix -->
           <if test="{isFeatures}">
             <column grow="1" gap="10" padding="16">
               <text>Feature Toggle Matrix</text>
-              <badge variant="secondary">mock</badge>
               <text foreground="text_muted">{featureMatrixSummary}</text>
-              <text size="sm" foreground="text_muted">Mode: {runtime_mode_label} / Registered: {features_registered} / Loaded: {features_loaded}</text>
-              <text size="sm" foreground="text_muted">Non-core features are killable. Startup-critical subset only before first paint.</text>
               <button variant="secondary" on-press="instant_safe_mode">Instant Safe Mode</button>
-              <button variant="ghost" on-press="run_perf_check_placeholder">Open Performance HUD</button>
             </column>
           </if>
-
-          <!-- Process governor -->
           <if test="{isProcesses}">
             <column grow="1" gap="10" padding="16">
               <text>Process Governor</text>
-              <badge variant="secondary">mock</badge>
               <text foreground="text_muted">{processGovernorSummary}</text>
-              <text size="sm" foreground="text_muted">alive={process_count} leaked={process_leaked} terminal={terminal_process_count} lsp={lsp_process_count} plugins={plugin_process_count}</text>
-              <text size="sm" foreground="text_muted">Terminal scrollback budget: {terminal_scrollback_lines} lines (hard max 10000)</text>
+              <text size="sm" foreground="text_muted">alive={process_count} terminal={terminal_process_count}</text>
               <button variant="secondary" on-press="kill_all_workspace_processes">Kill All Workspace Processes</button>
             </column>
           </if>
-
-          <!-- Plugins view -->
           <if test="{isPlugins}">
             <column grow="1" gap="10" padding="16">
               <text>Plugin Registry</text>
-              <text foreground="text_muted">Curated, permissioned, signed. No marketplace dependency by default.</text>
+              <text foreground="text_muted">Curated, permissioned, signed. Locked until trusted.</text>
               <scroll grow="1">
                 <column gap="8">
                   <for each="plugins" as="plug">
@@ -416,8 +290,7 @@
                         <text grow="1">{plug.name}</text>
                         <badge variant="secondary">{plug.trust}</badge>
                       </row>
-                      <text size="sm" foreground="text_muted">{plug.id} / {plug.publisher} / v{plug.version}</text>
-                      <text size="sm" foreground="text_muted">Permissions: {plug.permissions_summary}</text>
+                      <text size="sm" foreground="text_muted">{plug.id} / v{plug.version}</text>
                     </column>
                   </for>
                 </column>
@@ -425,7 +298,6 @@
             </column>
           </if>
 
-          <!-- Settings (Cursor-like grouped sections) -->
           <if test="{isSettings}">
             <column grow="1" gap="12" padding="16">
               <row gap="8" cross="center">
@@ -438,7 +310,6 @@
                   <if test="{showSettingsAppearance}">
                     <column gap="6" padding="10" background="surface_subtle">
                       <text>Appearance</text>
-                      <text size="sm" foreground="text_muted">Theme and visual density</text>
                       <button variant="secondary" on-press="switch_theme">Theme: {themeLabel}</button>
                       <text size="sm" foreground="text_muted">Window: {windowStatusLabel}</text>
                     </column>
@@ -446,19 +317,16 @@
                   <if test="{showSettingsEditor}">
                     <column gap="6" padding="10" background="surface_subtle">
                       <text>Editor</text>
-                      <text size="sm" foreground="text_muted">Editing defaults for the active buffer</text>
                       <button variant="ghost" on-press="toggle_find_case">Find {findCaseLabel}</button>
                       <button variant="ghost" on-press="toggle_trim_trailing">{trimTrailingLabel}</button>
                       <button variant="ghost" on-press="toggle_final_newline">{finalNewlineLabel}</button>
                       <button variant="ghost" on-press="cycle_indent_size">{indentSizeLabel}</button>
                       <button variant="ghost" on-press="toggle_word_wrap">{wordWrapLabel}</button>
-                      <button variant="ghost" on-press="format_document">Format Document</button>
                     </column>
                   </if>
                   <if test="{showSettingsWorkspace}">
                     <column gap="6" padding="10" background="surface_subtle">
                       <text>Workspace</text>
-                      <text size="sm" foreground="text_muted">Panels and session behavior</text>
                       <button variant="ghost" on-press="toggle_terminal">{terminalPanelLabel}</button>
                       <button variant="ghost" on-press="toggle_agent_panel">{agentPanelLabel}</button>
                       <button variant="ghost" on-press="toggle_auto_save">{autoSaveLabel}</button>
@@ -470,19 +338,19 @@
                   <if test="{showSettingsFeatures}">
                     <column gap="6" padding="10" background="surface_subtle">
                       <text>Features</text>
-                      <text size="sm" foreground="text_muted">Optional surfaces and governors</text>
                       <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
                       <button variant="ghost" on-press="open_process_governor">Process Governor</button>
-                      <button variant="ghost" on-press="run_perf_check_placeholder">Run Performance Check</button>
+                      <button variant="ghost" on-press="open_plugin_registry">Plugins</button>
+                      <button variant="ghost" on-press="run_perf_check_placeholder">Performance Check</button>
                     </column>
                   </if>
                   <if test="{showSettingsAbout}">
                     <column gap="6" padding="10" background="surface_subtle">
                       <text>About</text>
-                      <text size="sm" foreground="text_muted">Telemetry off · Surveys off · Plugins locked until trusted</text>
-                      <text size="sm" foreground="text_muted">{app_version_label} · no network updater in MVP</text>
+                      <text size="sm" foreground="text_muted">Telemetry off · Surveys off · Plugins locked</text>
+                      <text size="sm" foreground="text_muted">{app_version_label}</text>
                       <button variant="secondary" on-press="check_for_updates">Check for Updates</button>
-                      <button variant="ghost" on-press="toggle_notifications_panel">Notification History</button>
+                      <button variant="ghost" on-press="toggle_notifications_panel">Notifications</button>
                       <button variant="ghost" on-press="go_launch">Back to Launch</button>
                     </column>
                   </if>
@@ -491,16 +359,10 @@
             </column>
           </if>
 
-          <!-- Perf HUD -->
           <if test="{show_perf_hud}">
             <column gap="6" padding="10" background="surface_subtle">
-              <row gap="8" cross="center">
-                <text size="sm">Performance HUD</text>
-                <badge variant="secondary">mock values</badge>
-              </row>
+              <text size="sm">Performance HUD</text>
               <text size="sm" foreground="text_muted">{perfSummary}</text>
-              <text size="sm" foreground="text_muted">startup={perf_app_start_ms}ms paint={perf_first_paint_ms}ms palette={perf_palette_ms}ms terminalPanel={perf_terminal_ms}ms rss={perf_rss_mb}MB</text>
-              <text size="sm" foreground="text_muted">featuresRegistered={features_registered} featuresLoaded={features_loaded} pluginsLoaded={perf_plugins_loaded} processes={process_count} mode={runtime_mode_label}</text>
             </column>
           </if>
         </column>
@@ -509,31 +371,28 @@
 
     <separator />
     <if test="{hasUpdateBanner}">
-      <row gap="8" padding="8" background="surface_subtle" cross="center" label="Update banner">
+      <row gap="8" padding="6" background="surface_subtle" cross="center" label="Update banner">
         <text size="sm" grow="1" wrap="true">{updateBannerText}</text>
-        <button size="sm" variant="ghost" on-press="check_for_updates">Recheck</button>
         <button size="sm" variant="ghost" on-press="dismiss_update_banner">Dismiss</button>
       </row>
     </if>
     <if test="{hasToast}">
-      <row gap="8" padding="8" background="surface" cross="center" label="Notification toast">
+      <row gap="8" padding="6" background="surface" cross="center" label="Notification toast">
         <text size="sm" grow="1" wrap="true">{toast}</text>
         <button size="sm" variant="ghost" on-press="clear_toast">Dismiss</button>
       </row>
     </if>
-    <status-bar>{project_branch} / {status_language} / {documentStats} / {workspaceFilesLabel} / Native Shell / {status_plugins} / {status_agent}</status-bar>
+    <status-bar>{project_branch}  ·  {status_language}  ·  {documentStats}  ·  {dirtyLabel}</status-bar>
   </column>
 
-  <!-- Notifications history panel -->
   <if test="{notificationsOpen}">
-    <column grow="1" main="start" cross="end" padding="24" background="surface_pressed">
-      <column width="360" gap="8" padding="12" background="surface">
+    <column grow="1" main="start" cross="end" padding="20" background="scrim">
+      <column width="340" gap="8" padding="12" background="surface">
         <row gap="8" cross="center">
           <text grow="1">Notifications</text>
           <button size="sm" variant="ghost" on-press="toggle_notifications_panel">Close</button>
         </row>
-        <text size="sm" foreground="text_muted">Recent toasts (bounded)</text>
-        <scroll height="280" label="Notification history">
+        <scroll height="260" label="Notification history">
           <column gap="4">
             <for each="notifications" key="id" as="n">
               <column gap="2" padding="8" background="surface_subtle">
@@ -546,11 +405,9 @@
     </column>
   </if>
 
-  <!-- Command palette overlay -->
   <if test="{command_palette_open}">
-    <column grow="1" main="start" cross="center" padding="48" background="surface_pressed">
-      <column width="520" gap="8" padding="12" background="surface">
-        <text>Command Palette</text>
+    <column grow="1" main="start" cross="center" padding="24" background="scrim">
+      <column width="560" gap="8" padding="12" background="surface">
         <search-field text="{commandQuery}" placeholder="Type a command..." on-input="update_command_query" label="Command search" />
         <column gap="2">
           <for each="command_items" as="cmd">
@@ -560,17 +417,14 @@
             </list-item>
           </for>
         </column>
-        <button size="sm" variant="ghost" on-press="close_command_palette">Close</button>
       </column>
     </column>
   </if>
 
-  <!-- Quick Open overlay -->
   <if test="{quick_open_visible}">
-    <column grow="1" main="start" cross="center" padding="48" background="surface_pressed">
-      <column width="520" gap="8" padding="12" background="surface">
-        <text>Quick Open</text>
-        <search-field text="{quickQueryText}" placeholder="Filter files..." on-input="update_quick_query" label="Quick open" />
+    <column grow="1" main="start" cross="center" padding="24" background="scrim">
+      <column width="560" gap="8" padding="12" background="surface">
+        <search-field text="{quickQueryText}" placeholder="Go to file..." on-input="update_quick_query" label="Quick open" />
         <scroll height="280" label="Quick open results">
           <column gap="2">
             <for each="quick_items" key="id" as="item">
@@ -580,20 +434,17 @@
             </for>
           </column>
         </scroll>
-        <button size="sm" variant="ghost" on-press="close_quick_open">Close</button>
       </column>
     </column>
   </if>
 
-  <!-- Keyboard shortcuts help -->
   <if test="{shortcuts_help_visible}">
-    <column grow="1" main="start" cross="center" padding="48" background="surface_pressed">
+    <column grow="1" main="start" cross="center" padding="24" background="scrim">
       <column width="480" gap="8" padding="12" background="surface">
         <text>Keyboard Shortcuts</text>
-        <text size="sm" foreground="text_muted">Cmd+K palette / Cmd+P quick open / Cmd+F find / Cmd+G go to line</text>
-        <text size="sm" foreground="text_muted">Cmd+S save / Cmd+W close tab / Shift+Alt+F format / Cmd+/ comment / Cmd+Shift+T reopen / Cmd+Z undo / Cmd+B sidebar</text>
-        <text size="sm" foreground="text_muted">Ctrl+Tab next tab / Ctrl+Shift+Tab prev tab / Ctrl+` terminal</text>
-        <text size="sm" foreground="text_muted">Esc dismiss / Focus mode / DelLn Join / LF CRLF / Time stamp</text>
+        <text size="sm" foreground="text_muted">Cmd+K palette · Cmd+P quick open · Cmd+F find · Cmd+G go to line</text>
+        <text size="sm" foreground="text_muted">Cmd+S save · Cmd+W close tab · Shift+Alt+F format · Cmd+/ comment</text>
+        <text size="sm" foreground="text_muted">Cmd+B sidebar · Ctrl+` terminal · Esc dismiss · Cmd+Z undo</text>
         <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>
       </column>
     </column>
