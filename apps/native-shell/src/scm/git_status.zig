@@ -118,9 +118,61 @@ pub const GitBuffers = struct {
         self.diff_status = "diff loaded";
     }
 
+    /// True only when `cwd` is itself a usable git work-tree root.
+    /// A stub `.git` (e.g. fixture with only HEAD) must not let git walk up to a parent repo.
+    fn isGitRoot(io: std.Io, cwd: []const u8) bool {
+        if (cwd.len == 0) return false;
+
+        // Prefer a local `.git/config` so incomplete stub dirs are rejected early.
+        var config_buf: [512]u8 = undefined;
+        if (cwd.len + 12 <= config_buf.len) {
+            @memcpy(config_buf[0..cwd.len], cwd);
+            @memcpy(config_buf[cwd.len..][0..12], "/.git/config");
+            std.Io.Dir.cwd().access(io, config_buf[0 .. cwd.len + 12], .{}) catch return false;
+        } else return false;
+
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+
+        const top_result = std.process.run(gpa, io, .{
+            .argv = &.{ "git", "rev-parse", "--show-toplevel" },
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(512),
+            .stderr_limit = .limited(256),
+        }) catch return false;
+        defer {
+            gpa.free(top_result.stdout);
+            gpa.free(top_result.stderr);
+        }
+        switch (top_result.term) {
+            .exited => |code| if (code != 0) return false,
+            else => return false,
+        }
+        const toplevel = std.mem.trim(u8, top_result.stdout, " \t\r\n");
+        if (toplevel.len == 0) return false;
+
+        const abs_result = std.process.run(gpa, io, .{
+            .argv = &.{ "realpath", "-m", cwd },
+            .stdout_limit = .limited(512),
+            .stderr_limit = .limited(256),
+        }) catch return false;
+        defer {
+            gpa.free(abs_result.stdout);
+            gpa.free(abs_result.stderr);
+        }
+        switch (abs_result.term) {
+            .exited => |code| if (code != 0) return false,
+            else => return false,
+        }
+        const abs_cwd = std.mem.trim(u8, abs_result.stdout, " \t\r\n");
+        return std.mem.eql(u8, toplevel, abs_cwd);
+    }
+
     /// `git add -A` in the workspace. Returns a short status string.
     pub fn stageAll(self: *GitBuffers, io: std.Io, cwd: []const u8) []const u8 {
         if (cwd.len == 0) return "no workspace";
+        if (!isGitRoot(io, cwd)) return "not a git root";
         var gpa_state: std.heap.DebugAllocator(.{}) = .init;
         defer _ = gpa_state.deinit();
         const gpa = gpa_state.allocator();
@@ -150,6 +202,7 @@ pub const GitBuffers = struct {
     pub fn commitWithMessage(self: *GitBuffers, io: std.Io, cwd: []const u8, message: []const u8) []const u8 {
         if (cwd.len == 0) return "no workspace";
         if (message.len == 0) return "empty message";
+        if (!isGitRoot(io, cwd)) return "not a git root";
         var gpa_state: std.heap.DebugAllocator(.{}) = .init;
         defer _ = gpa_state.deinit();
         const gpa = gpa_state.allocator();

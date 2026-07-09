@@ -783,9 +783,9 @@ test "trim blank lines and scm stage commit messages" {
     main.update(&model, .{ .open_project = "acme-dashboard" });
     model.git_commit_message.set("test commit");
     try testing.expectEqualStrings("test commit", model.git_commit_message.text());
-    // Stage/commit against fixture may fail if not a git repo — just ensure handlers run.
+    // Fixture is not its own git root — stage/commit must refuse parent-repo walk-up.
     main.update(&model, .stage_all);
-    try testing.expect(model.toast.len > 0);
+    try testing.expectEqualStrings("not a git root", model.toast);
     main.update(&model, .commit_changes);
-    try testing.expect(model.toast.len > 0);
+    try testing.expectEqualStrings("not a git root", model.toast);
 }
