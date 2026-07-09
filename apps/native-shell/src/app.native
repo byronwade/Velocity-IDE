@@ -133,6 +133,7 @@
               <button size="sm" variant="ghost" on-press="move_line_down">LnDn</button>
               <button size="sm" variant="ghost" on-press="remove_blank_lines">NoBlank</button>
               <button size="sm" variant="ghost" on-press="collapse_blank_lines">Collapse</button>
+              <button size="sm" variant="ghost" on-press="trim_blank_lines">TrimBlank</button>
               <button size="sm" variant="ghost" on-press="insert_blank_line">+Blank</button>
               <button size="sm" variant="ghost" on-press="convert_tabs_to_spaces">Tab>Sp</button>
               <button size="sm" variant="ghost" on-press="convert_spaces_to_tabs">Sp>Tab</button>
@@ -286,7 +287,12 @@
                 <badge variant="secondary">{git_summary}</badge>
                 <button size="sm" variant="secondary" on-press="refresh_git">Refresh</button>
               </row>
-              <text size="sm" foreground="text_muted">branch={git_branch} / click entry to open + load diff</text>
+              <row gap="6" cross="center">
+                <text-field text="{commitMessageText}" placeholder="Commit message..." on-input="update_commit_message" on-submit="commit_changes" grow="1" label="Commit message" />
+                <button size="sm" variant="ghost" on-press="stage_all">Stage</button>
+                <button size="sm" variant="primary" on-press="commit_changes">Commit</button>
+              </row>
+              <text size="sm" foreground="text_muted">branch={git_branch} / Stage All then Commit / click entry to open + load diff</text>
               <row grow="1" gap="8">
                 <scroll grow="1" label="Git changes">
                   <column gap="4">

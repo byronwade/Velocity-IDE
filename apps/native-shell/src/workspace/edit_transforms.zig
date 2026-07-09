@@ -261,6 +261,42 @@ pub fn collapseBlankLines(text: []const u8, out: []u8) ?usize {
     return dst;
 }
 
+/// Strip leading and trailing blank lines (keep internal blanks).
+pub fn trimBlankLines(text: []const u8, out: []u8) ?usize {
+    if (text.len == 0) return 0;
+    var start: usize = 0;
+    var end = text.len;
+    // Leading
+    while (start < end) {
+        var line_end = start;
+        while (line_end < end and text[line_end] != '\n') line_end += 1;
+        const line = text[start..line_end];
+        if (std.mem.trim(u8, line, " \t\r").len > 0) break;
+        start = if (line_end < end) line_end + 1 else end;
+    }
+    // Trailing
+    while (end > start) {
+        var line_start = end;
+        // If ends with newline, step before it for the last line body.
+        if (end > start and text[end - 1] == '\n') {
+            line_start = end - 1;
+            while (line_start > start and text[line_start - 1] != '\n') line_start -= 1;
+            const line = text[line_start .. end - 1];
+            if (std.mem.trim(u8, line, " \t\r").len > 0) break;
+            end = line_start;
+        } else {
+            while (line_start > start and text[line_start - 1] != '\n') line_start -= 1;
+            const line = text[line_start..end];
+            if (std.mem.trim(u8, line, " \t\r").len > 0) break;
+            end = line_start;
+        }
+    }
+    const slice = text[start..end];
+    if (slice.len > out.len) return null;
+    @memcpy(out[0..slice.len], slice);
+    return slice.len;
+}
+
 /// Lexicographic sort of lines (stable enough for MVP; trailing newline preserved if present).
 pub fn sortLines(text: []const u8, out: []u8) ?usize {
     const max_lines = 512;
@@ -824,6 +860,8 @@ test "case and sort transforms" {
     try std.testing.expectEqualStrings("c\nb\na\n", out[0..r]);
     const c = collapseBlankLines("a\n\n\nb\n", &out).?;
     try std.testing.expectEqualStrings("a\n\nb\n", out[0..c]);
+    const tb = trimBlankLines("\n\na\nb\n\n", &out).?;
+    try std.testing.expectEqualStrings("a\nb\n", out[0..tb]);
 }
 
 test "trim trailing and final newline" {

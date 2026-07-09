@@ -118,6 +118,65 @@ pub const GitBuffers = struct {
         self.diff_status = "diff loaded";
     }
 
+    /// `git add -A` in the workspace. Returns a short status string.
+    pub fn stageAll(self: *GitBuffers, io: std.Io, cwd: []const u8) []const u8 {
+        if (cwd.len == 0) return "no workspace";
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+        const result = std.process.run(gpa, io, .{
+            .argv = &.{ "git", "add", "-A" },
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(1024),
+            .stderr_limit = .limited(1024),
+        }) catch return "stage failed";
+        defer {
+            gpa.free(result.stdout);
+            gpa.free(result.stderr);
+        }
+        switch (result.term) {
+            .exited => |code| {
+                if (code == 0) {
+                    self.refresh(io, cwd);
+                    return "staged all";
+                }
+            },
+            else => {},
+        }
+        return "stage failed";
+    }
+
+    /// `git commit -m <message>` then refresh. Returns a short status string.
+    pub fn commitWithMessage(self: *GitBuffers, io: std.Io, cwd: []const u8, message: []const u8) []const u8 {
+        if (cwd.len == 0) return "no workspace";
+        if (message.len == 0) return "empty message";
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+        const result = std.process.run(gpa, io, .{
+            .argv = &.{ "git", "commit", "-m", message },
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(4096),
+            .stderr_limit = .limited(4096),
+        }) catch return "commit failed";
+        defer {
+            gpa.free(result.stdout);
+            gpa.free(result.stderr);
+        }
+        switch (result.term) {
+            .exited => |code| {
+                if (code == 0) {
+                    self.refresh(io, cwd);
+                    return "committed";
+                }
+            },
+            else => {},
+        }
+        // Nothing to commit is common — surface a clearer label.
+        if (std.mem.indexOf(u8, result.stderr, "nothing to commit") != null) return "nothing to commit";
+        return "commit failed";
+    }
+
     pub fn refresh(self: *GitBuffers, io: std.Io, cwd: []const u8) void {
         self.clear();
         if (cwd.len == 0) {

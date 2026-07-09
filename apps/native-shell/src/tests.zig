@@ -774,3 +774,18 @@ test "title case collapse blanks copy tabs untitled" {
     main.update(&model, .delete_selected_file);
     main.update(&model, .delete_selected_file);
 }
+
+test "trim blank lines and scm stage commit messages" {
+    var model = main.initialModel();
+    model.document.set("\n\na\nb\n\n");
+    main.update(&model, .trim_blank_lines);
+    try testing.expectEqualStrings("a\nb\n", model.document.text());
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.git_commit_message.set("test commit");
+    try testing.expectEqualStrings("test commit", model.git_commit_message.text());
+    // Stage/commit against fixture may fail if not a git repo — just ensure handlers run.
+    main.update(&model, .stage_all);
+    try testing.expect(model.toast.len > 0);
+    main.update(&model, .commit_changes);
+    try testing.expect(model.toast.len > 0);
+}

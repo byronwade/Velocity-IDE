@@ -30,6 +30,7 @@ pub const max_find_query = find_in_doc.max_query;
 pub const max_quick_query = quick_open.max_query;
 pub const max_goto_line = 12;
 pub const max_replace = 64;
+pub const max_commit_message = 120;
 pub const SearchHit = workspace_search.SearchHit;
 pub const GitEntry = git_status.GitEntry;
 pub const DocMatch = find_in_doc.DocMatch;
@@ -191,6 +192,10 @@ pub const Msg = union(enum) {
     scan_problems,
     open_problem: u32,
     preview_git_diff: u32,
+    update_commit_message: canvas.TextInputEvent,
+    stage_all,
+    commit_changes,
+    trim_blank_lines,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -283,6 +288,9 @@ pub const Msg = union(enum) {
         "reopen_closed_tab",
         "scan_problems",
         "preview_git_diff",
+        "stage_all",
+        "commit_changes",
+        "trim_blank_lines",
         "terminal_line",
         "terminal_exit",
     };
@@ -380,6 +388,7 @@ pub const Model = struct {
     goto_line_label: []const u8 = "",
     goto_line_buf: [32]u8 = undefined,
     replace_text: canvas.TextBuffer(max_replace) = .{},
+    git_commit_message: canvas.TextBuffer(max_commit_message) = .{},
     doc_stats: []const u8 = "0 lines · 0 words · 0 bytes · LF · ASCII",
     doc_stats_buf: [96]u8 = undefined,
     path_toast: []const u8 = "",
@@ -526,6 +535,7 @@ pub const Model = struct {
         "goto_line_buf",
         "goto_line_label",
         "replace_text",
+        "git_commit_message",
         "doc_stats",
         "doc_stats_buf",
         "path_toast",
@@ -748,6 +758,10 @@ pub const Model = struct {
 
     pub fn replaceText(model: *const Model) []const u8 {
         return model.replace_text.text();
+    }
+
+    pub fn commitMessageText(model: *const Model) []const u8 {
+        return model.git_commit_message.text();
     }
 
     pub fn workspaceFilesLabel(model: *const Model) []const u8 {
@@ -987,6 +1001,9 @@ pub const commands = [_]CommandItem{
     .{ .id = "run_terminal", .title = "Run Terminal Command", .hint = "" },
     .{ .id = "run_search", .title = "Search Workspace", .hint = "" },
     .{ .id = "refresh_git", .title = "Refresh Git Status", .hint = "" },
+    .{ .id = "stage_all", .title = "Git: Stage All", .hint = "" },
+    .{ .id = "commit_changes", .title = "Git: Commit", .hint = "" },
+    .{ .id = "trim_blank_lines", .title = "Trim Leading/Trailing Blank Lines", .hint = "" },
     .{ .id = "reopen_last_workspace", .title = "Reopen Last Workspace", .hint = "" },
     .{ .id = "clear_find", .title = "Clear Find", .hint = "" },
     .{ .id = "duplicate_line", .title = "Duplicate Last Line", .hint = "" },
@@ -1200,6 +1217,12 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 model.current_view = .scm;
                 model.selected_activity = .scm;
                 refreshGitStatus(model);
+            } else if (std.mem.eql(u8, id, "stage_all")) {
+                stageAllChanges(model);
+            } else if (std.mem.eql(u8, id, "commit_changes")) {
+                commitChanges(model);
+            } else if (std.mem.eql(u8, id, "trim_blank_lines")) {
+                trimBlankLines(model);
             } else if (std.mem.eql(u8, id, "reopen_last_workspace")) {
                 reopenLastWorkspace(model);
             } else if (std.mem.eql(u8, id, "clear_find")) {
@@ -1319,6 +1342,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .transform_reverse_lines => runTextTransform(model, .reverse),
         .transform_title => runTextTransform(model, .title),
         .collapse_blank_lines => collapseBlankLines(model),
+        .trim_blank_lines => trimBlankLines(model),
         .copy_all_tab_paths => copyAllTabPaths(model),
         .new_untitled => newUntitledBuffer(model),
         .toggle_trim_trailing => toggleTrimTrailing(model),
@@ -1452,6 +1476,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .run_search => runWorkspaceSearch(model),
         .open_search_hit => |id| openSearchHit(model, id),
         .refresh_git => refreshGitStatus(model),
+        .update_commit_message => |edit| model.git_commit_message.apply(edit),
+        .stage_all => stageAllChanges(model),
+        .commit_changes => commitChanges(model),
         .open_git_entry => |id| openGitEntry(model, id),
         .clear_find => clearFind(model),
         .reopen_last_workspace => reopenLastWorkspace(model),
@@ -3043,6 +3070,65 @@ fn collapseBlankLines(model: *Model) void {
         return;
     };
     applyDocumentTransform(model, out[0..n], "Collapsed blank lines");
+}
+
+fn trimBlankLines(model: *Model) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = edit_transforms.trimBlankLines(model.document.text(), &out) orelse {
+        model.toast = "Trim blank lines failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..n], "Trimmed blank lines");
+}
+
+fn stageAllChanges(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace for git";
+        return;
+    }
+    const bufs = ensureGitBuffers(model) catch {
+        model.toast = "Git alloc failed";
+        return;
+    };
+    _ = model.governor.spawn("feature.scm", "git add") catch {};
+    const status = bufs.stageAll(modelIo(model), model.project_path);
+    model.git_entries = bufs.entriesSlice();
+    model.git_summary = bufs.summary;
+    model.git_branch = bufs.branch();
+    model.governor.killFeature("feature.scm");
+    model.process_count = model.governor.aliveCount();
+    model.current_view = .scm;
+    model.selected_activity = .scm;
+    model.toast = status;
+}
+
+fn commitChanges(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace for git";
+        return;
+    }
+    const msg = model.git_commit_message.text();
+    if (msg.len == 0) {
+        model.toast = "Enter a commit message";
+        return;
+    }
+    const bufs = ensureGitBuffers(model) catch {
+        model.toast = "Git alloc failed";
+        return;
+    };
+    _ = model.governor.spawn("feature.scm", "git commit") catch {};
+    const status = bufs.commitWithMessage(modelIo(model), model.project_path, msg);
+    model.git_entries = bufs.entriesSlice();
+    model.git_summary = bufs.summary;
+    model.git_branch = bufs.branch();
+    model.governor.killFeature("feature.scm");
+    model.process_count = model.governor.aliveCount();
+    model.current_view = .scm;
+    model.selected_activity = .scm;
+    if (std.mem.eql(u8, status, "committed")) {
+        model.git_commit_message.clear();
+    }
+    model.toast = status;
 }
 
 fn copyAllTabPaths(model: *Model) void {

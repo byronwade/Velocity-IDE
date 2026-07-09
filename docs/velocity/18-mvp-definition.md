@@ -72,6 +72,8 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Collapse blank lines | Reduce consecutive blank lines to one. |
 | Copy all tab paths | Join open tab paths into toast (newline-separated). |
 | New untitled | `Cmd+N` creates `Untitled-N.txt` in the workspace. |
+| SCM stage / commit | Stage all (`git add -A`) + commit with message field. |
+| Trim blank lines | Strip leading/trailing blank lines from the document. |
 | Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |
 | Agent panel | Local task board only — no network AI. |
