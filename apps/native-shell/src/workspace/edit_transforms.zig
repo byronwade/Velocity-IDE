@@ -846,6 +846,60 @@ pub fn formatTimestamp(epoch_secs: i64, out: []u8) ?usize {
     return written.len;
 }
 
+/// Format a deterministic UUID-like string from a seed (not crypto-random).
+pub fn formatUuid(seed: u64, out: []u8) ?usize {
+    if (out.len < 36) return null;
+    // xorshift-ish mix for stable hex digits from seed.
+    var x = seed ^ 0x9e3779b97f4a7c15;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    var bytes: [16]u8 = undefined;
+    var i: usize = 0;
+    while (i < 16) : (i += 1) {
+        x = x *% 0x5851f42d4c957f2d +% 1;
+        bytes[i] = @truncate(x >> 32);
+    }
+    // Version 4 / variant bits for familiar shape.
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = "0123456789abcdef";
+    var dst: usize = 0;
+    const positions = [_]usize{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+    for (positions, 0..) |_, bi| {
+        if (bi == 4 or bi == 6 or bi == 8 or bi == 10) {
+            out[dst] = '-';
+            dst += 1;
+        }
+        out[dst] = hex[bytes[bi] >> 4];
+        out[dst + 1] = hex[bytes[bi] & 0xf];
+        dst += 2;
+    }
+    return dst;
+}
+
+/// Compare two buffers; returns a short status into `out` (toast-sized).
+pub fn compareBuffers(current: []const u8, saved: []const u8, out: []u8) ?usize {
+    if (std.mem.eql(u8, current, saved)) {
+        const msg = "Matches disk";
+        if (out.len < msg.len) return null;
+        @memcpy(out[0..msg.len], msg);
+        return msg.len;
+    }
+    var cur_lines: u32 = if (current.len == 0) 0 else 1;
+    for (current) |c| {
+        if (c == '\n') cur_lines += 1;
+    }
+    if (current.len == 0) cur_lines = 0;
+    var saved_lines: u32 = if (saved.len == 0) 0 else 1;
+    for (saved) |c| {
+        if (c == '\n') saved_lines += 1;
+    }
+    if (saved.len == 0) saved_lines = 0;
+    const written = std.fmt.bufPrint(out, "Differs: {d}B/{d}L vs disk {d}B/{d}L", .{ current.len, cur_lines, saved.len, saved_lines }) catch return null;
+    return written.len;
+}
+
 test "case and sort transforms" {
     var out: [128]u8 = undefined;
     const u = toUpperCase("AbC", &out).?;
@@ -915,4 +969,12 @@ test "eol convert and duplicate path" {
     try std.testing.expectEqualStrings("src/app_copy.tsx", out[0..p]);
     const ts = formatTimestamp(0, &out).?;
     try std.testing.expectEqualStrings("1970-01-01 00:00:00", out[0..ts]);
+    const id = formatUuid(1, &out).?;
+    try std.testing.expect(id == 36);
+    try std.testing.expect(out[8] == '-' and out[13] == '-' and out[18] == '-' and out[23] == '-');
+    var cmp: [64]u8 = undefined;
+    const same = compareBuffers("hi", "hi", &cmp).?;
+    try std.testing.expectEqualStrings("Matches disk", cmp[0..same]);
+    const diff = compareBuffers("a\nb", "x", &cmp).?;
+    try std.testing.expect(std.mem.indexOf(u8, cmp[0..diff], "Differs") != null);
 }

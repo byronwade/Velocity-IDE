@@ -76,6 +76,10 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | SCM unstage / discard | Unstage all (`git reset HEAD`); discard working tree with soft confirm. |
 | Refresh explorer | Rescan workspace tree while preserving open tabs. |
 | Close saved tabs | Close non-active clean tabs (keeps dirty + pinned + active). |
+| Compare with saved | Toast whether the buffer matches disk (byte/line summary). |
+| Copy git branch | Copy current branch name into toast. |
+| Clear recent projects | Soft-confirm clear of prefs recent list. |
+| Insert UUID | Append a deterministic UUID-shaped id to the document. |
 | Trim blank lines | Strip leading/trailing blank lines from the document. |
 | Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |

@@ -13,6 +13,7 @@ const quick_open = @import("../workspace/quick_open.zig");
 const replace_mod = @import("../workspace/replace.zig");
 const edit_transforms = @import("../workspace/edit_transforms.zig");
 const problems_mod = @import("../workspace/problems.zig");
+const scanner_mod = @import("../workspace/scanner.zig");
 const terminal_session = @import("../terminal/terminal_session.zig");
 const process_governor = @import("../processes/process_governor.zig");
 const git_status = @import("../scm/git_status.zig");
@@ -200,6 +201,10 @@ pub const Msg = union(enum) {
     trim_blank_lines,
     refresh_explorer,
     close_saved_tabs,
+    compare_with_saved,
+    copy_git_branch,
+    clear_recent_projects,
+    insert_uuid,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -299,6 +304,10 @@ pub const Msg = union(enum) {
         "trim_blank_lines",
         "refresh_explorer",
         "close_saved_tabs",
+        "compare_with_saved",
+        "copy_git_branch",
+        "clear_recent_projects",
+        "insert_uuid",
         "terminal_line",
         "terminal_exit",
     };
@@ -1016,6 +1025,10 @@ pub const commands = [_]CommandItem{
     .{ .id = "trim_blank_lines", .title = "Trim Leading/Trailing Blank Lines", .hint = "" },
     .{ .id = "refresh_explorer", .title = "Refresh Explorer", .hint = "" },
     .{ .id = "close_saved_tabs", .title = "Close Saved Tabs", .hint = "" },
+    .{ .id = "compare_with_saved", .title = "Compare with Saved", .hint = "" },
+    .{ .id = "copy_git_branch", .title = "Copy Git Branch", .hint = "" },
+    .{ .id = "clear_recent_projects", .title = "Clear Recent Projects", .hint = "" },
+    .{ .id = "insert_uuid", .title = "Insert UUID", .hint = "" },
     .{ .id = "reopen_last_workspace", .title = "Reopen Last Workspace", .hint = "" },
     .{ .id = "clear_find", .title = "Clear Find", .hint = "" },
     .{ .id = "duplicate_line", .title = "Duplicate Last Line", .hint = "" },
@@ -1243,6 +1256,14 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 refreshExplorer(model);
             } else if (std.mem.eql(u8, id, "close_saved_tabs")) {
                 closeSavedTabs(model);
+            } else if (std.mem.eql(u8, id, "compare_with_saved")) {
+                compareWithSaved(model);
+            } else if (std.mem.eql(u8, id, "copy_git_branch")) {
+                copyGitBranch(model);
+            } else if (std.mem.eql(u8, id, "clear_recent_projects")) {
+                clearRecentProjects(model);
+            } else if (std.mem.eql(u8, id, "insert_uuid")) {
+                insertUuid(model);
             } else if (std.mem.eql(u8, id, "reopen_last_workspace")) {
                 reopenLastWorkspace(model);
             } else if (std.mem.eql(u8, id, "clear_find")) {
@@ -1503,6 +1524,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .commit_changes => commitChanges(model),
         .refresh_explorer => refreshExplorer(model),
         .close_saved_tabs => closeSavedTabs(model),
+        .compare_with_saved => compareWithSaved(model),
+        .copy_git_branch => copyGitBranch(model),
+        .clear_recent_projects => clearRecentProjects(model),
+        .insert_uuid => insertUuid(model),
         .open_git_entry => |id| openGitEntry(model, id),
         .clear_find => clearFind(model),
         .reopen_last_workspace => reopenLastWorkspace(model),
@@ -3317,6 +3342,87 @@ fn closeSavedTabs(model: *Model) void {
     }
     const msg = std.fmt.bufPrint(&model.action_toast_buf, "Closed {d} saved", .{n}) catch "Closed saved tabs";
     model.toast = msg;
+}
+
+fn compareWithSaved(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const rel = Model.activeTabPath(model);
+    if (rel.len == 0) {
+        model.toast = "No active file";
+        return;
+    }
+    var disk_buf: [workspace_store.max_editor_bytes]u8 = undefined;
+    const disk_len = scanner_mod.readTextFile(modelIo(model), ws.rootPath(), rel, disk_buf[0..]) catch {
+        model.toast = "Read disk failed";
+        return;
+    };
+    var status: [64]u8 = undefined;
+    const n = edit_transforms.compareBuffers(model.document.text(), disk_buf[0..disk_len], &status) orelse {
+        model.toast = "Compare failed";
+        return;
+    };
+    const tn = @min(n, model.action_toast_buf.len);
+    @memcpy(model.action_toast_buf[0..tn], status[0..tn]);
+    model.toast = model.action_toast_buf[0..tn];
+}
+
+fn copyGitBranch(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace for git";
+        return;
+    }
+    // Ensure branch is loaded.
+    if (model.git_branch.len == 0 or std.mem.eql(u8, model.git_branch, "unknown")) {
+        refreshGitStatus(model);
+    }
+    const branch = model.git_branch;
+    if (branch.len == 0) {
+        model.toast = "No branch";
+        model.path_toast = "";
+        return;
+    }
+    const n = @min(branch.len, model.path_toast_buf.len);
+    @memcpy(model.path_toast_buf[0..n], branch[0..n]);
+    model.path_toast = model.path_toast_buf[0..n];
+    model.toast = model.path_toast;
+}
+
+fn clearRecentProjects(model: *Model) void {
+    ensurePrefsLoaded(model);
+    if (!std.mem.startsWith(u8, model.toast, "Clear recent")) {
+        model.toast = "Clear recent projects? Confirm again";
+        return;
+    }
+    model.prefs.clearRecent();
+    persistPrefs(model);
+    syncRecentFromPrefs(model);
+    model.toast = "Recent projects cleared";
+}
+
+fn insertUuid(model: *Model) void {
+    var id_buf: [36]u8 = undefined;
+    const now_secs = std.Io.Clock.real.now(modelIo(model)).toSeconds();
+    const seed: u64 = @bitCast(@as(i64, @intCast(now_secs)));
+    const n = edit_transforms.formatUuid(seed, &id_buf) orelse {
+        model.toast = "UUID failed";
+        return;
+    };
+    const text = model.document.text();
+    if (text.len + n > edit_transforms.max_out) {
+        model.toast = "Document too large";
+        return;
+    }
+    var out: [edit_transforms.max_out]u8 = undefined;
+    @memcpy(out[0..text.len], text);
+    @memcpy(out[text.len..][0..n], id_buf[0..n]);
+    applyDocumentTransform(model, out[0 .. text.len + n], "Inserted UUID");
 }
 
 fn copyAllTabPaths(model: *Model) void {

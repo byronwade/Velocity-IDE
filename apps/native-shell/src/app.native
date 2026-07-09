@@ -42,6 +42,7 @@
               </column>
             </list-item>
           </for>
+          <button size="sm" variant="ghost" on-press="clear_recent_projects">Clear Recent</button>
         </column>
         <text size="sm" foreground="text_muted">dev build 0.1.0 / no telemetry / plugins locked</text>
       </column>
@@ -142,6 +143,7 @@
               <button size="sm" variant="ghost" on-press="convert_to_lf">LF</button>
               <button size="sm" variant="ghost" on-press="convert_to_crlf">CRLF</button>
               <button size="sm" variant="ghost" on-press="insert_timestamp">Time</button>
+              <button size="sm" variant="ghost" on-press="insert_uuid">UUID</button>
               <button size="sm" variant="ghost" on-press="undo_edit">Undo</button>
               <text-field text="{gotoLineText}" placeholder="Line" on-input="update_goto_line" on-submit="goto_line" width="72" label="Go to line" />
               <button size="sm" variant="ghost" on-press="goto_line">Go</button>
@@ -165,6 +167,7 @@
                   <button size="sm" variant="ghost" on-press="copy_absolute_path">Abs</button>
                   <button size="sm" variant="ghost" on-press="copy_filename">Name</button>
                   <button size="sm" variant="ghost" on-press="copy_all_tab_paths">Tabs</button>
+                  <button size="sm" variant="ghost" on-press="compare_with_saved">DiffDisk</button>
                   <button size="sm" variant="ghost" on-press="new_untitled">Untitled</button>
                   <button size="sm" variant="ghost" on-press="show_word_count">Words</button>
                   <button size="sm" variant="ghost" on-press="revert_file">Revert</button>
@@ -294,6 +297,7 @@
                 <button size="sm" variant="ghost" on-press="stage_all">Stage</button>
                 <button size="sm" variant="ghost" on-press="unstage_all">Unstage</button>
                 <button size="sm" variant="ghost" on-press="discard_changes">Discard</button>
+                <button size="sm" variant="ghost" on-press="copy_git_branch">Branch</button>
                 <button size="sm" variant="primary" on-press="commit_changes">Commit</button>
               </row>
               <text size="sm" foreground="text_muted">branch={git_branch} / Stage Unstage Discard Commit / click entry to open + load diff</text>

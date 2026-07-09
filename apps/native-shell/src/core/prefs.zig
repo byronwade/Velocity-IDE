@@ -86,6 +86,12 @@ pub const Prefs = struct {
         self.recent_count += 1;
     }
 
+    pub fn clearRecent(self: *Prefs) void {
+        self.recent_count = 0;
+        self.last_path_len = 0;
+        self.last_path = "";
+    }
+
     pub fn load(self: *Prefs, io: std.Io) void {
         self.* = .{};
         self.setTheme("dark");

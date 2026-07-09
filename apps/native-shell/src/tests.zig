@@ -826,3 +826,28 @@ test "refresh explorer and close saved tabs" {
         }
     }
 }
+
+test "compare with saved copy branch clear recent insert uuid" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .compare_with_saved);
+    try testing.expectEqualStrings("Matches disk", model.toast);
+    model.document.set("changed locally");
+    model.document_dirty = true;
+    main.update(&model, .compare_with_saved);
+    try testing.expect(std.mem.indexOf(u8, model.toast, "Differs") != null);
+    main.update(&model, .copy_git_branch);
+    try testing.expect(model.path_toast.len > 0);
+    model.prefs.setLastPath("fixtures/acme-dashboard");
+    model.prefs_loaded = true;
+    main.update(&model, .refresh_recent);
+    try testing.expect(model.recent.len >= 1);
+    main.update(&model, .clear_recent_projects);
+    try testing.expectEqualStrings("Clear recent projects? Confirm again", model.toast);
+    main.update(&model, .clear_recent_projects);
+    try testing.expectEqualStrings("Recent projects cleared", model.toast);
+    model.document.clear();
+    main.update(&model, .insert_uuid);
+    try testing.expect(model.document.text().len == 36);
+    try testing.expectEqualStrings("Inserted UUID", model.toast);
+}
