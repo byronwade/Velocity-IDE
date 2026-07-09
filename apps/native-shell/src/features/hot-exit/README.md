@@ -2,7 +2,7 @@
 
 - **id:** `feature.hot-exit`
 - **mode:** `core`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `native`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `4`
@@ -11,7 +11,6 @@
 
 ## Rules
 
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+- Close Window writes a bounded session to `.velocity/hot-exit.bin`.
+- Reopening the matching workspace restores up to 8 tabs and dirty text.
+- Missing files and malformed sessions are skipped without replacing live state.

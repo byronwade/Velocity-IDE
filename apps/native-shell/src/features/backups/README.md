@@ -2,7 +2,7 @@
 
 - **id:** `feature.backups`
 - **mode:** `core`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `native`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `8`
@@ -11,7 +11,7 @@
 
 ## Rules
 
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+- Confirmed conflict overwrites first copy the disk version to
+  `.velocity/backups/<relative-path>.bak`.
+- Original and replacement content are both bounded to the editor file limit.
+- Backup failure leaves the original file unchanged.

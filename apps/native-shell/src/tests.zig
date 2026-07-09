@@ -1183,6 +1183,44 @@ test "save all writes every dirty tab" {
     try testing.expectEqualStrings("b saved all\n", b_disk);
 }
 
+test "save all preserves conflicts while saving unaffected dirty tabs" {
+    const root = "zig-out/test-model-save-all-partial";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "a\n" });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/b.txt", .data = "b\n" });
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    const ws = model.workspace.?;
+    const a = ws.findNodeByPath("a.txt").?;
+    const b = ws.findNodeByPath("b.txt").?;
+    main.update(&model, .{ .select_file = a.id });
+    model.document.set("a working\n");
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    main.update(&model, .{ .select_file = b.id });
+    model.document.set("b working\n");
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "a external\n" });
+
+    main.update(&model, .save_all);
+    try testing.expect(ws.tabIsDirty(a.id));
+    try testing.expect(!ws.tabIsDirty(b.id));
+    try testing.expect(std.mem.indexOf(u8, model.toast, "1 conflicts") != null);
+    var out: [64]u8 = undefined;
+    try testing.expectEqualStrings(
+        "a external\n",
+        try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out),
+    );
+    try testing.expectEqualStrings(
+        "b working\n",
+        try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/b.txt", &out),
+    );
+}
+
 test "safe save blocks external changes and requires overwrite confirmation" {
     const root = "zig-out/test-safe-save";
     std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
@@ -1213,4 +1251,166 @@ test "safe save blocks external changes and requires overwrite confirmation" {
     try testing.expect(!model.document_dirty);
     const overwritten = try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out);
     try testing.expectEqualStrings("working copy\n", overwritten);
+}
+
+test "forced overwrite creates backup and refreshes disk baseline" {
+    const root = "zig-out/test-model-backup-overwrite";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "original\n" });
+
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    model.document.set("working\n");
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "external\n" });
+    main.update(&model, .save_file);
+    main.update(&model, .overwrite_file);
+    main.update(&model, .overwrite_file);
+
+    var out: [64]u8 = undefined;
+    const backup = try std.Io.Dir.cwd().readFile(
+        std.testing.io,
+        root ++ "/.velocity/backups/a.txt.bak",
+        &out,
+    );
+    try testing.expectEqualStrings("external\n", backup);
+    try testing.expect(!model.disk_changed);
+    try testing.expect(!model.workspace.?.activeFileChanged(std.testing.io));
+}
+
+test "bounded edit history supports multi-level undo and redo" {
+    var model = main.initialModel();
+    model.document.set("start\n");
+    var i: usize = 0;
+    while (i < 20) : (i += 1) main.update(&model, .insert_blank_line);
+    const latest_len = model.document.text().len;
+    i = 0;
+    while (i < 16) : (i += 1) main.update(&model, .undo_edit);
+    try testing.expect(model.document.text().len < latest_len);
+    const undone_len = model.document.text().len;
+    i = 0;
+    while (i < 16) : (i += 1) main.update(&model, .redo_edit);
+    try testing.expect(model.document.text().len > undone_len);
+    try testing.expectEqualStrings("Redone", model.toast);
+}
+
+test "all dirty tabs and oversized files map to non-destructive UX" {
+    const root = "zig-out/test-model-open-errors";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    var names: [9][16]u8 = undefined;
+    var name_lens: [9]usize = undefined;
+    for (0..9) |i| {
+        const name = try std.fmt.bufPrint(&names[i], "{d}.txt", .{i});
+        name_lens[i] = name.len;
+        var path: [96]u8 = undefined;
+        const full = try std.fmt.bufPrint(&path, "{s}/{s}", .{ root, name });
+        try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = full, .data = "text" });
+    }
+    var oversized: [model_mod.max_document + 1]u8 = undefined;
+    @memset(&oversized, 'x');
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/z-large.txt", .data = &oversized });
+
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    const ws = model.workspace.?;
+    for (0..8) |i| {
+        const node = ws.findNodeByPath(names[i][0..name_lens[i]]).?;
+        main.update(&model, .{ .select_file = node.id });
+        model.document_dirty = true;
+        model_mod.syncActiveTabDirtyForTest(&model);
+    }
+    const active_before = model.active_tab_id;
+    const text_before = model.document.text();
+    const ninth = ws.findNodeByPath(names[8][0..name_lens[8]]).?;
+    main.update(&model, .{ .select_file = ninth.id });
+    try testing.expectEqual(active_before, model.active_tab_id);
+    try testing.expectEqualStrings(text_before, model.document.text());
+    try testing.expect(std.mem.startsWith(u8, model.toast, "All 8 tabs"));
+
+    ws.setTabDirty(ws.tabs[0].id, false);
+    const large = ws.findNodeByPath("z-large.txt").?;
+    main.update(&model, .{ .select_file = large.id });
+    try testing.expectEqual(active_before, model.active_tab_id);
+    try testing.expect(std.mem.startsWith(u8, model.toast, "File exceeds"));
+}
+
+test "new prefs fields apply persist and restore recent files" {
+    std.Io.Dir.cwd().deleteTree(std.testing.io, ".velocity") catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, ".velocity") catch {};
+    var model = main.initialModel();
+    model.prefs_loaded = true;
+    model.prefs.setTheme("light");
+    model.prefs.focus_mode = true;
+    model.prefs.bottom_panel_open = true;
+    model.prefs.bottom_panel_tab = .output;
+    model.prefs.disk_poll_interval_ms = 750;
+    model.prefs.pushRecentFile("src/main.zig");
+    model_mod.ensurePrefsOnBoot(&model);
+    try testing.expect(model.focus_mode);
+    try testing.expect(model.bottom_panel_open);
+    try testing.expectEqual(model_mod.BottomPanelTab.output, model.bottom_panel_tab);
+    try testing.expectEqual(@as(u32, 750), model.disk_poll_interval_ms);
+    try testing.expectEqualStrings("src/main.zig", model.recent_files[0][0..model.recent_file_lens[0]]);
+
+    model.focus_mode = false;
+    model.bottom_panel_tab = .problems;
+    model.disk_poll_interval_ms = 1250;
+    main.update(&model, .save_prefs);
+    var loaded: @import("core/prefs.zig").Prefs = .{};
+    loaded.load(std.testing.io);
+    try testing.expect(!loaded.focus_mode);
+    try testing.expectEqual(@import("core/prefs.zig").BottomPanelTab.problems, loaded.bottom_panel_tab);
+    try testing.expectEqual(@as(u32, 1250), loaded.disk_poll_interval_ms);
+    try testing.expectEqualStrings("src/main.zig", loaded.recentFile(0));
+}
+
+test "manual disk refresh reports active external changes without discarding edits" {
+    const root = "zig-out/test-model-disk-poll";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "disk\n" });
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    model.document.set("unsaved\n");
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "external\n" });
+
+    main.update(&model, .refresh_disk_sync);
+    try testing.expect(model.disk_changed);
+    try testing.expect(model.document_dirty);
+    try testing.expectEqualStrings("unsaved\n", model.document.text());
+    try testing.expect(std.mem.startsWith(u8, model.toast, "Active file changed externally"));
+}
+
+test "close persists hot exit and matching workspace restores dirty session" {
+    const root = "zig-out/test-model-hot-exit";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "disk\n" });
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    model.document.set("hot exit edit\n");
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    main.update(&model, .close_window);
+    _ = try std.Io.Dir.cwd().statFile(std.testing.io, root ++ "/.velocity/hot-exit.bin", .{});
+
+    var restored = main.initialModel();
+    restored.open_path.set(root);
+    main.update(&restored, .submit_open_path);
+    try testing.expectEqualStrings("Hot-exit session restored", restored.toast);
+    try testing.expectEqualStrings("hot exit edit\n", restored.document.text());
+    try testing.expect(restored.document_dirty);
 }

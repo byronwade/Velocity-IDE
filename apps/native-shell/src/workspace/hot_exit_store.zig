@@ -7,6 +7,7 @@ pub const max_tabs: usize = 8;
 pub const max_root_bytes = scanner.max_root_path_len;
 pub const max_path_bytes = scanner.max_rel_path_len;
 pub const max_dirty_text_bytes = scanner.max_file_bytes;
+pub const session_rel_path = ".velocity/hot-exit.bin";
 pub const max_serialized_bytes =
     4 + 2 + max_root_bytes + 2 + max_path_bytes + 1 +
     max_tabs * (2 + max_path_bytes + 1 + 4 + max_dirty_text_bytes);
@@ -195,6 +196,27 @@ pub fn deserialize(data: []const u8, output: *State) !void {
     // Validate first so malformed data cannot leave a partially restored state.
     try decode(data, null);
     try decode(data, output);
+}
+
+/// Persist a bounded session inside its workspace.
+pub fn persist(io: std.Io, root_path: []const u8, input: Input) !void {
+    const encoded = try std.heap.page_allocator.alloc(u8, max_serialized_bytes);
+    defer std.heap.page_allocator.free(encoded);
+    const len = try serialize(input, encoded);
+    var root = try std.Io.Dir.cwd().openDir(io, root_path, .{});
+    defer root.close(io);
+    try root.createDirPath(io, ".velocity");
+    try root.writeFile(io, .{ .sub_path = session_rel_path, .data = encoded[0..len] });
+}
+
+/// Load and validate a workspace session into caller-owned state.
+pub fn restore(io: std.Io, root_path: []const u8, state: *State) !void {
+    const encoded = try std.heap.page_allocator.alloc(u8, max_serialized_bytes);
+    defer std.heap.page_allocator.free(encoded);
+    var root = try std.Io.Dir.cwd().openDir(io, root_path, .{});
+    defer root.close(io);
+    const data = try root.readFile(io, session_rel_path, encoded);
+    try deserialize(data, state);
 }
 
 test "hot exit roundtrip preserves root active tab and dirty text" {

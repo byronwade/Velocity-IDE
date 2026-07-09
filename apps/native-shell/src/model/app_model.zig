@@ -22,6 +22,9 @@ const terminal_session = @import("../terminal/terminal_session.zig");
 const process_governor = @import("../processes/process_governor.zig");
 const git_status = @import("../scm/git_status.zig");
 const prefs_mod = @import("../core/prefs.zig");
+const undo_stack = @import("../workspace/undo_stack.zig");
+const disk_sync = @import("../workspace/disk_sync.zig");
+const hot_exit_store = @import("../workspace/hot_exit_store.zig");
 
 pub const header_natural_height: f32 = 36;
 pub const max_command_query = 64;
@@ -177,6 +180,7 @@ pub const Msg = union(enum) {
     move_line_up,
     move_line_down,
     undo_edit,
+    redo_edit,
     revert_file,
     copy_absolute_path,
     next_tab,
@@ -221,6 +225,7 @@ pub const Msg = union(enum) {
     commit_changes,
     trim_blank_lines,
     refresh_explorer,
+    refresh_disk_sync,
     close_saved_tabs,
     compare_with_saved,
     copy_git_branch,
@@ -330,6 +335,7 @@ pub const Msg = union(enum) {
         "move_line_up",
         "move_line_down",
         "undo_edit",
+        "redo_edit",
         "revert_file",
         "copy_absolute_path",
         "next_tab",
@@ -372,6 +378,7 @@ pub const Msg = union(enum) {
         "commit_changes",
         "trim_blank_lines",
         "refresh_explorer",
+        "refresh_disk_sync",
         "close_saved_tabs",
         "compare_with_saved",
         "copy_git_branch",
@@ -471,10 +478,10 @@ pub const Model = struct {
     document: canvas.TextBuffer(max_document) = .{},
     document_dirty: bool = false,
     disk_changed: bool = false,
-    /// Single-level undo snapshot (heap; allocated on first edit).
-    undo_storage: ?[]u8 = null,
-    undo_len: usize = 0,
-    undo_available: bool = false,
+    /// Model-global bounded history, reset when the active document changes.
+    undo_history: ?*undo_stack.UndoStack = null,
+    disk_checker: disk_sync.Checker = .{},
+    disk_poll_interval_ms: u32 = prefs_mod.default_disk_poll_interval_ms,
     open_path: canvas.TextBuffer(max_open_path) = .{},
     terminal_command: canvas.TextBuffer(max_terminal_command) = .{},
     terminal: ?*terminal_session.TerminalBuffers = null,
@@ -654,9 +661,9 @@ pub const Model = struct {
         "document",
         "document_dirty",
         "disk_changed",
-        "undo_storage",
-        "undo_len",
-        "undo_available",
+        "undo_history",
+        "disk_checker",
+        "disk_poll_interval_ms",
         "open_path",
         "terminal_command",
         "terminal",
@@ -1315,6 +1322,7 @@ pub const commands = [_]CommandItem{
     .{ .id = "move_line_up", .title = "Move Last Line Up", .hint = "Alt+Up" },
     .{ .id = "move_line_down", .title = "Move Last Line Down", .hint = "Alt+Down" },
     .{ .id = "undo_edit", .title = "Undo Last Edit", .hint = "Cmd+Z" },
+    .{ .id = "redo_edit", .title = "Redo Last Edit", .hint = "Cmd+Shift+Z" },
     .{ .id = "revert_file", .title = "Revert File from Disk", .hint = "" },
     .{ .id = "copy_absolute_path", .title = "Copy Absolute Path", .hint = "" },
     .{ .id = "next_tab", .title = "Next Tab", .hint = "Ctrl+Tab" },
@@ -1346,6 +1354,7 @@ pub const commands = [_]CommandItem{
     .{ .id = "commit_changes", .title = "Git: Commit", .hint = "" },
     .{ .id = "trim_blank_lines", .title = "Trim Leading/Trailing Blank Lines", .hint = "" },
     .{ .id = "refresh_explorer", .title = "Refresh Explorer", .hint = "" },
+    .{ .id = "refresh_disk_sync", .title = "Refresh Files from Disk", .hint = "" },
     .{ .id = "close_saved_tabs", .title = "Close Saved Tabs", .hint = "" },
     .{ .id = "compare_with_saved", .title = "Compare with Saved", .hint = "" },
     .{ .id = "copy_git_branch", .title = "Copy Git Branch", .hint = "" },
@@ -1669,6 +1678,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 moveDocumentLine(model, false);
             } else if (std.mem.eql(u8, id, "undo_edit")) {
                 undoLastEdit(model);
+            } else if (std.mem.eql(u8, id, "redo_edit")) {
+                redoLastEdit(model);
             } else if (std.mem.eql(u8, id, "revert_file")) {
                 revertActiveFile(model);
             } else if (std.mem.eql(u8, id, "copy_absolute_path")) {
@@ -1735,6 +1746,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 trimBlankLines(model);
             } else if (std.mem.eql(u8, id, "refresh_explorer")) {
                 refreshExplorer(model);
+            } else if (std.mem.eql(u8, id, "refresh_disk_sync")) {
+                refreshDiskSync(model, true);
             } else if (std.mem.eql(u8, id, "close_saved_tabs")) {
                 closeSavedTabs(model);
             } else if (std.mem.eql(u8, id, "compare_with_saved")) {
@@ -1762,6 +1775,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 refreshOutline(model);
             } else if (std.mem.eql(u8, id, "toggle_bottom_panel")) {
                 model.bottom_panel_open = !model.bottom_panel_open;
+                if (!model.bottom_panel_open) model.show_terminal = false;
+                persistPrefs(model);
             } else if (std.mem.eql(u8, id, "clear_output")) {
                 model.output_count = 0;
                 model.output_lines = &.{};
@@ -1779,7 +1794,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             } else if (std.mem.eql(u8, id, "minimize_window")) {
                 // Handled in updateFx via handleWindowActions when fx is present.
             } else if (std.mem.eql(u8, id, "close_window")) {
-                // Handled in updateFx via handleWindowActions when fx is present.
+                persistHotExit(model);
             } else if (std.mem.eql(u8, id, "reopen_last_workspace")) {
                 reopenLastWorkspace(model);
             } else if (std.mem.eql(u8, id, "clear_find")) {
@@ -1903,18 +1918,19 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             persistPrefs(model);
         },
         .select_file => |id| {
-            model.selected_file_id = id;
             model.current_view = .ide;
             model.selected_activity = .explorer;
             if (model.workspace_from_disk) {
                 if (model.workspace) |ws| {
                     if (ws.findNode(id)) |node| {
                         if (node.is_dir) {
+                            model.selected_file_id = id;
                             model.toast = "Folder selected";
                             return;
                         }
                     }
-                    ws.openFileById(modelIo(model), id) catch {};
+                    if (!openWorkspaceFile(model, ws, id)) return;
+                    model.selected_file_id = id;
                     model.active_tab_id = id;
                     model.open_tabs = ws.tabsSlice();
                     if (ws.findNode(id)) |node| {
@@ -1928,12 +1944,14 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             for (file_tree) |node| {
                 if (node.id == id) {
                     if (node.is_dir) {
+                        model.selected_file_id = id;
                         model.toast = "Folder selected";
                         return;
                     }
                     break;
                 }
             }
+            model.selected_file_id = id;
             for (tabs) |tab| {
                 if (std.mem.eql(u8, tab.path, pathForFile(id))) {
                     model.active_tab_id = tab.id;
@@ -1968,6 +1986,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .move_line_up => moveDocumentLine(model, true),
         .move_line_down => moveDocumentLine(model, false),
         .undo_edit => undoLastEdit(model),
+        .redo_edit => redoLastEdit(model),
         .revert_file => revertActiveFile(model),
         .copy_absolute_path => copyAbsolutePath(model),
         .next_tab => cycleTab(model, true),
@@ -1991,7 +2010,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.active_tab_id = id;
             if (model.workspace_from_disk) {
                 if (model.workspace) |ws| {
-                    ws.openFileById(modelIo(model), id) catch {};
+                    if (!openWorkspaceFile(model, ws, id)) return;
                     model.open_tabs = ws.tabsSlice();
                     syncDocumentFromWorkspace(model);
                 }
@@ -2060,8 +2079,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.features_loaded = 3;
         },
         .edit_document => |edit| {
+            refreshDiskSync(model, false);
             pushUndoSnapshot(model);
             model.document.apply(edit);
+            recordUndoResult(model);
             model.document_dirty = true;
             model.toast = "";
             refreshDocStats(model);
@@ -2099,6 +2120,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .discard_changes => discardWorkingTreeChanges(model),
         .commit_changes => commitChanges(model),
         .refresh_explorer => refreshExplorer(model),
+        .refresh_disk_sync => refreshDiskSync(model, true),
         .close_saved_tabs => closeSavedTabs(model),
         .compare_with_saved => compareWithSaved(model),
         .copy_git_branch => copyGitBranch(model),
@@ -2131,10 +2153,14 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .go_to_definition => runGoToDefinition(model),
         .open_def_hit => |id| openDefHit(model, id),
         .select_breadcrumb => |id| selectBreadcrumbSeg(model, id),
-        .select_bottom_tab => |tab| openBottomPanel(model, tab),
+        .select_bottom_tab => |tab| {
+            openBottomPanel(model, tab);
+            persistPrefs(model);
+        },
         .toggle_bottom_panel => {
             model.bottom_panel_open = !model.bottom_panel_open;
-            if (model.bottom_panel_open and model.bottom_panel_tab == .terminal) model.show_terminal = true;
+            model.show_terminal = model.bottom_panel_open and model.bottom_panel_tab == .terminal;
+            persistPrefs(model);
         },
         .clear_output => {
             model.output_count = 0;
@@ -2264,7 +2290,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         },
         .check_for_updates => runUpdateCheck(model),
         .minimize_window => {},
-        .close_window => {},
+        .close_window => persistHotExit(model),
         .toggle_notifications_panel => {
             model.notifications_panel_open = !model.notifications_panel_open;
         },
@@ -2286,6 +2312,123 @@ fn ensureWorkspaceBuffers(model: *Model) !*workspace_store.WorkspaceBuffers {
     ws.* = .{};
     model.workspace = ws;
     return ws;
+}
+
+fn openWorkspaceFile(model: *Model, ws: *workspace_store.WorkspaceBuffers, id: u32) bool {
+    const node = ws.findNode(id) orelse {
+        model.toast = "File is no longer in the workspace";
+        return false;
+    };
+    if (node.is_dir) return true;
+
+    var loaded = false;
+    for (ws.tabsSlice(), 0..) |tab, index| {
+        if (tab.id == id) {
+            loaded = ws.tab_text_loaded[index];
+            break;
+        }
+    }
+    if (!loaded) {
+        var probe: [workspace_store.max_editor_bytes]u8 = undefined;
+        _ = scanner_mod.readTextFile(modelIo(model), ws.rootPath(), node.path, &probe) catch |err| {
+            model.toast = switch (err) {
+                error.FileTooLarge => "File exceeds the 16 KiB editor limit; active tab was not changed",
+                error.BinaryFile => "Binary file is not editable; active tab was not changed",
+                else => "Unable to read file; active tab was not changed",
+            };
+            return false;
+        };
+    }
+    ws.openFileById(modelIo(model), id) catch |err| {
+        model.toast = switch (err) {
+            error.AllTabsDirty => "All 8 tabs have unsaved changes; save or close one before opening another",
+            error.FileTooLarge => "File exceeds the 16 KiB editor limit; active tab was not changed",
+            else => "Unable to open file; active tab was not changed",
+        };
+        return false;
+    };
+    return true;
+}
+
+fn refreshDiskSync(model: *Model, manual: bool) void {
+    const ws = model.workspace orelse {
+        if (manual) model.toast = "Open a workspace first";
+        return;
+    };
+    const batch = model.disk_checker.check(
+        modelIo(model),
+        ws,
+        workspace_store.max_open_tabs,
+    );
+    model.disk_changed = model.active_tab_id != 0 and model.disk_checker.isStale(model.active_tab_id);
+    if (batch.event_count > 0) {
+        var active_changed = false;
+        for (batch.eventSlice()) |event| {
+            if (event.tab_id == model.active_tab_id) active_changed = true;
+        }
+        model.toast = if (active_changed)
+            "Active file changed externally — Compare or Revert; edits were preserved"
+        else
+            "An open file changed externally; edits were preserved";
+    } else if (manual) {
+        model.toast = if (model.disk_changed) "Active file still differs from disk" else "Disk state up to date";
+    }
+}
+
+fn persistHotExit(model: *Model) void {
+    const ws = model.workspace orelse return;
+    if (!model.workspace_from_disk or ws.rootPath().len == 0) return;
+    syncActiveTabDirty(model);
+    var session_tabs: [hot_exit_store.max_tabs]hot_exit_store.TabInput = undefined;
+    const count = @min(ws.tabsSlice().len, session_tabs.len);
+    for (ws.tabsSlice()[0..count], 0..) |tab, index| {
+        session_tabs[index] = .{
+            .path = tab.path,
+            .dirty = tab.dirty,
+            .dirty_text = if (tab.dirty and ws.tab_text_loaded[index])
+                ws.tab_text_pool[index][0..ws.tab_text_lens[index]]
+            else
+                "",
+        };
+    }
+    hot_exit_store.persist(modelIo(model), ws.rootPath(), .{
+        .root = ws.rootPath(),
+        .active_path = ws.editorPath(),
+        .tabs = session_tabs[0..count],
+    }) catch {};
+}
+
+fn restoreHotExit(model: *Model, ws: *workspace_store.WorkspaceBuffers) bool {
+    const state = std.heap.page_allocator.create(hot_exit_store.State) catch return false;
+    defer std.heap.page_allocator.destroy(state);
+    hot_exit_store.restore(modelIo(model), ws.rootPath(), state) catch return false;
+    if (!std.mem.eql(u8, state.root(), ws.rootPath())) return false;
+
+    while (ws.tab_count > 0) ws.closeTab(ws.tabs[0].id);
+    var restored: u32 = 0;
+    var i: usize = 0;
+    while (i < state.tab_count) : (i += 1) {
+        const node = ws.findNodeByPath(state.tabPath(i)) orelse continue;
+        ws.openFileById(modelIo(model), node.id) catch continue;
+        if (state.tab_dirty[i]) {
+            ws.cacheActiveText(state.dirtyText(i));
+            ws.setTabDirty(node.id, true);
+        }
+        restored += 1;
+    }
+    if (restored == 0) return false;
+    if (ws.findNodeByPath(state.activePath())) |active| {
+        ws.openFileById(modelIo(model), active.id) catch {};
+        model.active_tab_id = active.id;
+        model.selected_file_id = active.id;
+    } else if (ws.tab_count > 0) {
+        model.active_tab_id = ws.tabs[0].id;
+        model.selected_file_id = ws.tabs[0].id;
+        ws.openFileById(modelIo(model), model.active_tab_id) catch {};
+    }
+    model.open_tabs = ws.tabsSlice();
+    syncDocumentFromWorkspace(model);
+    return true;
 }
 
 fn ensureTerminalBuffers(model: *Model) !*terminal_session.TerminalBuffers {
@@ -2317,8 +2460,7 @@ fn syncDocumentFromWorkspace(model: *Model) void {
         model.document.set(ws.editorText());
         model.document_dirty = ws.activeTabDirty();
         model.disk_changed = ws.activeFileChanged(modelIo(model));
-        model.undo_available = false;
-        model.undo_len = 0;
+        resetUndoHistory(model);
         model.editor_mode_label = "editable";
         model.toast = "";
         refreshDocStats(model);
@@ -2611,43 +2753,73 @@ fn cycleTab(model: *Model, forward: bool) void {
 }
 
 fn pushUndoSnapshot(model: *Model) void {
-    const text = model.document.text();
-    const storage = model.undo_storage orelse blk: {
-        const buf = std.heap.page_allocator.alloc(u8, max_document) catch return;
-        model.undo_storage = buf;
-        break :blk buf;
-    };
-    if (text.len > storage.len) return;
-    @memcpy(storage[0..text.len], text);
-    model.undo_len = text.len;
-    model.undo_available = true;
+    const history = ensureUndoHistory(model) catch return;
+    _ = history.record(model.document.text()) catch {};
 }
 
 fn undoLastEdit(model: *Model) void {
-    if (!model.undo_available) {
-        model.toast = "Nothing to undo";
-        return;
-    }
-    const storage = model.undo_storage orelse {
+    const history = model.undo_history orelse {
         model.toast = "Nothing to undo";
         return;
     };
-    const prev = storage[0..model.undo_len];
-    const cur = model.document.text();
-    const scratch = std.heap.page_allocator.alloc(u8, cur.len) catch {
+    var output: [max_document]u8 = undefined;
+    const previous = history.undo(&output) catch {
         model.toast = "Undo failed";
         return;
     };
-    defer std.heap.page_allocator.free(scratch);
-    @memcpy(scratch[0..cur.len], cur);
-    const cur_len = cur.len;
-    model.document.set(prev);
-    @memcpy(storage[0..cur_len], scratch[0..cur_len]);
-    model.undo_len = cur_len;
+    const text = previous orelse {
+        model.toast = "Nothing to undo";
+        return;
+    };
+    model.document.set(text);
     model.document_dirty = true;
     refreshDocStats(model);
     syncActiveTabDirty(model);
     model.toast = "Undone";
+}
+
+fn redoLastEdit(model: *Model) void {
+    const history = model.undo_history orelse {
+        model.toast = "Nothing to redo";
+        return;
+    };
+    var output: [max_document]u8 = undefined;
+    const next = history.redo(&output) catch {
+        model.toast = "Redo failed";
+        return;
+    };
+    const text = next orelse {
+        model.toast = "Nothing to redo";
+        return;
+    };
+    model.document.set(text);
+    model.document_dirty = true;
+    refreshDocStats(model);
+    syncActiveTabDirty(model);
+    model.toast = "Redone";
+}
+
+fn ensureUndoHistory(model: *Model) !*undo_stack.UndoStack {
+    if (model.undo_history) |history| return history;
+    const history = try std.heap.page_allocator.create(undo_stack.UndoStack);
+    errdefer std.heap.page_allocator.destroy(history);
+    history.* = try undo_stack.UndoStack.init(std.heap.page_allocator, .{
+        .max_entries = 32,
+        .max_bytes = max_document * 16,
+    });
+    model.undo_history = history;
+    return history;
+}
+
+fn recordUndoResult(model: *Model) void {
+    const history = ensureUndoHistory(model) catch return;
+    _ = history.record(model.document.text()) catch {};
+}
+
+fn resetUndoHistory(model: *Model) void {
+    const history = ensureUndoHistory(model) catch return;
+    history.clear();
+    _ = history.record(model.document.text()) catch {};
 }
 
 fn revertActiveFile(model: *Model) void {
@@ -2664,9 +2836,6 @@ fn revertActiveFile(model: *Model) void {
         return;
     }
     pushUndoSnapshot(model);
-    const keep_storage = model.undo_storage;
-    const keep_len = model.undo_len;
-    const keep_avail = model.undo_available;
     ws.reloadFileById(modelIo(model), model.active_tab_id) catch {
         model.toast = "Revert failed";
         return;
@@ -2681,9 +2850,7 @@ fn revertActiveFile(model: *Model) void {
         refreshBreadcrumb(model);
         syncActiveTabDirty(model);
     }
-    model.undo_storage = keep_storage;
-    model.undo_len = keep_len;
-    model.undo_available = keep_avail;
+    recordUndoResult(model);
     model.toast = "Reverted from disk";
 }
 
@@ -2731,8 +2898,11 @@ fn openWorkspacePath(model: *Model, path: []const u8) void {
         return;
     };
     applyWorkspaceMeta(model, ws, meta);
+    const restored = meta.scan_error.len == 0 and restoreHotExit(model, ws);
     if (meta.scan_error.len > 0) {
         model.toast = meta.scan_error;
+    } else if (restored) {
+        model.toast = "Hot-exit session restored";
     } else {
         model.toast = "Workspace opened";
     }
@@ -2766,6 +2936,8 @@ fn saveActiveDocument(model: *Model) void {
         if (err == error.FileChanged) {
             model.disk_changed = true;
             model.toast = "File changed on disk — Compare, Revert, or Overwrite";
+        } else if (err == error.FileTooLarge) {
+            model.toast = "File exceeds the 16 KiB editor limit; nothing was saved";
         } else {
             model.toast = "Save failed";
         }
@@ -2791,12 +2963,16 @@ fn overwriteActiveDocument(model: *Model) void {
         return;
     }
     applySaveHygiene(model);
-    ws.saveActiveFileForce(modelIo(model), model.document.text()) catch {
-        model.toast = "Overwrite failed";
+    ws.saveActiveFileForce(modelIo(model), model.document.text()) catch |err| {
+        model.toast = if (err == error.FileTooLarge)
+            "File exceeds the 16 KiB backup limit; original left unchanged"
+        else
+            "Overwrite failed; original left unchanged";
         return;
     };
     model.document_dirty = false;
     model.disk_changed = false;
+    model.disk_checker.reset();
     syncActiveTabDirty(model);
     model.toast = "Overwritten safely";
 }
@@ -2838,28 +3014,35 @@ fn saveAllDirtyTabs(model: *Model) void {
         syncActiveTabDirty(model);
     }
     var saved: u32 = 0;
+    var conflicts: u32 = 0;
+    var failures: u32 = 0;
     var i: u32 = 0;
     while (i < ws.tab_count) : (i += 1) {
         if (ws.tabs[i].dirty) {
             ws.saveTabById(modelIo(model), ws.tabs[i].id) catch |err| {
                 if (err == error.FileChanged) {
-                    const msg = std.fmt.bufPrint(
-                        &model.action_toast_buf,
-                        "File changed on disk: {s}",
-                        .{ws.tabs[i].path},
-                    ) catch "File changed on disk";
-                    model.toast = msg;
+                    conflicts += 1;
+                    if (ws.tabs[i].id == model.active_tab_id) model.disk_changed = true;
                 } else {
-                    model.toast = "Save All failed";
+                    failures += 1;
                 }
-                return;
+                continue;
             };
             saved += 1;
         }
     }
-    model.document_dirty = false;
+    model.document_dirty = ws.tabIsDirty(model.active_tab_id);
     model.open_tabs = ws.tabsSlice();
-    model.toast = if (saved == 0) "Nothing dirty" else "Saved all";
+    if (conflicts > 0 or failures > 0) {
+        model.toast = std.fmt.bufPrint(
+            &model.action_toast_buf,
+            "Saved {d}; {d} conflicts, {d} errors remain",
+            .{ saved, conflicts, failures },
+        ) catch "Save All partial; conflicts remain";
+    } else {
+        model.disk_changed = false;
+        model.toast = if (saved == 0) "Nothing dirty" else "Saved all";
+    }
 }
 
 fn filterCommandPalette(model: *Model) void {
@@ -2963,6 +3146,9 @@ fn pushRecentFile(model: *Model, path: []const u8) void {
     @memcpy(model.recent_files[0][0..n], path[0..n]);
     model.recent_file_lens[0] = n;
     model.recent_file_count += 1;
+    ensurePrefsLoaded(model);
+    model.prefs.pushRecentFile(path);
+    persistPrefs(model);
 }
 
 fn ensureOutlineBuffers(model: *Model) !*outline_mod.OutlineBuffers {
@@ -3060,7 +3246,7 @@ fn openDefHit(model: *Model, hit_id: u32) void {
                 model.current_view = .ide;
                 model.selected_activity = .explorer;
                 if (model.workspace) |ws| {
-                    ws.openFileById(modelIo(model), hit.file_id) catch {};
+                    if (!openWorkspaceFile(model, ws, hit.file_id)) return;
                     model.active_tab_id = hit.file_id;
                     model.open_tabs = ws.tabsSlice();
                     if (ws.findNode(hit.file_id)) |node| {
@@ -3099,7 +3285,7 @@ fn selectBreadcrumbSeg(model: *Model, seg_id: u32) void {
                         applyExplorerFilter(model);
                         model.toast = "Folder selected";
                     } else {
-                        ws.openFileById(modelIo(model), node.id) catch {};
+                        if (!openWorkspaceFile(model, ws, node.id)) return;
                         model.active_tab_id = node.id;
                         model.open_tabs = ws.tabsSlice();
                         model.status_language = workspace_store.scannerLanguage(node.path);
@@ -3123,7 +3309,7 @@ fn selectBreadcrumbSeg(model: *Model, seg_id: u32) void {
 fn openBottomPanel(model: *Model, tab: BottomPanelTab) void {
     model.bottom_panel_open = true;
     model.bottom_panel_tab = tab;
-    if (tab == .terminal) model.show_terminal = true;
+    model.show_terminal = tab == .terminal;
     if (tab == .problems and
         model.workspace_from_disk and
         model.problems.len == 0 and
@@ -3131,6 +3317,7 @@ fn openBottomPanel(model: *Model, tab: BottomPanelTab) void {
     {
         scanProblems(model);
     }
+    persistPrefs(model);
 }
 
 fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
@@ -3226,7 +3413,7 @@ fn openSearchHit(model: *Model, hit_id: u32) void {
                         model.selected_file_id = node.id;
                         model.current_view = .ide;
                         model.selected_activity = .explorer;
-                        ws.openFileById(modelIo(model), node.id) catch {};
+                        if (!openWorkspaceFile(model, ws, node.id)) return;
                         model.active_tab_id = node.id;
                         model.open_tabs = ws.tabsSlice();
                         if (!node.is_dir) {
@@ -3268,10 +3455,7 @@ fn openGitEntry(model: *Model, entry_id: u32) void {
                     model.selected_file_id = node.id;
                     model.current_view = .ide;
                     model.selected_activity = .explorer;
-                    ws.openFileById(modelIo(model), node.id) catch {
-                        model.toast = "Open failed";
-                        return;
-                    };
+                    if (!openWorkspaceFile(model, ws, node.id)) return;
                     model.active_tab_id = node.id;
                     model.open_tabs = ws.tabsSlice();
                     model.status_language = workspace_store.scannerLanguage(node.path);
@@ -3360,6 +3544,7 @@ fn dismissOverlay(model: *Model) void {
     }
     if (model.focus_mode) {
         model.focus_mode = false;
+        persistPrefs(model);
         model.toast = "Focus mode off";
         return;
     }
@@ -3412,6 +3597,7 @@ fn duplicateDocumentTail(model: *Model) void {
 fn applyDocumentTransform(model: *Model, new_text: []const u8, ok_toast: []const u8) void {
     pushUndoSnapshot(model);
     model.document.set(new_text);
+    recordUndoResult(model);
     model.document_dirty = true;
     refreshDocStats(model);
     syncActiveTabDirty(model);
@@ -3567,7 +3753,7 @@ fn openProblem(model: *Model, problem_id: u32) void {
                         model.selected_file_id = node.id;
                         model.current_view = .ide;
                         model.selected_activity = .explorer;
-                        ws.openFileById(modelIo(model), node.id) catch {};
+                        if (!openWorkspaceFile(model, ws, node.id)) return;
                         model.active_tab_id = node.id;
                         model.open_tabs = ws.tabsSlice();
                         model.status_language = workspace_store.scannerLanguage(node.path);
@@ -3930,10 +4116,7 @@ fn duplicateSelectedFile(model: *Model) void {
             };
         }
         // Read via open then create with current editor text of that file.
-        ws.openFileById(modelIo(model), id) catch {
-            model.toast = "Duplicate read failed";
-            return;
-        };
+        if (!openWorkspaceFile(model, ws, id)) return;
         const body = ws.editorText();
         break :blk ws.createFile(modelIo(model), path_buf[0..n], body) catch {
             model.toast = "Duplicate failed";
@@ -4010,7 +4193,7 @@ fn openQuickItem(model: *Model, item_id: u32) void {
                 model.current_view = .ide;
                 model.selected_activity = .explorer;
                 if (model.workspace) |ws| {
-                    ws.openFileById(modelIo(model), item.file_id) catch {};
+                    if (!openWorkspaceFile(model, ws, item.file_id)) return;
                     model.active_tab_id = item.file_id;
                     model.open_tabs = ws.tabsSlice();
                     if (ws.findNode(item.file_id)) |node| {
@@ -4177,6 +4360,7 @@ fn toggleFocusMode(model: *Model) void {
     } else {
         model.toast = "Focus mode off";
     }
+    persistPrefs(model);
 }
 
 const TextTransformKind = enum { upper, lower, title, sort, reverse, sort_unique };
@@ -4663,7 +4847,7 @@ fn newUntitledBuffer(model: *Model) void {
         // Scratch mode: just clear into a fresh buffer.
         model.document.clear();
         model.document_dirty = false;
-        model.undo_available = false;
+        resetUndoHistory(model);
         model.editor_mode_label = "untitled";
         model.breadcrumb = "Untitled";
         refreshDocStats(model);
@@ -4826,10 +5010,7 @@ fn reopenClosedTab(model: *Model) void {
         model.selected_file_id = node.id;
         model.current_view = .ide;
         model.selected_activity = .explorer;
-        ws.openFileById(modelIo(model), node.id) catch {
-            model.toast = "Reopen failed";
-            return;
-        };
+        if (!openWorkspaceFile(model, ws, node.id)) return;
         model.active_tab_id = node.id;
         model.open_tabs = ws.tabsSlice();
         model.status_language = workspace_store.scannerLanguage(node.path);
@@ -4880,12 +5061,29 @@ fn applyPrefsToModel(model: *Model) void {
     model.find_whole_word = model.prefs.find_whole_word;
     model.search_case_sensitive = model.prefs.search_case_sensitive;
     model.show_sidebar = model.prefs.show_sidebar;
+    model.focus_mode = model.prefs.focus_mode;
+    model.bottom_panel_open = model.prefs.bottom_panel_open;
+    model.bottom_panel_tab = switch (model.prefs.bottom_panel_tab) {
+        .terminal => .terminal,
+        .output => .output,
+        .problems => .problems,
+    };
+    model.show_terminal = model.bottom_panel_open and model.bottom_panel_tab == .terminal;
+    model.disk_poll_interval_ms = model.prefs.disk_poll_interval_ms;
     model.word_wrap = model.prefs.word_wrap;
     model.trim_trailing_ws = model.prefs.trim_trailing_ws;
     model.insert_final_newline = model.prefs.insert_final_newline;
     model.indent_size = if (model.prefs.indent_size == 4) 4 else 2;
     if (model.prefs.last_path_len > 0 and model.open_path.text().len == 0) {
         model.open_path.set(model.prefs.lastPathSlice());
+    }
+    model.recent_file_count = @min(model.prefs.recent_file_count, prefs_mod.max_recent_files);
+    var recent_i: u32 = 0;
+    while (recent_i < model.recent_file_count) : (recent_i += 1) {
+        const path = model.prefs.recentFile(recent_i);
+        const n = @min(path.len, model.recent_files[recent_i].len);
+        @memcpy(model.recent_files[recent_i][0..n], path[0..n]);
+        model.recent_file_lens[recent_i] = n;
     }
     syncRecentFromPrefs(model);
 }
@@ -4912,6 +5110,14 @@ fn persistPrefs(model: *Model) void {
     model.prefs.find_whole_word = model.find_whole_word;
     model.prefs.search_case_sensitive = model.search_case_sensitive;
     model.prefs.show_sidebar = model.show_sidebar;
+    model.prefs.focus_mode = model.focus_mode;
+    model.prefs.bottom_panel_open = model.bottom_panel_open;
+    model.prefs.bottom_panel_tab = switch (model.bottom_panel_tab) {
+        .terminal => .terminal,
+        .output => .output,
+        .problems => .problems,
+    };
+    model.prefs.disk_poll_interval_ms = model.disk_poll_interval_ms;
     model.prefs.word_wrap = model.word_wrap;
     model.prefs.trim_trailing_ws = model.trim_trailing_ws;
     model.prefs.insert_final_newline = model.insert_final_newline;

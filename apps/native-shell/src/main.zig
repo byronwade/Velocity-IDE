@@ -63,6 +63,7 @@ pub const app_shortcuts = [_]native_sdk.Shortcut{
     .{ .id = "reopen_closed_tab", .key = "t", .modifiers = .{ .primary = true, .shift = true } },
     .{ .id = "shortcuts_help", .key = "/", .modifiers = .{ .primary = true, .shift = true } },
     .{ .id = "undo_edit", .key = "z", .modifiers = .{ .primary = true } },
+    .{ .id = "redo_edit", .key = "z", .modifiers = .{ .primary = true, .shift = true } },
     .{ .id = "delete_last_line", .key = "k", .modifiers = .{ .primary = true, .shift = true } },
     .{ .id = "next_tab", .key = "tab", .modifiers = .{ .control = true } },
     .{ .id = "prev_tab", .key = "tab", .modifiers = .{ .control = true, .shift = true } },
@@ -86,6 +87,7 @@ pub fn onCommand(name: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "reopen_closed_tab")) return .reopen_closed_tab;
     if (std.mem.eql(u8, name, "shortcuts_help")) return .toggle_shortcuts_help;
     if (std.mem.eql(u8, name, "undo_edit")) return .undo_edit;
+    if (std.mem.eql(u8, name, "redo_edit")) return .redo_edit;
     if (std.mem.eql(u8, name, "delete_last_line")) return .delete_last_line;
     if (std.mem.eql(u8, name, "next_tab")) return .next_tab;
     if (std.mem.eql(u8, name, "prev_tab")) return .prev_tab;
@@ -174,6 +176,10 @@ test {
     _ = @import("workspace/problems.zig");
     _ = @import("workspace/problem_matchers.zig");
     _ = @import("workspace/file_fingerprint.zig");
+    _ = @import("workspace/backup_store.zig");
+    _ = @import("workspace/hot_exit_store.zig");
+    _ = @import("workspace/undo_stack.zig");
+    _ = @import("workspace/disk_sync.zig");
     _ = @import("workspace/outline.zig");
     _ = @import("workspace/go_to_def.zig");
     _ = @import("workspace/editor_view.zig");

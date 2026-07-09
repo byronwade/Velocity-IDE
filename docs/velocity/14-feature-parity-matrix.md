@@ -34,13 +34,13 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Multi-root Workspaces | `feature.multi-root-workspaces` | dev | P2 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
 | Recent Projects | `feature.recent-projects` | core | P0 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
 | File Watchers | `feature.file-watchers` | core | P1 | process | False | 8 | 1 | low | stub | docs/11 + contrib | |
-| Hot Exit | `feature.hot-exit` | core | P2 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
+| Hot Exit | `feature.hot-exit` | core | P2 | native | False | 4 | 0 | low | working | bounded workspace session restore on Close Window | |
 | Auto Save | `feature.auto-save` | core | P1 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
-| Backups | `feature.backups` | core | P2 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
+| Backups | `feature.backups` | core | P2 | native | False | 8 | 0 | low | working | bounded backup before confirmed overwrite | |
 | File Encoding | `feature.file-encoding` | core | P2 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
 | File Decorations | `feature.file-decorations` | dev | P2 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
 | Drag and Drop | `feature.drag-drop` | core | P2 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
-| Dirty State | `feature.dirty-state` | core | P0 | native | False | 2 | 0 | low | working | bounded per-tab copies + safe save | |
+| Dirty State | `feature.dirty-state` | core | P0 | native | False | 2 | 0 | low | working | bounded per-tab copies, partial-conflict Save All, disk polling | |
 | Compare Files | `feature.compare-files` | dev | P2 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
 | Diff Editor | `feature.diff-editor` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Merge Editor | `feature.merge-editor` | dev | P2 | native | False | 24 | 0 | low | stub | docs/11 + contrib | |

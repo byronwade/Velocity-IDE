@@ -4,6 +4,7 @@
 const std = @import("std");
 const scanner = @import("scanner.zig");
 const file_fingerprint = @import("file_fingerprint.zig");
+const backup_store = @import("backup_store.zig");
 
 pub const max_nodes = scanner.max_nodes;
 pub const max_open_tabs: usize = 8;
@@ -156,7 +157,7 @@ pub const WorkspaceBuffers = struct {
     pub fn saveActiveFileForce(self: *WorkspaceBuffers, io: std.Io, text: []const u8) !void {
         const rel = self.editorPath();
         if (rel.len == 0) return error.NotFound;
-        try scanner.writeTextFile(io, self.rootPath(), rel, text);
+        try backup_store.overwrite(io, self.rootPath(), rel, text);
         self.cacheActiveText(text);
         if (self.activeTabIndex()) |idx| {
             self.tab_disk_fingerprints[idx] = file_fingerprint.ofBytes(text);
@@ -395,11 +396,17 @@ pub const WorkspaceBuffers = struct {
         self.rebuildFileNodes();
 
         // Open first text file as a tab if present.
+        var first_open_error: []const u8 = "";
         var i: u32 = 0;
         while (i < self.file_node_count) : (i += 1) {
             const n = self.file_nodes[i];
             if (!n.is_dir) {
-                _ = self.openFileById(io, n.id) catch {};
+                self.openFileById(io, n.id) catch |err| {
+                    first_open_error = switch (err) {
+                        error.FileTooLarge => "First file exceeds the 16 KiB editor limit",
+                        else => "Unable to open first file",
+                    };
+                };
                 break;
             }
         }
@@ -412,7 +419,7 @@ pub const WorkspaceBuffers = struct {
             .root_path = self.rootPath(),
             .node_count = self.file_node_count,
             .from_disk = true,
-            .scan_error = "",
+            .scan_error = first_open_error,
         };
     }
 
@@ -461,6 +468,9 @@ pub const WorkspaceBuffers = struct {
             if (err == error.BinaryFile) {
                 self.editor_truncated = true;
                 self.editor_len = 0;
+            } else if (err == error.FileTooLarge) {
+                self.tab_text_loaded[idx] = false;
+                return error.FileTooLarge;
             } else {
                 const msg = "Unable to read file";
                 @memcpy(self.editor_buf[0..msg.len], msg);

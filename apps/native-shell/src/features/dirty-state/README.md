@@ -15,3 +15,7 @@
 - Dirty text survives tab switches, explorer rescans, and Save All.
 - Dirty tabs require explicit confirmation before close/bulk close.
 - Safe Save fingerprints disk content and blocks silent external overwrites.
+- Save All continues past conflicts and retains each unsaved/conflicted tab.
+- Confirmed overwrites create bounded backups before replacing disk content.
+- Disk changes are detected by bounded interaction polling or manual refresh.
+- Close Window persists bounded dirty tab state for matching-workspace restore.

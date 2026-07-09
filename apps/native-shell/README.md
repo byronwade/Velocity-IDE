@@ -28,6 +28,16 @@ native dev
 native build
 ```
 
+External file changes are checked with bounded polling during editing and safe
+save operations. Use **Refresh Files from Disk** from the command palette for an
+immediate full check. A recurring timer is intentionally not wired until the
+Native SDK effects lifecycle exposes a verified app-lifetime polling contract;
+the persisted `disk_poll_interval_ms` preference is ready for that timer.
+
+Closing through the shell's **Close Window** command writes the bounded session
+to `<workspace>/.velocity/hot-exit.bin`; reopening that workspace restores open
+tabs and dirty working copies.
+
 # Layout
 
 | Path | Role |

@@ -536,7 +536,7 @@
         <text>Keyboard Shortcuts</text>
         <text size="sm" foreground="text_muted">Cmd+K palette | Cmd+P quick open | Cmd+F find | Cmd+G go to line</text>
         <text size="sm" foreground="text_muted">Cmd+Shift+O symbols | Cmd+Shift+D definition | Cmd+S save | Cmd+W close</text>
-        <text size="sm" foreground="text_muted">Cmd+B sidebar | Ctrl+` terminal | Esc dismiss | Cmd+Z undo</text>
+        <text size="sm" foreground="text_muted">Cmd+B sidebar | Ctrl+` terminal | Cmd+Z undo | Cmd+Shift+Z redo</text>
         <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>
       </column>
     </column>
