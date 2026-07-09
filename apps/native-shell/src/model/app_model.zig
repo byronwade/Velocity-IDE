@@ -10,6 +10,7 @@ const workspace_store = @import("../workspace/workspace_store.zig");
 const workspace_search = @import("../workspace/search.zig");
 const find_in_doc = @import("../workspace/find_in_doc.zig");
 const quick_open = @import("../workspace/quick_open.zig");
+const navigation_history = @import("../workspace/navigation_history.zig");
 const replace_mod = @import("../workspace/replace.zig");
 const edit_transforms = @import("../workspace/edit_transforms.zig");
 const problems_mod = @import("../workspace/problems.zig");
@@ -143,7 +144,10 @@ pub const Msg = union(enum) {
     stop_terminal_task,
     clear_terminal,
     update_search_query: canvas.TextInputEvent,
+    update_search_include: canvas.TextInputEvent,
+    update_search_exclude: canvas.TextInputEvent,
     run_search,
+    search_debounce_timer: native_sdk.EffectTimer,
     open_search_hit: u32,
     preview_workspace_replace,
     apply_workspace_replace,
@@ -212,6 +216,9 @@ pub const Msg = union(enum) {
     toggle_find_whole_word,
     duplicate_selected_file,
     toggle_search_case,
+    toggle_search_whole_word,
+    navigate_back,
+    navigate_forward,
     toggle_sidebar,
     insert_timestamp,
     update_replace_text: canvas.TextInputEvent,
@@ -289,6 +296,7 @@ pub const Msg = union(enum) {
         "chrome_changed",
         "set_appearance",
         "toast_timer",
+        "search_debounce_timer",
         "minimize_window",
         "close_window",
         "open_outline",
@@ -368,8 +376,10 @@ pub const Msg = union(enum) {
 pub const app_version = "0.1.0";
 pub const toast_timer_key: u64 = 0x746f617374_01;
 pub const disk_poll_timer_key: u64 = 0x6469736b_706f6c6c;
+pub const search_debounce_timer_key: u64 = 0x73656172_63686462;
 pub const terminal_process_effect_key: u64 = 0x7465726d_696e616c;
 pub const toast_auto_clear_ms: u64 = 3200;
+pub const search_debounce_ms: u64 = 220;
 pub const max_notification_history: usize = 8;
 pub const max_notification_text: usize = 96;
 pub const max_toast_text: usize = 520;
@@ -462,7 +472,10 @@ pub const Model = struct {
     task_bufs: ?*task_detector.TaskDetector = null,
     workspace_replace_bufs: ?*workspace_replace.WorkspaceReplace = null,
     search_query: canvas.TextBuffer(max_search_query) = .{},
+    search_include: canvas.TextBuffer(workspace_search.max_path_pattern) = .{},
+    search_exclude: canvas.TextBuffer(workspace_search.max_path_pattern) = .{},
     search_hits: []const SearchHit = &.{},
+    search_debounce_armed: bool = false,
     workspace_tasks: []const WorkspaceTask = &.{},
     replace_previews: []const ReplacePreview = &.{},
     selected_task_id: u32 = 0,
@@ -517,6 +530,9 @@ pub const Model = struct {
     find_case_sensitive: bool = false,
     find_whole_word: bool = false,
     search_case_sensitive: bool = false,
+    search_whole_word: bool = false,
+    navigation: navigation_history.History = .{},
+    navigation_replaying: bool = false,
     show_sidebar: bool = true,
     word_wrap: bool = false,
     auto_save: bool = false,
@@ -690,6 +706,12 @@ pub const Model = struct {
         "task_bufs",
         "workspace_replace_bufs",
         "search_query",
+        "search_include",
+        "search_exclude",
+        "search_debounce_armed",
+        "search_whole_word",
+        "navigation",
+        "navigation_replaying",
         "task_running",
         "task_status",
         "test_status",
@@ -1022,6 +1044,14 @@ pub const Model = struct {
         return model.search_query.text();
     }
 
+    pub fn searchIncludeText(model: *const Model) []const u8 {
+        return model.search_include.text();
+    }
+
+    pub fn searchExcludeText(model: *const Model) []const u8 {
+        return model.search_exclude.text();
+    }
+
     pub fn newFilePathText(model: *const Model) []const u8 {
         return model.new_file_path.text();
     }
@@ -1153,6 +1183,18 @@ pub const Model = struct {
 
     pub fn searchCaseLabel(model: *const Model) []const u8 {
         return if (model.search_case_sensitive) "Search Aa: on" else "Search Aa: off";
+    }
+
+    pub fn searchWholeWordLabel(model: *const Model) []const u8 {
+        return if (model.search_whole_word) "Search whole word: on" else "Search whole word: off";
+    }
+
+    pub fn navigationBackLabel(model: *const Model) []const u8 {
+        return if (model.navigation.canBack()) "Navigate Back" else "Navigate Back (Unavailable)";
+    }
+
+    pub fn navigationForwardLabel(model: *const Model) []const u8 {
+        return if (model.navigation.canForward()) "Navigate Forward" else "Navigate Forward (Unavailable)";
     }
 
     pub fn sidebarLabel(model: *const Model) []const u8 {
@@ -1297,6 +1339,8 @@ pub const commands = [_]CommandItem{
     .{ .id = "rename_selected_file", .title = "Rename Selected File", .hint = "" },
     .{ .id = "reveal_in_explorer", .title = "Reveal Active File in Explorer", .hint = "" },
     .{ .id = "quick_open", .title = "Quick Open File", .hint = "Cmd+P" },
+    .{ .id = "navigate_back", .title = "Navigate Back", .hint = "" },
+    .{ .id = "navigate_forward", .title = "Navigate Forward", .hint = "" },
     .{ .id = "find_in_file", .title = "Find in File", .hint = "Cmd+F" },
     .{ .id = "replace_once", .title = "Replace Once", .hint = "" },
     .{ .id = "replace_all", .title = "Replace All", .hint = "" },
@@ -1342,6 +1386,7 @@ pub const commands = [_]CommandItem{
     .{ .id = "toggle_find_whole_word", .title = "Toggle Find Whole Word", .hint = "" },
     .{ .id = "duplicate_selected_file", .title = "Duplicate Selected File", .hint = "" },
     .{ .id = "toggle_search_case", .title = "Toggle Search Case Sensitivity", .hint = "" },
+    .{ .id = "toggle_search_whole_word", .title = "Toggle Search Whole Word", .hint = "" },
     .{ .id = "toggle_sidebar", .title = "Toggle Sidebar", .hint = "Cmd+B" },
     .{ .id = "insert_timestamp", .title = "Insert Timestamp", .hint = "" },
     .{ .id = "toggle_trim_trailing", .title = "Toggle Trim Trailing Whitespace", .hint = "" },
@@ -1491,8 +1536,10 @@ fn clearActiveCommand(model: *Model, status: process_governor.ProcessStatus, exi
 
 fn cancelOwnedEffects(model: *Model, fx: *Effects) void {
     fx.cancelTimer(disk_poll_timer_key);
+    fx.cancelTimer(search_debounce_timer_key);
     model.disk_poll_armed = false;
     model.disk_poll_rejected = false;
+    model.search_debounce_armed = false;
     if (model.terminal_async) {
         fx.cancel(model.terminal_effect_key);
         clearActiveCommand(model, .cancelled, native_sdk.effect_error_exit_code);
@@ -1736,6 +1783,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 revealInExplorer(model);
             } else if (std.mem.eql(u8, id, "quick_open")) {
                 showQuickOpen(model);
+            } else if (std.mem.eql(u8, id, "navigate_back")) {
+                navigateHistory(model, false);
+            } else if (std.mem.eql(u8, id, "navigate_forward")) {
+                navigateHistory(model, true);
             } else if (std.mem.eql(u8, id, "find_in_file")) {
                 runFindInDocument(model);
             } else if (std.mem.eql(u8, id, "replace_once")) {
@@ -1826,6 +1877,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 duplicateSelectedFile(model);
             } else if (std.mem.eql(u8, id, "toggle_search_case")) {
                 toggleSearchCase(model);
+            } else if (std.mem.eql(u8, id, "toggle_search_whole_word")) {
+                toggleSearchWholeWord(model);
             } else if (std.mem.eql(u8, id, "toggle_sidebar")) {
                 toggleSidebar(model);
             } else if (std.mem.eql(u8, id, "insert_timestamp")) {
@@ -2128,6 +2181,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .toggle_find_whole_word => toggleFindWholeWord(model),
         .duplicate_selected_file => duplicateSelectedFile(model),
         .toggle_search_case => toggleSearchCase(model),
+        .toggle_search_whole_word => toggleSearchWholeWord(model),
+        .navigate_back => navigateHistory(model, false),
+        .navigate_forward => navigateHistory(model, true),
         .toggle_sidebar => toggleSidebar(model),
         .insert_timestamp => insertTimestamp(model),
         .select_tab => |id| {
@@ -2240,8 +2296,23 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .update_search_query => |edit| {
             model.search_query.apply(edit);
             invalidateWorkspaceReplace(model);
+            scheduleWorkspaceSearch(model, fx);
         },
-        .run_search => runWorkspaceSearch(model),
+        .update_search_include => |edit| {
+            model.search_include.apply(edit);
+            invalidateWorkspaceReplace(model);
+            scheduleWorkspaceSearch(model, fx);
+        },
+        .update_search_exclude => |edit| {
+            model.search_exclude.apply(edit);
+            invalidateWorkspaceReplace(model);
+            scheduleWorkspaceSearch(model, fx);
+        },
+        .run_search => {
+            cancelSearchDebounce(model, fx);
+            runWorkspaceSearch(model);
+        },
+        .search_debounce_timer => |timer| handleSearchDebounceTimer(model, timer),
         .open_search_hit => |id| openSearchHit(model, id),
         .preview_workspace_replace => previewWorkspaceReplace(model),
         .apply_workspace_replace => applyWorkspaceReplace(model),
@@ -3278,6 +3349,7 @@ fn openWorkspacePath(model: *Model, path: []const u8) void {
         return;
     };
     if (model.tab_histories) |store| store.clear();
+    model.navigation.clear();
     const meta = ws.openPath(modelIo(model), path) catch {
         model.workspace_scan_error = "Open failed";
         model.toast = "Could not open folder";
@@ -3471,6 +3543,19 @@ fn jumpToDocumentLine(model: *Model, line_no: u32) void {
         if (c == '\n') total += 1;
     }
     const target = @min(line_no, total);
+    if (!model.navigation_replaying) {
+        const path = Model.activeTabPath(model);
+        if (path.len > 0) {
+            model.navigation.recordTransition(
+                .{ .path = path, .line = currentNavigationLine(model) },
+                .{ .path = path, .line = target },
+            );
+        }
+    }
+    jumpToDocumentLineUnrecorded(model, target, total);
+}
+
+fn jumpToDocumentLineUnrecorded(model: *Model, target: u32, total: u32) void {
     const label = std.fmt.bufPrint(&model.goto_line_buf, "Line {d}/{d}", .{ target, total }) catch "line";
     model.goto_line_label = label;
     model.editor_focus_line = target;
@@ -3478,6 +3563,50 @@ fn jumpToDocumentLine(model: *Model, line_no: u32) void {
     model.editor_focus_label = fl;
     refreshPeek(model);
     model.toast = model.goto_line_label;
+}
+
+fn currentNavigationLine(model: *const Model) u32 {
+    return @max(model.editor_focus_line, 1);
+}
+
+fn recordCrossFileNavigation(model: *Model, from_path: []const u8, from_line: u32, to_path: []const u8, to_line: u32) void {
+    if (model.navigation_replaying) return;
+    model.navigation.recordTransition(
+        .{ .path = from_path, .line = from_line },
+        .{ .path = to_path, .line = @max(to_line, 1) },
+    );
+}
+
+fn navigateHistory(model: *Model, forward: bool) void {
+    const previous_cursor = model.navigation.cursor;
+    const location = if (forward) model.navigation.forward() else model.navigation.back();
+    const target = location orelse {
+        model.toast = if (forward) "No forward navigation" else "No back navigation";
+        return;
+    };
+    const ws = model.workspace orelse {
+        model.navigation.cursor = previous_cursor;
+        model.toast = "No workspace";
+        return;
+    };
+    const node = ws.findNodeByPath(target.path) orelse {
+        model.navigation.cursor = previous_cursor;
+        model.toast = "Navigation target is no longer in the workspace";
+        return;
+    };
+    model.navigation_replaying = true;
+    defer model.navigation_replaying = false;
+    if (!openWorkspaceFile(model, ws, node.id)) {
+        model.navigation.cursor = previous_cursor;
+        return;
+    }
+    model.selected_file_id = node.id;
+    model.active_tab_id = node.id;
+    model.open_tabs = ws.tabsSlice();
+    model.status_language = workspace_store.scannerLanguage(node.path);
+    syncDocumentFromWorkspace(model);
+    jumpToDocumentLine(model, target.line);
+    model.toast = if (forward) "Navigated forward" else "Navigated back";
 }
 
 fn refreshPeek(model: *Model) void {
@@ -3646,6 +3775,11 @@ fn openDefHit(model: *Model, hit_id: u32) void {
     if (model.def_bufs) |bufs| {
         for (bufs.hitsSlice()) |hit| {
             if (hit.id == hit_id) {
+                var from_path_buf: [scanner_mod.max_rel_path_len]u8 = undefined;
+                const current_path = Model.activeTabPath(model);
+                const from_path_len = @min(current_path.len, from_path_buf.len);
+                @memcpy(from_path_buf[0..from_path_len], current_path[0..from_path_len]);
+                const from_line = currentNavigationLine(model);
                 model.selected_file_id = hit.file_id;
                 model.current_view = .ide;
                 model.selected_activity = .explorer;
@@ -3660,7 +3794,10 @@ fn openDefHit(model: *Model, hit_id: u32) void {
                         }
                     }
                     syncDocumentFromWorkspace(model);
+                    recordCrossFileNavigation(model, from_path_buf[0..from_path_len], from_line, hit.path, hit.line);
+                    model.navigation_replaying = true;
                     jumpToDocumentLine(model, hit.line);
+                    model.navigation_replaying = false;
                     model.toast = "Definition";
                 }
                 return;
@@ -3689,12 +3826,21 @@ fn selectBreadcrumbSeg(model: *Model, seg_id: u32) void {
                         applyExplorerFilter(model);
                         model.toast = "Folder selected";
                     } else {
+                        var from_path_buf: [scanner_mod.max_rel_path_len]u8 = undefined;
+                        const current_path = Model.activeTabPath(model);
+                        const from_path_len = @min(current_path.len, from_path_buf.len);
+                        @memcpy(from_path_buf[0..from_path_len], current_path[0..from_path_len]);
+                        const from_line = currentNavigationLine(model);
                         if (!openWorkspaceFile(model, ws, node.id)) return;
                         model.active_tab_id = node.id;
                         model.open_tabs = ws.tabsSlice();
                         model.status_language = workspace_store.scannerLanguage(node.path);
                         syncDocumentFromWorkspace(model);
                         pushRecentFile(model, node.path);
+                        recordCrossFileNavigation(model, from_path_buf[0..from_path_len], from_line, node.path, 1);
+                        model.navigation_replaying = true;
+                        jumpToDocumentLine(model, 1);
+                        model.navigation_replaying = false;
                         model.toast = "Opened";
                     }
                     return;
@@ -4040,15 +4186,70 @@ fn runWorkspaceSearch(model: *Model) void {
         model.toast = "Search alloc failed";
         return;
     };
-    _ = model.governor.spawn("feature.search", "workspace-search") catch {};
-    bufs.searchWithOptions(modelIo(model), ws, model.search_query.text(), model.search_case_sensitive);
+    if (std.mem.trim(u8, model.search_query.text(), " \t").len == 0) {
+        bufs.clear();
+        bufs.status = "empty query";
+        model.search_hits = &.{};
+        model.toast = "";
+        return;
+    }
+    bufs.searchScoped(modelIo(model), ws, model.search_query.text(), workspaceSearchOptions(model));
     model.search_hits = bufs.hitsSlice();
-    model.governor.killFeature("feature.search");
-    model.process_count = model.governor.aliveCount();
     model.toast = bufs.status;
     model.current_view = .ide;
     model.selected_activity = .search;
     model.show_sidebar = true;
+}
+
+fn workspaceSearchOptions(model: *const Model) workspace_search.Options {
+    return .{
+        .case_sensitive = model.search_case_sensitive,
+        .whole_word = model.search_whole_word,
+        .include = model.search_include.text(),
+        .exclude = model.search_exclude.text(),
+    };
+}
+
+fn cancelSearchDebounce(model: *Model, fx: ?*Effects) void {
+    if (fx) |effects| effects.cancelTimer(search_debounce_timer_key);
+    model.search_debounce_armed = false;
+}
+
+fn scheduleWorkspaceSearch(model: *Model, fx: ?*Effects) void {
+    const query = std.mem.trim(u8, model.search_query.text(), " \t");
+    if (query.len == 0) {
+        cancelSearchDebounce(model, fx);
+        if (model.search_bufs) |bufs| {
+            bufs.clear();
+            bufs.status = "empty query";
+        }
+        model.search_hits = &.{};
+        return;
+    }
+    const effects = fx orelse return;
+    effects.cancelTimer(search_debounce_timer_key);
+    model.search_debounce_armed = true;
+    effects.startTimer(.{
+        .key = search_debounce_timer_key,
+        .interval_ms = search_debounce_ms,
+        .mode = .one_shot,
+        .on_fire = Effects.timerMsg(.search_debounce_timer),
+    });
+}
+
+pub fn scheduleWorkspaceSearchForTest(model: *Model, fx: *Effects) void {
+    scheduleWorkspaceSearch(model, fx);
+}
+
+fn handleSearchDebounceTimer(model: *Model, timer: native_sdk.EffectTimer) void {
+    if (timer.key != search_debounce_timer_key) return;
+    model.search_debounce_armed = false;
+    switch (timer.outcome) {
+        .fired => {
+            if (std.mem.trim(u8, model.search_query.text(), " \t").len > 0) runWorkspaceSearch(model);
+        },
+        .rejected => model.toast = "Incremental search timer unavailable; press Search to run immediately",
+    }
 }
 
 fn invalidateWorkspaceReplace(model: *Model) void {
@@ -4097,7 +4298,7 @@ fn previewWorkspaceReplace(model: *Model) void {
         ws,
         needle,
         model.replace_text.text(),
-        model.search_case_sensitive,
+        workspaceSearchOptions(model),
     ) catch |err| {
         model.replace_previews = &.{};
         model.replace_status = switch (err) {
@@ -4154,7 +4355,7 @@ fn applyWorkspaceReplace(model: *Model) void {
         ws,
         model.search_query.text(),
         model.replace_text.text(),
-        model.search_case_sensitive,
+        workspaceSearchOptions(model),
     ) catch {
         model.toast = "Workspace replace failed; rescan before retrying";
         return;
@@ -4180,6 +4381,11 @@ fn openSearchHit(model: *Model, hit_id: u32) void {
             if (hit.id == hit_id) {
                 if (model.workspace) |ws| {
                     if (ws.findNodeByPath(hit.path)) |node| {
+                        var from_path_buf: [scanner_mod.max_rel_path_len]u8 = undefined;
+                        const current_path = Model.activeTabPath(model);
+                        const from_path_len = @min(current_path.len, from_path_buf.len);
+                        @memcpy(from_path_buf[0..from_path_len], current_path[0..from_path_len]);
+                        const from_line = currentNavigationLine(model);
                         model.selected_file_id = node.id;
                         model.current_view = .ide;
                         model.selected_activity = .explorer;
@@ -4190,7 +4396,10 @@ fn openSearchHit(model: *Model, hit_id: u32) void {
                             model.status_language = workspace_store.scannerLanguage(node.path);
                         }
                         syncDocumentFromWorkspace(model);
+                        recordCrossFileNavigation(model, from_path_buf[0..from_path_len], from_line, hit.path, hit.line);
+                        model.navigation_replaying = true;
                         jumpToDocumentLine(model, hit.line);
+                        model.navigation_replaying = false;
                         return;
                     }
                 }
@@ -4658,6 +4867,11 @@ fn openProblem(model: *Model, problem_id: u32) void {
             if (item.id == problem_id) {
                 if (model.workspace) |ws| {
                     if (ws.findNodeByPath(item.path)) |node| {
+                        var from_path_buf: [scanner_mod.max_rel_path_len]u8 = undefined;
+                        const current_path = Model.activeTabPath(model);
+                        const from_path_len = @min(current_path.len, from_path_buf.len);
+                        @memcpy(from_path_buf[0..from_path_len], current_path[0..from_path_len]);
+                        const from_line = currentNavigationLine(model);
                         model.selected_file_id = node.id;
                         model.current_view = .ide;
                         model.selected_activity = .explorer;
@@ -4666,7 +4880,10 @@ fn openProblem(model: *Model, problem_id: u32) void {
                         model.open_tabs = ws.tabsSlice();
                         model.status_language = workspace_store.scannerLanguage(node.path);
                         syncDocumentFromWorkspace(model);
+                        recordCrossFileNavigation(model, from_path_buf[0..from_path_len], from_line, item.path, item.line);
+                        model.navigation_replaying = true;
                         jumpToDocumentLine(model, item.line);
+                        model.navigation_replaying = false;
                         return;
                     }
                 }
@@ -4979,7 +5196,23 @@ fn toggleFindWholeWord(model: *Model) void {
 fn toggleSearchCase(model: *Model) void {
     model.search_case_sensitive = !model.search_case_sensitive;
     persistPrefs(model);
-    model.toast = if (model.search_case_sensitive) "Search: case sensitive" else "Search: ignore case";
+    invalidateWorkspaceReplace(model);
+    if (model.search_query.text().len > 0) {
+        runWorkspaceSearch(model);
+    } else {
+        model.toast = if (model.search_case_sensitive) "Search: case sensitive" else "Search: ignore case";
+    }
+}
+
+fn toggleSearchWholeWord(model: *Model) void {
+    model.search_whole_word = !model.search_whole_word;
+    persistPrefs(model);
+    invalidateWorkspaceReplace(model);
+    if (model.search_query.text().len > 0) {
+        runWorkspaceSearch(model);
+    } else {
+        model.toast = if (model.search_whole_word) "Search: whole word" else "Search: substring";
+    }
 }
 
 fn toggleSidebar(model: *Model) void {
@@ -5119,7 +5352,12 @@ fn filterQuickOpen(model: *Model) void {
             return;
         }
     }
-    bufs.filter(ws, q);
+    var recent_paths: [prefs_mod.max_recent_files][]const u8 = undefined;
+    var recent_count: usize = 0;
+    while (recent_count < model.recent_file_count and recent_count < recent_paths.len) : (recent_count += 1) {
+        recent_paths[recent_count] = model.recent_files[recent_count][0..model.recent_file_lens[recent_count]];
+    }
+    bufs.filterWithRecents(ws, q, recent_paths[0..recent_count]);
     model.quick_items = bufs.itemsSlice();
 }
 
@@ -5127,6 +5365,11 @@ fn openQuickItem(model: *Model, item_id: u32) void {
     if (model.quick_bufs) |bufs| {
         for (bufs.itemsSlice()) |item| {
             if (item.id == item_id) {
+                var from_path_buf: [scanner_mod.max_rel_path_len]u8 = undefined;
+                const current_path = Model.activeTabPath(model);
+                const from_path_len = @min(current_path.len, from_path_buf.len);
+                @memcpy(from_path_buf[0..from_path_len], current_path[0..from_path_len]);
+                const from_line = currentNavigationLine(model);
                 model.quick_open_visible = false;
                 model.selected_file_id = item.file_id;
                 model.current_view = .ide;
@@ -5142,6 +5385,10 @@ fn openQuickItem(model: *Model, item_id: u32) void {
                         }
                     }
                     syncDocumentFromWorkspace(model);
+                    recordCrossFileNavigation(model, from_path_buf[0..from_path_len], from_line, item.path, 1);
+                    model.navigation_replaying = true;
+                    jumpToDocumentLine(model, 1);
+                    model.navigation_replaying = false;
                 }
                 model.toast = "Opened";
                 return;
@@ -6016,6 +6263,7 @@ fn applyPrefsToModel(model: *Model) void {
     model.find_case_sensitive = model.prefs.find_case_sensitive;
     model.find_whole_word = model.prefs.find_whole_word;
     model.search_case_sensitive = model.prefs.search_case_sensitive;
+    model.search_whole_word = model.prefs.search_whole_word;
     model.show_sidebar = model.prefs.show_sidebar;
     model.focus_mode = model.prefs.focus_mode;
     model.bottom_panel_open = model.prefs.bottom_panel_open;
@@ -6065,6 +6313,7 @@ fn persistPrefs(model: *Model) void {
     model.prefs.find_case_sensitive = model.find_case_sensitive;
     model.prefs.find_whole_word = model.find_whole_word;
     model.prefs.search_case_sensitive = model.search_case_sensitive;
+    model.prefs.search_whole_word = model.search_whole_word;
     model.prefs.show_sidebar = model.show_sidebar;
     model.prefs.focus_mode = model.focus_mode;
     model.prefs.bottom_panel_open = model.bottom_panel_open;

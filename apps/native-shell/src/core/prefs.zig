@@ -26,6 +26,7 @@ pub const Prefs = struct {
     find_case_sensitive: bool = false,
     find_whole_word: bool = false,
     search_case_sensitive: bool = false,
+    search_whole_word: bool = false,
     show_sidebar: bool = true,
     focus_mode: bool = false,
     bottom_panel_open: bool = false,
@@ -207,6 +208,7 @@ pub const Prefs = struct {
             if (std.mem.eql(u8, key, "find_case_sensitive")) self.find_case_sensitive = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "find_whole_word")) self.find_whole_word = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "search_case_sensitive")) self.search_case_sensitive = std.mem.eql(u8, val, "1");
+            if (std.mem.eql(u8, key, "search_whole_word")) self.search_whole_word = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "show_sidebar")) self.show_sidebar = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "focus_mode")) self.focus_mode = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "bottom_panel_open")) self.bottom_panel_open = std.mem.eql(u8, val, "1");
@@ -258,6 +260,8 @@ pub const Prefs = struct {
         append(&out, &len, if (self.find_whole_word) "1" else "0");
         append(&out, &len, "\nsearch_case_sensitive=");
         append(&out, &len, if (self.search_case_sensitive) "1" else "0");
+        append(&out, &len, "\nsearch_whole_word=");
+        append(&out, &len, if (self.search_whole_word) "1" else "0");
         append(&out, &len, "\nshow_sidebar=");
         append(&out, &len, if (self.show_sidebar) "1" else "0");
         append(&out, &len, "\nfocus_mode=");
@@ -306,6 +310,7 @@ test "prefs roundtrip theme and recent" {
     p.find_case_sensitive = true;
     p.find_whole_word = true;
     p.search_case_sensitive = true;
+    p.search_whole_word = true;
     p.show_sidebar = false;
     p.focus_mode = true;
     p.bottom_panel_open = true;
@@ -328,6 +333,7 @@ test "prefs roundtrip theme and recent" {
     try std.testing.expect(p2.find_case_sensitive);
     try std.testing.expect(p2.find_whole_word);
     try std.testing.expect(p2.search_case_sensitive);
+    try std.testing.expect(p2.search_whole_word);
     try std.testing.expect(!p2.show_sidebar);
     try std.testing.expect(p2.focus_mode);
     try std.testing.expect(p2.bottom_panel_open);

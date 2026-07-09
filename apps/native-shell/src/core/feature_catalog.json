@@ -127,7 +127,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "workbench",
     "implementation": "native",
     "priority": "P0"
@@ -194,7 +194,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "workbench",
     "implementation": "native",
     "priority": "P1"
@@ -1442,7 +1442,7 @@
     "startupAllowed": false,
     "memoryBudgetMB": 24,
     "processBudget": {
-      "maxProcesses": 1,
+      "maxProcesses": 0,
       "killOnWorkspaceClose": true,
       "idleSuspend": true
     },
@@ -1452,9 +1452,9 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "search",
-    "implementation": "process",
+    "implementation": "native",
     "priority": "P0"
   },
   {
@@ -1613,7 +1613,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "search",
     "implementation": "native",
     "priority": "P0"

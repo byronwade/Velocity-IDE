@@ -91,7 +91,7 @@ pub const catalog = [_]FeatureEntry{
     .{ .id = "feature.problems", .name = "Problems", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .enabled = true },
     .{ .id = "feature.diagnostics", .name = "Diagnostics", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .enabled = true },
     .{ .id = "feature.language-status", .name = "Language Status", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 2, .max_processes = 0, .enabled = true },
-    .{ .id = "feature.workspace-search", .name = "Workspace Search", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 24, .max_processes = 1, .enabled = true },
+    .{ .id = "feature.workspace-search", .name = "Workspace Search", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 24, .max_processes = 0, .enabled = true },
     .{ .id = "feature.quick-search", .name = "Quick Search", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 0, .enabled = true },
     .{ .id = "feature.search-results", .name = "Search Results", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .enabled = true },
     .{ .id = "feature.search-replace", .name = "Search Replace", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .enabled = true },

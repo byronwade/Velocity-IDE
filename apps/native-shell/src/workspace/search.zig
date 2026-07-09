@@ -8,6 +8,14 @@ const workspace_store = @import("../workspace/workspace_store.zig");
 pub const max_hits: usize = 64;
 pub const max_query: usize = 64;
 pub const max_preview: usize = 120;
+pub const max_path_pattern: usize = 96;
+
+pub const Options = struct {
+    case_sensitive: bool = false,
+    whole_word: bool = false,
+    include: []const u8 = "",
+    exclude: []const u8 = "",
+};
 
 pub const SearchHit = struct {
     id: u32 = 0,
@@ -51,8 +59,19 @@ pub const SearchBuffers = struct {
         query: []const u8,
         case_sensitive: bool,
     ) void {
+        self.searchScoped(io, ws, query, .{ .case_sensitive = case_sensitive });
+    }
+
+    pub fn searchScoped(
+        self: *SearchBuffers,
+        io: std.Io,
+        ws: *workspace_store.WorkspaceBuffers,
+        query: []const u8,
+        options: Options,
+    ) void {
         self.clear();
-        if (query.len == 0) {
+        const needle = std.mem.trim(u8, query, " \t");
+        if (needle.len == 0) {
             self.status = "empty query";
             return;
         }
@@ -62,8 +81,9 @@ pub const SearchBuffers = struct {
         while (i < ws.file_node_count and self.hit_count < max_hits) : (i += 1) {
             const node = ws.file_nodes[i];
             if (node.is_dir) continue;
+            if (!pathInScope(node.path, options.include, options.exclude)) continue;
             const n = scanner.readTextFile(io, ws.rootPath(), node.path, file_buf[0..]) catch continue;
-            self.scanFile(node.path, file_buf[0..n], query, case_sensitive);
+            self.scanFile(node.path, file_buf[0..n], needle, options);
         }
         if (self.hit_count == 0) {
             self.status = "no matches";
@@ -72,17 +92,14 @@ pub const SearchBuffers = struct {
         }
     }
 
-    fn scanFile(self: *SearchBuffers, path: []const u8, content: []const u8, query: []const u8, case_sensitive: bool) void {
+    fn scanFile(self: *SearchBuffers, path: []const u8, content: []const u8, query: []const u8, options: Options) void {
         var line_no: u32 = 1;
         var start: usize = 0;
         var i: usize = 0;
         while (i <= content.len and self.hit_count < max_hits) : (i += 1) {
             if (i == content.len or content[i] == '\n') {
                 const line = content[start..i];
-                const hit = if (case_sensitive)
-                    std.mem.indexOf(u8, line, query) != null
-                else
-                    std.ascii.indexOfIgnoreCase(line, query) != null;
+                const hit = indexMatch(line, query, options.case_sensitive, options.whole_word) != null;
                 if (hit) self.pushHit(path, line_no, line);
                 line_no += 1;
                 start = i + 1;
@@ -110,6 +127,77 @@ pub const SearchBuffers = struct {
     }
 };
 
+/// Comma-separated, bounded patterns. `*` matches any characters. A pattern
+/// without `*` matches either an exact path prefix or exact path suffix.
+pub fn pathInScope(path: []const u8, include: []const u8, exclude: []const u8) bool {
+    const included = std.mem.trim(u8, include, " \t").len == 0 or matchesPatternList(path, include);
+    return included and !matchesPatternList(path, exclude);
+}
+
+pub fn indexMatch(text: []const u8, needle: []const u8, case_sensitive: bool, whole_word: bool) ?usize {
+    if (needle.len == 0) return null;
+    var offset: usize = 0;
+    while (offset + needle.len <= text.len) {
+        const relative = if (case_sensitive)
+            std.mem.indexOf(u8, text[offset..], needle)
+        else
+            std.ascii.indexOfIgnoreCase(text[offset..], needle);
+        const found = relative orelse return null;
+        const index = offset + found;
+        if (!whole_word or isWholeWord(text, index, index + needle.len)) return index;
+        offset = index + 1;
+    }
+    return null;
+}
+
+fn matchesPatternList(path: []const u8, patterns: []const u8) bool {
+    var iterator = std.mem.splitScalar(u8, patterns[0..@min(patterns.len, max_path_pattern)], ',');
+    while (iterator.next()) |raw| {
+        const pattern = std.mem.trim(u8, raw, " \t");
+        if (pattern.len == 0) continue;
+        if (globMatch(path, pattern)) return true;
+    }
+    return false;
+}
+
+fn globMatch(path: []const u8, pattern: []const u8) bool {
+    if (std.mem.indexOfScalar(u8, pattern, '*') == null) {
+        return std.mem.startsWith(u8, path, pattern) or std.mem.endsWith(u8, path, pattern);
+    }
+    var path_index: usize = 0;
+    var pattern_index: usize = 0;
+    var star_index: ?usize = null;
+    var retry_path: usize = 0;
+    while (path_index < path.len) {
+        if (pattern_index < pattern.len and pattern[pattern_index] != '*' and pattern[pattern_index] == path[path_index]) {
+            pattern_index += 1;
+            path_index += 1;
+        } else if (pattern_index < pattern.len and pattern[pattern_index] == '*') {
+            star_index = pattern_index;
+            pattern_index += 1;
+            retry_path = path_index;
+        } else if (star_index) |star| {
+            pattern_index = star + 1;
+            retry_path += 1;
+            path_index = retry_path;
+        } else {
+            return false;
+        }
+    }
+    while (pattern_index < pattern.len and pattern[pattern_index] == '*') pattern_index += 1;
+    return pattern_index == pattern.len;
+}
+
+fn isWholeWord(text: []const u8, start: usize, end: usize) bool {
+    const left_ok = start == 0 or !isWordChar(text[start - 1]);
+    const right_ok = end == text.len or !isWordChar(text[end]);
+    return left_ok and right_ok;
+}
+
+fn isWordChar(char: u8) bool {
+    return std.ascii.isAlphanumeric(char) or char == '_';
+}
+
 test "search finds fixture auth helper" {
     const ws = try std.testing.allocator.create(workspace_store.WorkspaceBuffers);
     defer std.testing.allocator.destroy(ws);
@@ -132,4 +220,13 @@ test "search case sensitive" {
     try std.testing.expect(case_hits > 0);
     search_bufs.searchWithOptions(std.testing.io, ws, "todo", true);
     try std.testing.expect(search_bufs.hit_count < case_hits or search_bufs.hit_count == 0);
+}
+
+test "search applies whole word and bounded path scopes" {
+    try std.testing.expect(pathInScope("src/server/auth.ts", "src/*", "*.test.ts"));
+    try std.testing.expect(!pathInScope("tests/auth.test.ts", "src/*,*.ts", "*.test.ts"));
+    try std.testing.expect(pathInScope("src/server/auth.ts", "src/", ""));
+    try std.testing.expect(pathInScope("src/server/auth.ts", ".ts", ""));
+    try std.testing.expect(indexMatch("cat catalog", "cat", true, true).? == 0);
+    try std.testing.expect(indexMatch("catalog", "cat", true, true) == null);
 }

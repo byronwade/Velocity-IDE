@@ -19,4 +19,5 @@
 The Search sidebar previews bounded literal replacements across scanned text
 files, then requires a second confirmation to apply. Apply refuses matching
 open tabs that are dirty or stale on disk and safely rescans/reloads clean tabs
-after writing.
+after writing. Preview and apply share workspace search's case sensitivity,
+whole-word boundary checks, and include/exclude path scope.

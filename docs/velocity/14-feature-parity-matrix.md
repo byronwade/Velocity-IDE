@@ -15,10 +15,10 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Panel | `feature.panel` | core | P0 | native | True | 4 | 0 | low | stub | docs/11 + contrib | |
 | Status Bar | `feature.status-bar` | core | P0 | native | True | 2 | 0 | low | stub | docs/11 + contrib | |
 | Command Palette | `feature.command-palette` | core | P0 | native | True | 4 | 0 | low | stub | docs/11 + contrib | |
-| Quick Open | `feature.quick-open` | core | P0 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
+| Quick Open | `feature.quick-open` | core | P0 | native | False | 8 | 0 | low | working | deterministic bounded fuzzy/path ranking + recent tie-break | |
 | Editor Groups | `feature.editor-groups` | core | P0 | native | True | 8 | 0 | low | stub | docs/11 + contrib | |
 | Tabs | `feature.tabs` | core | P0 | native | True | 4 | 0 | low | stub | docs/11 + contrib | |
-| Breadcrumbs | `feature.breadcrumbs` | core | P1 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
+| Breadcrumbs | `feature.breadcrumbs` | core | P1 | native | False | 2 | 0 | low | working | clickable path segments + 32-entry path/line Back/Forward history | |
 | Layout | `feature.layout` | core | P0 | native | True | 2 | 0 | low | stub | docs/11 + contrib | |
 | Settings | `feature.settings` | core | P0 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
 | Keybindings | `feature.keybindings` | core | P0 | native | True | 2 | 0 | low | stub | docs/11 + contrib | |
@@ -74,14 +74,14 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Problems | `feature.problems` | dev | P0 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Diagnostics | `feature.diagnostics` | core | P0 | process | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Language Status | `feature.language-status` | dev | P2 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
-| Workspace Search | `feature.workspace-search` | core | P0 | process | False | 24 | 1 | low | stub | docs/11 + contrib | |
+| Workspace Search | `feature.workspace-search` | core | P0 | native | False | 24 | 0 | low | working | bounded case/whole-word/path scope + fixed-key debounce | |
 | Quick Search | `feature.quick-search` | core | P0 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
-| Search Results | `feature.search-results` | core | P0 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
-| Search Replace | `feature.search-replace` | core | P1 | native | False | 16 | 0 | low | working | bounded preview, guarded double-confirm apply | |
+| Search Results | `feature.search-results` | core | P0 | native | False | 16 | 0 | low | working | bounded clickable path/line results integrated with navigation history | |
+| Search Replace | `feature.search-replace` | core | P1 | native | False | 16 | 0 | low | working | bounded preview, guarded double-confirm apply, same search options/scope | |
 | Ripgrep Adapter | `feature.ripgrep-adapter` | core | P0 | process | False | 8 | 1 | low | stub | docs/11 + contrib | |
 | Search Index | `feature.search-index` | dev | P2 | process | False | 64 | 1 | low | stub | docs/11 + contrib | |
 | Search Editor | `feature.search-editor` | heavy | P3 | native | False | 32 | 0 | low | stub | docs/11 + contrib | |
-| Fuzzy File Search | `feature.fuzzy-file-search` | core | P0 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
+| Fuzzy File Search | `feature.fuzzy-file-search` | core | P0 | native | False | 16 | 0 | low | working | exact/prefix/segment/fuzzy/substring ranking with stable ordering | |
 | Symbol Search | `feature.symbol-search` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Command Search | `feature.command-search` | core | P0 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
 | Terminal | `feature.terminal` | core | P0 | process | False | 32 | 1 | high | scaffold / PTY blocked by SDK | pipe runner works; PTY protocol in-memory only | cross-platform PTY streams, resize, cancellation/process-tree lifecycle |

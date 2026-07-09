@@ -50,6 +50,13 @@ with unsaved or externally changed contents. Source Control provides per-file
 Stage, Unstage, and guarded Restore controls in addition to Stage All and
 Commit.
 
+Workspace Search incrementally runs after a 220 ms debounce and supports case,
+whole-word, include, and exclude controls. Path patterns are comma-separated:
+`*` matches any characters, while patterns without `*` match a path prefix or
+suffix. Search and workspace replace use the same scope and match options.
+Editor Back/Forward keeps 32 workspace-relative path + line locations for
+explicit navigation jumps; Quick Open uses deterministic fuzzy/path ranking.
+
 Undo and redo histories are independently bounded per open tab and survive tab
 switches. Confirmed conflict overwrites create stable backups under
 `.velocity/backups/`; use **Restore Active File from Backup** to preview and

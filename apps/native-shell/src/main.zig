@@ -192,6 +192,7 @@ test {
     _ = @import("workspace/search.zig");
     _ = @import("workspace/find_in_doc.zig");
     _ = @import("workspace/quick_open.zig");
+    _ = @import("workspace/navigation_history.zig");
     _ = @import("workspace/replace.zig");
     _ = @import("workspace/edit_transforms.zig");
     _ = @import("workspace/problems.zig");

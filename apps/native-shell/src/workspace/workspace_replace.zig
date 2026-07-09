@@ -4,6 +4,7 @@
 const std = @import("std");
 const backup_store = @import("backup_store.zig");
 const scanner = @import("scanner.zig");
+const search = @import("search.zig");
 const workspace_store = @import("workspace_store.zig");
 
 pub const max_files: usize = 64;
@@ -64,7 +65,7 @@ pub const WorkspaceReplace = struct {
         workspace: *workspace_store.WorkspaceBuffers,
         needle: []const u8,
         replacement: []const u8,
-        case_sensitive: bool,
+        options: search.Options,
     ) ReplaceError!PreviewSummary {
         self.clear();
         errdefer self.clear();
@@ -78,8 +79,9 @@ pub const WorkspaceReplace = struct {
         var file_buf: [scanner.max_file_bytes + 1]u8 = undefined;
         for (workspace.fileNodesSlice()) |node| {
             if (node.is_dir) continue;
+            if (!search.pathInScope(node.path, options.include, options.exclude)) continue;
             const text = (try readBoundedText(root, io, node.path, file_buf[0..])) orelse continue;
-            const count = countLiteral(text, needle, case_sensitive);
+            const count = countLiteral(text, needle, options);
             if (count == 0) continue;
             const bytes_after = try projectedSize(text.len, count, needle.len, replacement.len);
             try self.pushPreview(node.path, count, text.len, bytes_after);
@@ -99,9 +101,9 @@ pub const WorkspaceReplace = struct {
         workspace: *workspace_store.WorkspaceBuffers,
         needle: []const u8,
         replacement: []const u8,
-        case_sensitive: bool,
+        options: search.Options,
     ) ReplaceError!ApplySummary {
-        _ = try self.preview(io, workspace, needle, replacement, case_sensitive);
+        _ = try self.preview(io, workspace, needle, replacement, options);
         if (self.preview_count == 0) return .{};
 
         var root = std.Io.Dir.cwd().openDir(io, workspace.rootPath(), .{}) catch return error.WorkspaceUnavailable;
@@ -113,10 +115,10 @@ pub const WorkspaceReplace = struct {
         for (self.previewsSlice()) |item| {
             // Re-read and revalidate so a changed file can never overflow the output pool.
             const text = (try readBoundedText(root, io, item.path, file_buf[0..])) orelse continue;
-            const count = countLiteral(text, needle, case_sensitive);
+            const count = countLiteral(text, needle, options);
             if (count == 0) continue;
             _ = try projectedSize(text.len, count, needle.len, replacement.len);
-            const result = replaceLiteral(text, needle, replacement, case_sensitive, output_buf[0..]) orelse return error.OutputTooLarge;
+            const result = replaceLiteral(text, needle, replacement, options, output_buf[0..]) orelse return error.OutputTooLarge;
             backup_store.overwrite(
                 io,
                 workspace.rootPath(),
@@ -177,11 +179,11 @@ fn readBoundedText(
     return text;
 }
 
-fn countLiteral(text: []const u8, needle: []const u8, case_sensitive: bool) usize {
+fn countLiteral(text: []const u8, needle: []const u8, options: search.Options) usize {
     var count: usize = 0;
     var offset: usize = 0;
     while (offset < text.len) {
-        const relative = indexLiteral(text[offset..], needle, case_sensitive) orelse break;
+        const relative = search.indexMatch(text[offset..], needle, options.case_sensitive, options.whole_word) orelse break;
         count += 1;
         offset += relative + needle.len;
     }
@@ -197,14 +199,14 @@ fn replaceLiteral(
     text: []const u8,
     needle: []const u8,
     replacement: []const u8,
-    case_sensitive: bool,
+    options: search.Options,
     out: []u8,
 ) ?ReplaceResult {
     var source_offset: usize = 0;
     var output_offset: usize = 0;
     var count: u32 = 0;
     while (source_offset < text.len) {
-        const relative = indexLiteral(text[source_offset..], needle, case_sensitive) orelse break;
+        const relative = search.indexMatch(text[source_offset..], needle, options.case_sensitive, options.whole_word) orelse break;
         const match_start = source_offset + relative;
         const prefix_len = match_start - source_offset;
         if (output_offset + prefix_len + replacement.len > out.len) return null;
@@ -219,13 +221,6 @@ fn replaceLiteral(
     if (output_offset + tail.len > out.len) return null;
     @memcpy(out[output_offset..][0..tail.len], tail);
     return .{ .out_len = output_offset + tail.len, .count = count };
-}
-
-fn indexLiteral(text: []const u8, needle: []const u8, case_sensitive: bool) ?usize {
-    return if (case_sensitive)
-        std.mem.indexOf(u8, text, needle)
-    else
-        std.ascii.indexOfIgnoreCase(text, needle);
 }
 
 fn projectedSize(
@@ -266,7 +261,7 @@ test "previews literal replacements in fixture without writing" {
         workspace,
         "createSession",
         "openSession",
-        true,
+        .{ .case_sensitive = true },
     );
     try std.testing.expect(summary.files > 0);
     try std.testing.expect(summary.replacements > 0);
@@ -305,10 +300,10 @@ test "applies bounded literal replacements across workspace files" {
     _ = try workspace.openPath(std.testing.io, root_path);
 
     var workflow: WorkspaceReplace = .{};
-    const preview_summary = try workflow.preview(std.testing.io, workspace, "foo", "longer", true);
+    const preview_summary = try workflow.preview(std.testing.io, workspace, "foo", "longer", .{ .case_sensitive = true });
     try std.testing.expectEqual(@as(u32, 2), preview_summary.files);
     try std.testing.expectEqual(@as(u32, 3), preview_summary.replacements);
-    const apply_summary = try workflow.apply(std.testing.io, workspace, "foo", "longer", true);
+    const apply_summary = try workflow.apply(std.testing.io, workspace, "foo", "longer", .{ .case_sensitive = true });
     try std.testing.expectEqual(@as(u32, 2), apply_summary.files);
     try std.testing.expectEqual(@as(u32, 3), apply_summary.replacements);
 
@@ -349,9 +344,9 @@ test "case insensitive preview and apply use identical match semantics" {
     _ = try workspace.openPath(std.testing.io, root_path);
 
     var workflow: WorkspaceReplace = .{};
-    const preview_summary = try workflow.preview(std.testing.io, workspace, "alpha", "beta", false);
+    const preview_summary = try workflow.preview(std.testing.io, workspace, "alpha", "beta", .{});
     try std.testing.expectEqual(@as(u32, 3), preview_summary.replacements);
-    const apply_summary = try workflow.apply(std.testing.io, workspace, "alpha", "beta", false);
+    const apply_summary = try workflow.apply(std.testing.io, workspace, "alpha", "beta", .{});
     try std.testing.expectEqual(preview_summary.files, apply_summary.files);
     try std.testing.expectEqual(preview_summary.replacements, apply_summary.replacements);
 
@@ -384,7 +379,7 @@ test "rejects oversized replacement output before changing disk" {
     var workflow: WorkspaceReplace = .{};
     try std.testing.expectError(
         error.OutputTooLarge,
-        workflow.apply(std.testing.io, workspace, "a", "aa", true),
+        workflow.apply(std.testing.io, workspace, "a", "aa", .{ .case_sensitive = true }),
     );
     try std.testing.expectEqual(@as(u32, 0), workflow.preview_count);
 
@@ -396,4 +391,23 @@ test "rejects oversized replacement output before changing disk" {
     );
     try std.testing.expectEqual(@as(usize, source.len), disk.len);
     try std.testing.expectEqualSlices(u8, source[0..], disk);
+}
+
+test "whole word and path scope stay identical between preview and apply" {
+    const root_path = "zig-out/test-workspace-replace-scope";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root_path) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root_path) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root_path ++ "/src");
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root_path ++ "/src/a.txt", .data = "cat catalog cat\n" });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root_path ++ "/other.txt", .data = "cat\n" });
+    const workspace = try std.testing.allocator.create(workspace_store.WorkspaceBuffers);
+    defer std.testing.allocator.destroy(workspace);
+    workspace.* = .{};
+    _ = try workspace.openPath(std.testing.io, root_path);
+    const options: search.Options = .{ .whole_word = true, .include = "src/*" };
+    var workflow: WorkspaceReplace = .{};
+    const preview_summary = try workflow.preview(std.testing.io, workspace, "cat", "dog", options);
+    try std.testing.expectEqual(@as(u32, 2), preview_summary.replacements);
+    const apply_summary = try workflow.apply(std.testing.io, workspace, "cat", "dog", options);
+    try std.testing.expectEqual(preview_summary.replacements, apply_summary.replacements);
 }

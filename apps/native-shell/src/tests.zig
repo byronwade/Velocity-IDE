@@ -348,6 +348,106 @@ test "workspace search finds auth helper" {
     try testing.expect(model.selected_activity == .search);
 }
 
+test "incremental workspace search uses one fixed one-shot timer and manual fire" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    model.search_query.set("createSession");
+    model_mod.scheduleWorkspaceSearchForTest(&model, &fx);
+    model_mod.scheduleWorkspaceSearchForTest(&model, &fx);
+    const timer = pendingTimerByKey(&fx, model_mod.search_debounce_timer_key).?;
+    try testing.expectEqual(model_mod.search_debounce_ms, timer.interval_ms);
+    try testing.expectEqual(native_sdk.TimerMode.one_shot, timer.mode);
+    try testing.expect(model.search_debounce_armed);
+
+    fx.cancelTimer(model_mod.search_debounce_timer_key);
+    model_mod.updateFx(&model, .{ .search_debounce_timer = .{
+        .key = model_mod.search_debounce_timer_key,
+        .outcome = .fired,
+    } }, &fx);
+    try testing.expect(!model.search_debounce_armed);
+    try testing.expect(model.search_hits.len > 0);
+
+    model.search_query.clear();
+    model_mod.scheduleWorkspaceSearchForTest(&model, &fx);
+    try testing.expect(pendingTimerByKey(&fx, model_mod.search_debounce_timer_key) == null);
+    try testing.expectEqual(@as(usize, 0), model.search_hits.len);
+}
+
+test "rejected incremental search timer stays disarmed and manual search still works" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    model.search_query.set("createSession");
+    model_mod.scheduleWorkspaceSearchForTest(&model, &fx);
+    fx.cancelTimer(model_mod.search_debounce_timer_key);
+    model_mod.updateFx(&model, .{ .search_debounce_timer = .{
+        .key = model_mod.search_debounce_timer_key,
+        .outcome = .rejected,
+    } }, &fx);
+    try testing.expect(!model.search_debounce_armed);
+    try testing.expect(std.mem.indexOf(u8, model.toast, "press Search") != null);
+    model_mod.updateFx(&model, .run_search, &fx);
+    try testing.expect(model.search_hits.len > 0);
+}
+
+test "workspace search scope and whole word match workspace replace preview" {
+    const root = "zig-out/test-model-search-scope";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root ++ "/src");
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/src/a.txt", .data = "cat catalog cat\n" });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/outside.txt", .data = "cat\n" });
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    model.search_query.set("cat");
+    model.search_include.set("src/*");
+    model.search_whole_word = true;
+    main.update(&model, .run_search);
+    try testing.expectEqual(@as(usize, 1), model.search_hits.len);
+    model.replace_text.set("dog");
+    main.update(&model, .preview_workspace_replace);
+    try testing.expectEqual(@as(usize, 1), model.replace_previews.len);
+    try testing.expectEqual(@as(u32, 2), model.replace_previews[0].replacements);
+}
+
+test "search and line jumps populate back forward navigation and branch" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    const initial_path = model.activeTabPath();
+    model.search_query.set("createSession");
+    main.update(&model, .run_search);
+    try testing.expect(model.search_hits.len > 0);
+    main.update(&model, .{ .open_search_hit = model.search_hits[0].id });
+    const target_path = model.activeTabPath();
+    try testing.expect(model.navigation.canBack());
+    main.update(&model, .navigate_back);
+    try testing.expectEqualStrings(initial_path, model.activeTabPath());
+    main.update(&model, .navigate_forward);
+    try testing.expectEqualStrings(target_path, model.activeTabPath());
+    main.update(&model, .navigate_back);
+    model.goto_line_input.set("2");
+    main.update(&model, .goto_line);
+    try testing.expect(!model.navigation.canForward());
+}
+
+test "editor chrome exposes accessible navigation controls" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .{ .select_activity = .search });
+    const tree = try buildTree(arena_state.allocator(), &model);
+    _ = try expectByText(tree.root, .button, "Back");
+    _ = try expectByText(tree.root, .button, "Forward");
+    _ = try expectByText(tree.root, .button, "Whole Word");
+}
+
 test "git status refresh on scm activity" {
     var model = main.initialModel();
     main.update(&model, .{ .open_project = "acme-dashboard" });

@@ -85,10 +85,14 @@
                 <badge variant="secondary">{searchStatus}</badge>
               </row>
               <text-field text="{searchQueryText}" placeholder="Search workspace..." on-input="update_search_query" on-submit="run_search" label="Search query" />
+              <text-field text="{searchIncludeText}" placeholder="Include paths (for example src/*,*.zig)" on-input="update_search_include" label="Search include paths" />
+              <text-field text="{searchExcludeText}" placeholder="Exclude paths (for example */vendor/*,*.test.ts)" on-input="update_search_exclude" label="Search exclude paths" />
               <row gap="4">
-                <button size="sm" variant="ghost" on-press="toggle_search_case">{searchCaseLabel}</button>
-                <button size="sm" variant="primary" on-press="run_search">Search</button>
+                <button size="sm" variant="ghost" on-press="toggle_search_case" label="{searchCaseLabel}">Aa</button>
+                <button size="sm" variant="ghost" on-press="toggle_search_whole_word" label="{searchWholeWordLabel}">Whole Word</button>
+                <button size="sm" variant="primary" on-press="run_search" label="Run workspace search immediately">Search</button>
               </row>
+              <text size="sm" foreground="text_muted" wrap="true">Path scopes are comma-separated. * matches any characters; patterns without * match a path prefix or suffix.</text>
               <separator />
               <text>Replace Across Workspace</text>
               <text-field text="{replaceText}" placeholder="Replacement text..." on-input="update_replace_text" label="Workspace replacement text" />
@@ -200,6 +204,8 @@
             <row grow="1">
               <column grow="1" gap="4" padding="8">
                 <row gap="4" cross="center">
+                  <button size="sm" variant="ghost" on-press="navigate_back" label="{navigationBackLabel}">Back</button>
+                  <button size="sm" variant="ghost" on-press="navigate_forward" label="{navigationForwardLabel}">Forward</button>
                   <row gap="2" grow="1" cross="center">
                     <for each="breadcrumb_segs" key="id" as="seg">
                       <button size="sm" variant="ghost" on-press="select_breadcrumb:{seg.id}">{seg.label}</button>
