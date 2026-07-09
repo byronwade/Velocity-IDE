@@ -203,10 +203,13 @@ pub fn persist(io: std.Io, root_path: []const u8, input: Input) !void {
     const encoded = try std.heap.page_allocator.alloc(u8, max_serialized_bytes);
     defer std.heap.page_allocator.free(encoded);
     const len = try serialize(input, encoded);
-    var root = try std.Io.Dir.cwd().openDir(io, root_path, .{});
-    defer root.close(io);
-    try root.createDirPath(io, ".velocity");
-    try root.writeFile(io, .{ .sub_path = session_rel_path, .data = encoded[0..len] });
+    try scanner.writeFileAtomic(
+        io,
+        root_path,
+        session_rel_path,
+        encoded[0..len],
+        max_serialized_bytes,
+    );
 }
 
 /// Load and validate a workspace session into caller-owned state.

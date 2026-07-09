@@ -3,6 +3,7 @@ const native_sdk = @import("native_sdk");
 const main = @import("main.zig");
 const model_mod = @import("model/app_model.zig");
 const scanner_mod = @import("workspace/scanner.zig");
+const hot_exit_store = @import("workspace/hot_exit_store.zig");
 
 const canvas = native_sdk.canvas;
 const testing = std.testing;
@@ -1518,6 +1519,40 @@ test "undo histories survive tab switches without mixing documents" {
     try testing.expect(model.tab_histories.?.get("b.txt") != null);
 }
 
+test "clean tab eviction drops undo history and reopen starts fresh" {
+    const root = "zig-out/test-model-tab-history-eviction";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    const names = [_][]const u8{
+        "a.txt", "b.txt", "c.txt", "d.txt", "e.txt",
+        "f.txt", "g.txt", "h.txt", "i.txt",
+    };
+    for (names) |name| {
+        var path_buf: [128]u8 = undefined;
+        const path = try std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ root, name });
+        try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = path, .data = name });
+    }
+
+    var model = main.initialModel();
+    defer model.deinit();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    main.update(&model, .insert_blank_line);
+    main.update(&model, .save_file);
+    try testing.expect(model.tab_histories.?.get("a.txt").?.canUndo());
+
+    for (names[1..]) |name| {
+        const node = model.workspace.?.findNodeByPath(name).?;
+        main.update(&model, .{ .select_file = node.id });
+    }
+    try testing.expect(model.tab_histories.?.get("a.txt") == null);
+
+    const reopened = model.workspace.?.findNodeByPath("a.txt").?;
+    main.update(&model, .{ .select_file = reopened.id });
+    try testing.expect(!model.tab_histories.?.get("a.txt").?.canUndo());
+}
+
 test "active backup restore previews confirms and refuses unsafe states" {
     const root = "zig-out/test-model-backup-restore";
     std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
@@ -1759,6 +1794,7 @@ test "workspace replace refuses dirty matching tab then applies after double con
     const disk = try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out);
     try testing.expectEqualStrings("beta beta\n", disk);
     try testing.expectEqualStrings("beta beta\n", model.document.text());
+    try testing.expect(!model.workspace.?.activeFileChanged(std.testing.io));
 }
 
 test "workspace replace refuses matching open tab changed on disk" {
@@ -1832,6 +1868,166 @@ test "close persists hot exit and matching workspace restores dirty session" {
     try testing.expectEqualStrings("Hot-exit session restored", restored.toast);
     try testing.expectEqualStrings("hot exit edit\n", restored.document.text());
     try testing.expect(restored.document_dirty);
+}
+
+test "hot exit partial restore reports counts and stale-only session keeps default tab" {
+    const root = "zig-out/test-model-hot-exit-partial";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "a\n" });
+
+    const partial_tabs = [_]hot_exit_store.TabInput{
+        .{ .path = "a.txt" },
+        .{ .path = "missing.txt" },
+    };
+    try hot_exit_store.persist(std.testing.io, root, .{
+        .root = root,
+        .active_path = "missing.txt",
+        .tabs = &partial_tabs,
+    });
+    var partial = main.initialModel();
+    partial.open_path.set(root);
+    main.update(&partial, .submit_open_path);
+    try testing.expectEqualStrings("Hot-exit restored 1; skipped 1", partial.toast);
+    try testing.expectEqual(@as(usize, 1), partial.open_tabs.len);
+    try testing.expectEqualStrings("a.txt", partial.activeTabPath());
+
+    const stale_tabs = [_]hot_exit_store.TabInput{.{ .path = "missing.txt" }};
+    try hot_exit_store.persist(std.testing.io, root, .{
+        .root = root,
+        .active_path = "missing.txt",
+        .tabs = &stale_tabs,
+    });
+    var stale = main.initialModel();
+    stale.open_path.set(root);
+    main.update(&stale, .submit_open_path);
+    try testing.expectEqualStrings("Workspace opened", stale.toast);
+    try testing.expectEqual(@as(usize, 1), stale.open_tabs.len);
+    try testing.expectEqualStrings("a.txt", stale.activeTabPath());
+    try testing.expectEqualStrings("a\n", stale.document.text());
+}
+
+test "hot exit refuses dirty unloaded payload and surfaces persistence failure" {
+    const root = "zig-out/test-model-hot-exit-unloaded-dirty";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "a\n" });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/b.txt", .data = "b\n" });
+
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    const ws = model.workspace.?;
+    main.update(&model, .{ .select_file = ws.findNodeByPath("b.txt").?.id });
+    ws.tabs[0].dirty = true;
+    ws.tab_text_loaded[0] = false;
+    model.document_dirty = false;
+    main.update(&model, .close_window);
+
+    try testing.expectEqualStrings(
+        "Hot-exit persistence failed; dirty tab payload was unavailable",
+        model.toast,
+    );
+    try testing.expect(model.hot_exit_persist_failed);
+    try testing.expectError(
+        error.FileNotFound,
+        std.Io.Dir.cwd().statFile(std.testing.io, root ++ "/.velocity/hot-exit.bin", .{}),
+    );
+}
+
+test "autosave writes backups refreshes fingerprints and preserves external conflicts" {
+    const root = "zig-out/test-model-autosave-integrity";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "a\n" });
+
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    model.auto_save = true;
+    main.update(&model, .insert_blank_line);
+    try testing.expect(!model.document_dirty);
+    try testing.expect(!model.workspace.?.activeFileChanged(std.testing.io));
+    var out: [64]u8 = undefined;
+    try testing.expectEqualStrings(
+        "a\n\n",
+        try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out),
+    );
+    try testing.expectEqualStrings(
+        "a\n",
+        try std.Io.Dir.cwd().readFile(
+            std.testing.io,
+            root ++ "/.velocity/backups/a.txt.bak",
+            &out,
+        ),
+    );
+
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{
+        .sub_path = root ++ "/a.txt",
+        .data = "external\n",
+    });
+    main.update(&model, .insert_blank_line);
+    try testing.expect(model.document_dirty);
+    try testing.expect(model.disk_changed);
+    try testing.expect(std.mem.startsWith(u8, model.toast, "File changed on disk"));
+    try testing.expectEqualStrings(
+        "external\n",
+        try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out),
+    );
+}
+
+test "close all and close other use explicit dirty confirmation flags" {
+    const root = "zig-out/test-model-close-confirm-flags";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "a\n" });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/b.txt", .data = "b\n" });
+
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    const ws = model.workspace.?;
+    const a = ws.findNodeByPath("a.txt").?;
+    const b = ws.findNodeByPath("b.txt").?;
+    model.document.set("dirty a\n");
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    main.update(&model, .{ .select_file = b.id });
+
+    main.update(&model, .close_other_tabs);
+    try testing.expect(model.close_other_confirm_pending);
+    try testing.expectEqual(@as(usize, 2), model.open_tabs.len);
+    main.update(&model, .close_other_tabs);
+    try testing.expect(!model.close_other_confirm_pending);
+    try testing.expectEqual(@as(usize, 1), model.open_tabs.len);
+    try testing.expectEqual(b.id, model.active_tab_id);
+
+    model.document.set("dirty b\n");
+    model.document_dirty = true;
+    main.update(&model, .close_all_tabs);
+    try testing.expect(model.close_all_confirm_pending);
+    try testing.expectEqual(@as(usize, 1), model.open_tabs.len);
+    main.update(&model, .close_all_tabs);
+    try testing.expect(!model.close_all_confirm_pending);
+    try testing.expectEqual(@as(usize, 0), model.open_tabs.len);
+    _ = a;
+}
+
+test "Git discard refuses an unsaved open tab before confirmation" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.document.set("unsaved before discard\n");
+    model.document_dirty = true;
+    main.update(&model, .discard_changes);
+    try testing.expectEqualStrings(
+        "Discard refused: an open tab has unsaved changes",
+        model.toast,
+    );
+    try testing.expect(model.document_dirty);
 }
 
 test "external clean background tab is decorated and reloads on selection" {

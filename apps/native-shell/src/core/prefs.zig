@@ -2,6 +2,7 @@
 //! Writes a tiny key=value file under .velocity/prefs.txt relative to cwd.
 
 const std = @import("std");
+const scanner = @import("../workspace/scanner.zig");
 
 pub const max_recent: usize = 5;
 pub const max_recent_files: usize = 8;
@@ -292,8 +293,7 @@ pub const Prefs = struct {
             append(&out, &len, self.recentFile(i));
             append(&out, &len, "\n");
         }
-        std.Io.Dir.cwd().createDirPath(io, ".velocity") catch {};
-        std.Io.Dir.cwd().writeFile(io, .{ .sub_path = prefs_rel_path, .data = out[0..len] }) catch {};
+        scanner.writeFileAtomic(io, ".", prefs_rel_path, out[0..len], max_prefs_bytes) catch {};
     }
 };
 

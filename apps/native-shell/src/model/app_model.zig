@@ -437,6 +437,7 @@ pub const Model = struct {
     workspace: ?*workspace_store.WorkspaceBuffers = null,
     /// Runtime Io from process.Init; tests fall back to std.testing.io.
     io: ?std.Io = null,
+    hot_exit_persist_failed: bool = false,
     document: canvas.TextBuffer(max_document) = .{},
     document_dirty: bool = false,
     disk_changed: bool = false,
@@ -466,6 +467,8 @@ pub const Model = struct {
     backup_status_buf: [160]u8 = undefined,
     backup_restore_confirm_tab_id: u32 = 0,
     backup_restore_confirm_hash: u64 = 0,
+    close_other_confirm_pending: bool = false,
+    close_all_confirm_pending: bool = false,
     task_status_buf: [96]u8 = undefined,
     replace_status_buf: [128]u8 = undefined,
     git_entries: []const GitEntry = &.{},
@@ -648,6 +651,7 @@ pub const Model = struct {
         "status_memory",
         "status_startup",
         "io",
+        "hot_exit_persist_failed",
         "document",
         "document_dirty",
         "disk_changed",
@@ -672,6 +676,8 @@ pub const Model = struct {
         "backup_status_buf",
         "backup_restore_confirm_tab_id",
         "backup_restore_confirm_hash",
+        "close_other_confirm_pending",
+        "close_all_confirm_pending",
         "new_file_path",
         "explorer_filter",
         "explorer_filtered",
@@ -1496,7 +1502,7 @@ pub fn updateFx(model: *Model, msg: Msg, fx: *Effects) void {
         armToastClearTimer(model, fx);
     }
     handleWindowActions(model, msg, fx);
-    if (!messageClosesWindow(msg) and model.current_view != .launch) {
+    if ((!messageClosesWindow(msg) or model.hot_exit_persist_failed) and model.current_view != .launch) {
         reconcileDiskPoll(model, fx);
     }
 }
@@ -1591,13 +1597,16 @@ fn armToastClearTimer(model: *Model, fx: *Effects) void {
 }
 
 fn handleWindowActions(model: *Model, msg: Msg, fx: *Effects) void {
-    _ = model;
     switch (msg) {
         .minimize_window => fx.minimizeWindow("main"),
-        .close_window => fx.closeWindow("main"),
+        .close_window => {
+            if (!model.hot_exit_persist_failed) fx.closeWindow("main");
+        },
         .run_command => |id| {
             if (std.mem.eql(u8, id, "minimize_window")) fx.minimizeWindow("main");
-            if (std.mem.eql(u8, id, "close_window")) fx.closeWindow("main");
+            if (std.mem.eql(u8, id, "close_window") and !model.hot_exit_persist_failed) {
+                fx.closeWindow("main");
+            }
         },
         else => {},
     }
@@ -1876,7 +1885,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             } else if (std.mem.eql(u8, id, "minimize_window")) {
                 // Handled in updateFx via handleWindowActions when fx is present.
             } else if (std.mem.eql(u8, id, "close_window")) {
-                persistHotExit(model);
+                _ = persistHotExit(model);
             } else if (std.mem.eql(u8, id, "reopen_last_workspace")) {
                 reopenLastWorkspace(model);
             } else if (std.mem.eql(u8, id, "clear_find")) {
@@ -2413,7 +2422,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         },
         .check_for_updates => runUpdateCheck(model),
         .minimize_window => {},
-        .close_window => persistHotExit(model),
+        .close_window => _ = persistHotExit(model),
         .toggle_notifications_panel => {
             model.notifications_panel_open = !model.notifications_panel_open;
         },
@@ -2523,17 +2532,23 @@ fn refreshDiskSync(model: *Model, manual: bool) void {
     }
 }
 
-fn persistHotExit(model: *Model) void {
-    const ws = model.workspace orelse return;
-    if (!model.workspace_from_disk or ws.rootPath().len == 0) return;
+fn persistHotExit(model: *Model) bool {
+    model.hot_exit_persist_failed = false;
+    const ws = model.workspace orelse return true;
+    if (!model.workspace_from_disk or ws.rootPath().len == 0) return true;
     syncActiveTabDirty(model);
     var session_tabs: [hot_exit_store.max_tabs]hot_exit_store.TabInput = undefined;
     const count = @min(ws.tabsSlice().len, session_tabs.len);
     for (ws.tabsSlice()[0..count], 0..) |tab, index| {
+        if (tab.dirty and !ws.tab_text_loaded[index]) {
+            model.hot_exit_persist_failed = true;
+            model.toast = "Hot-exit persistence failed; dirty tab payload was unavailable";
+            return false;
+        }
         session_tabs[index] = .{
             .path = tab.path,
             .dirty = tab.dirty,
-            .dirty_text = if (tab.dirty and ws.tab_text_loaded[index])
+            .dirty_text = if (tab.dirty)
                 ws.tab_text_pool[index][0..ws.tab_text_lens[index]]
             else
                 "",
@@ -2543,28 +2558,61 @@ fn persistHotExit(model: *Model) void {
         .root = ws.rootPath(),
         .active_path = ws.editorPath(),
         .tabs = session_tabs[0..count],
-    }) catch {};
+    }) catch {
+        model.hot_exit_persist_failed = true;
+        model.toast = "Hot-exit persistence failed; session was not saved";
+        return false;
+    };
+    return true;
 }
 
-fn restoreHotExit(model: *Model, ws: *workspace_store.WorkspaceBuffers) bool {
-    const state = std.heap.page_allocator.create(hot_exit_store.State) catch return false;
+const HotExitRestoreSummary = struct {
+    restored: u32,
+    skipped: u32,
+};
+
+fn restoreHotExit(model: *Model, ws: *workspace_store.WorkspaceBuffers) ?HotExitRestoreSummary {
+    const state = std.heap.page_allocator.create(hot_exit_store.State) catch return null;
     defer std.heap.page_allocator.destroy(state);
-    hot_exit_store.restore(modelIo(model), ws.rootPath(), state) catch return false;
-    if (!std.mem.eql(u8, state.root(), ws.rootPath())) return false;
+    hot_exit_store.restore(modelIo(model), ws.rootPath(), state) catch return null;
+    if (!std.mem.eql(u8, state.root(), ws.rootPath())) return null;
+
+    // Preflight every candidate before touching the default tab opened with the
+    // workspace. This guarantees an entirely stale session cannot blank the editor.
+    var restorable_ids: [hot_exit_store.max_tabs]u32 = undefined;
+    var state_indices: [hot_exit_store.max_tabs]usize = undefined;
+    var restorable_count: usize = 0;
+    var read_buf: [scanner_mod.max_file_bytes]u8 = undefined;
+    var preflight_index: usize = 0;
+    while (preflight_index < state.tab_count) : (preflight_index += 1) {
+        const node = ws.findNodeByPath(state.tabPath(preflight_index)) orelse continue;
+        if (node.is_dir) continue;
+        _ = scanner_mod.readTextFile(
+            modelIo(model),
+            ws.rootPath(),
+            state.tabPath(preflight_index),
+            &read_buf,
+        ) catch continue;
+        restorable_ids[restorable_count] = node.id;
+        state_indices[restorable_count] = preflight_index;
+        restorable_count += 1;
+    }
+    if (restorable_count == 0) return null;
 
     while (ws.tab_count > 0) ws.closeTab(ws.tabs[0].id);
     var restored: u32 = 0;
     var i: usize = 0;
-    while (i < state.tab_count) : (i += 1) {
-        const node = ws.findNodeByPath(state.tabPath(i)) orelse continue;
-        ws.openFileById(modelIo(model), node.id) catch continue;
-        if (state.tab_dirty[i]) {
-            ws.cacheActiveText(state.dirtyText(i));
-            ws.setTabDirty(node.id, true);
+    while (i < restorable_count) : (i += 1) {
+        const id = restorable_ids[i];
+        const state_index = state_indices[i];
+        ws.openFileById(modelIo(model), id) catch continue;
+        if (state.tab_dirty[state_index]) {
+            ws.cacheActiveText(state.dirtyText(state_index));
+            ws.setTabDirty(id, true);
         }
         restored += 1;
     }
-    if (restored == 0) return false;
+    if (restored == 0) return null;
     if (ws.findNodeByPath(state.activePath())) |active| {
         ws.openFileById(modelIo(model), active.id) catch {};
         model.active_tab_id = active.id;
@@ -2576,7 +2624,10 @@ fn restoreHotExit(model: *Model, ws: *workspace_store.WorkspaceBuffers) bool {
     }
     model.open_tabs = ws.tabsSlice();
     syncDocumentFromWorkspace(model);
-    return true;
+    return .{
+        .restored = restored,
+        .skipped = @intCast(state.tab_count - restored),
+    };
 }
 
 fn ensureTerminalBuffers(model: *Model) !*terminal_session.TerminalBuffers {
@@ -3027,6 +3078,16 @@ fn reconcileTabHistories(model: *Model) void {
     store.retainPaths(paths[0..model.open_tabs.len]);
 }
 
+fn removeTabHistory(model: *Model, ws: *workspace_store.WorkspaceBuffers, id: u32) void {
+    const store = model.tab_histories orelse return;
+    for (ws.tabsSlice()) |tab| {
+        if (tab.id == id) {
+            store.remove(tab.path);
+            return;
+        }
+    }
+}
+
 fn revertActiveFile(model: *Model) void {
     if (!model.workspace_from_disk) {
         model.toast = "Nothing to revert";
@@ -3174,12 +3235,19 @@ fn openWorkspacePath(model: *Model, path: []const u8) void {
         return;
     };
     applyWorkspaceMeta(model, ws, meta);
-    const restored = meta.scan_error.len == 0 and restoreHotExit(model, ws);
+    const restored = if (meta.scan_error.len == 0) restoreHotExit(model, ws) else null;
     refreshTasks(model);
     if (meta.scan_error.len > 0) {
         model.toast = meta.scan_error;
-    } else if (restored) {
-        model.toast = "Hot-exit session restored";
+    } else if (restored) |summary| {
+        model.toast = if (summary.skipped == 0)
+            "Hot-exit session restored"
+        else
+            std.fmt.bufPrint(
+                &model.action_toast_buf,
+                "Hot-exit restored {d}; skipped {d}",
+                .{ summary.restored, summary.skipped },
+            ) catch "Hot-exit session partially restored";
     } else {
         model.toast = "Workspace opened";
     }
@@ -4280,8 +4348,8 @@ fn applyDocumentTransform(model: *Model, new_text: []const u8, ok_toast: []const
     model.document_dirty = true;
     refreshDocStats(model);
     syncActiveTabDirty(model);
-    if (model.auto_save and model.workspace_from_disk) saveActiveDocument(model);
     model.toast = ok_toast;
+    if (model.auto_save and model.workspace_from_disk) saveActiveDocument(model);
 }
 
 fn deleteLastLine(model: *Model) void {
@@ -4939,6 +5007,7 @@ fn closeOtherTabs(model: *Model) void {
         model.toast = "No workspace";
         return;
     };
+    syncActiveTabDirty(model);
     const keep = model.active_tab_id;
     var has_dirty = false;
     for (ws.tabsSlice()) |tab| {
@@ -4947,10 +5016,13 @@ fn closeOtherTabs(model: *Model) void {
             break;
         }
     }
-    if (has_dirty and !std.mem.startsWith(u8, model.toast, "Close other tabs")) {
+    if (has_dirty and !model.close_other_confirm_pending) {
+        model.close_other_confirm_pending = true;
+        model.close_all_confirm_pending = false;
         model.toast = "Close other tabs? Confirm again to discard dirty";
         return;
     }
+    model.close_other_confirm_pending = false;
     // Collect ids to close (copy first — close mutates tabs).
     var to_close: [8]u32 = undefined;
     var n: u32 = 0;
@@ -4975,6 +5047,7 @@ fn closeOtherTabs(model: *Model) void {
                 }
             }
         }
+        removeTabHistory(model, ws, id);
         ws.closeTab(id);
     }
     model.open_tabs = ws.tabsSlice();
@@ -4994,6 +5067,7 @@ fn closeAllTabs(model: *Model) void {
         model.toast = "No workspace";
         return;
     };
+    syncActiveTabDirty(model);
     var has_dirty = model.document_dirty;
     if (!has_dirty) {
         for (ws.tabsSlice()) |tab| {
@@ -5004,11 +5078,16 @@ fn closeAllTabs(model: *Model) void {
         }
     }
     if (has_dirty) {
-        if (!std.mem.startsWith(u8, model.toast, "Close all")) {
+        if (!model.close_all_confirm_pending) {
+            model.close_all_confirm_pending = true;
+            model.close_other_confirm_pending = false;
             model.toast = "Close all? Confirm again to discard dirty";
             return;
         }
+        model.close_all_confirm_pending = false;
         model.document_dirty = false;
+    } else {
+        model.close_all_confirm_pending = false;
     }
     var to_close: [8]u32 = undefined;
     var n: u32 = 0;
@@ -5031,6 +5110,7 @@ fn closeAllTabs(model: *Model) void {
                 }
             }
         }
+        removeTabHistory(model, ws, id);
         ws.closeTab(id);
     }
     model.open_tabs = ws.tabsSlice();
@@ -5198,6 +5278,17 @@ fn discardWorkingTreeChanges(model: *Model) void {
         model.toast = "Open a workspace for git";
         return;
     }
+    syncActiveTabDirty(model);
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    for (ws.tabsSlice()) |tab| {
+        if (tab.dirty) {
+            model.toast = "Discard refused: an open tab has unsaved changes";
+            return;
+        }
+    }
     if (!std.mem.startsWith(u8, model.toast, "Discard")) {
         model.toast = "Discard working tree? Confirm again";
         return;
@@ -5216,13 +5307,18 @@ fn discardWorkingTreeChanges(model: *Model) void {
     model.current_view = .ide;
     model.selected_activity = .scm;
     model.show_sidebar = true;
-    // Reload active editor from disk after discard when clean.
-    if (std.mem.eql(u8, status, "discarded changes") and !model.document_dirty) {
-        if (model.workspace) |ws| {
-            if (model.active_tab_id != 0) {
-                ws.reloadFileById(modelIo(model), model.active_tab_id) catch {};
-                syncDocumentFromWorkspace(model);
-            }
+    // Every open tab was proven clean above. Reload all of them so any tracked
+    // path affected by checkout cannot retain a stale background cache.
+    if (std.mem.eql(u8, status, "discarded changes")) {
+        var open_paths: [workspace_store.max_open_tabs][scanner_mod.max_rel_path_len]u8 = undefined;
+        var path_lens: [workspace_store.max_open_tabs]usize = undefined;
+        const path_count = ws.tabsSlice().len;
+        for (ws.tabsSlice(), 0..) |tab, index| {
+            path_lens[index] = tab.path.len;
+            @memcpy(open_paths[index][0..tab.path.len], tab.path);
+        }
+        for (0..path_count) |index| {
+            reloadCleanOpenPath(model, open_paths[index][0..path_lens[index]]);
         }
     }
     model.toast = status;
@@ -5617,6 +5713,7 @@ fn closeTabById(model: *Model, id: u32) void {
                     }
                 }
             }
+            removeTabHistory(model, ws, id);
             ws.closeTab(id);
             model.open_tabs = ws.tabsSlice();
             if (ws.tab_count > 0) {

@@ -2,6 +2,7 @@
 //! Preview validates every matching file before apply performs disk writes.
 
 const std = @import("std");
+const backup_store = @import("backup_store.zig");
 const scanner = @import("scanner.zig");
 const workspace_store = @import("workspace_store.zig");
 
@@ -116,10 +117,12 @@ pub const WorkspaceReplace = struct {
             if (count == 0) continue;
             _ = try projectedSize(text.len, count, needle.len, replacement.len);
             const result = replaceLiteral(text, needle, replacement, case_sensitive, output_buf[0..]) orelse return error.OutputTooLarge;
-            root.writeFile(io, .{
-                .sub_path = item.path,
-                .data = output_buf[0..result.out_len],
-            }) catch return error.WriteFailed;
+            backup_store.overwrite(
+                io,
+                workspace.rootPath(),
+                item.path,
+                output_buf[0..result.out_len],
+            ) catch return error.WriteFailed;
             summary.files = try addU32(summary.files, 1);
             summary.replacements = try addU32(summary.replacements, result.count);
         }
@@ -322,6 +325,12 @@ test "applies bounded literal replacements across workspace files" {
         disk_buf[0..],
     );
     try std.testing.expectEqualStrings("two longer\n", b_disk);
+    const a_backup = try std.Io.Dir.cwd().readFile(
+        std.testing.io,
+        root_path ++ "/.velocity/backups/a.txt.bak",
+        disk_buf[0..],
+    );
+    try std.testing.expectEqualStrings("foo one foo\n", a_backup);
 }
 
 test "case insensitive preview and apply use identical match semantics" {

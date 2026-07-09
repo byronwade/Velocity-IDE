@@ -197,7 +197,7 @@ pub const WorkspaceBuffers = struct {
             self.tabs[idx].path,
             self.tab_disk_fingerprints[idx],
         )) return error.FileChanged;
-        try scanner.writeTextFile(
+        try backup_store.overwrite(
             io,
             self.rootPath(),
             self.tabs[idx].path,

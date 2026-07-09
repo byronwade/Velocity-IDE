@@ -11,6 +11,8 @@ pub const max_name_len: usize = 64;
 pub const max_rel_path_len: usize = 240;
 pub const max_root_path_len: usize = 512;
 pub const max_file_bytes: usize = 16 * 1024;
+pub const max_internal_rel_path_len: usize = 512;
+pub const max_atomic_temp_path_len: usize = max_internal_rel_path_len + ".velocity-tmp".len;
 
 pub const SkipSet = struct {
     pub fn shouldSkipName(name: []const u8) bool {
@@ -67,6 +69,25 @@ pub const ReadTextFileError = error{
     FileTooLarge,
     BinaryFile,
 };
+
+pub fn validateRelativePathBounded(path: []const u8, max_len: usize) !void {
+    if (path.len == 0 or path.len > max_len) return error.InvalidPath;
+    if (path[0] == '/' or path[0] == '\\') return error.InvalidPath;
+    if (path.len >= 2 and std.ascii.isAlphabetic(path[0]) and path[1] == ':') return error.InvalidPath;
+    if (std.mem.indexOfScalar(u8, path, 0) != null or std.mem.indexOfScalar(u8, path, '\\') != null) {
+        return error.InvalidPath;
+    }
+    var parts = std.mem.splitScalar(u8, path, '/');
+    while (parts.next()) |part| {
+        if (part.len == 0 or
+            std.mem.eql(u8, part, ".") or
+            std.mem.eql(u8, part, "..")) return error.InvalidPath;
+    }
+}
+
+pub fn validateRelativePath(path: []const u8) !void {
+    try validateRelativePathBounded(path, max_rel_path_len);
+}
 
 fn pushName(bufs: *ScanBuffers, name: []const u8) ScanError!struct { off: u32, len: u8 } {
     if (name.len > max_name_len) return error.NameTooLong;
@@ -206,6 +227,7 @@ pub fn nodePath(bufs: *const ScanBuffers, node: ScanNode) []const u8 {
 }
 
 pub fn readTextFile(io: Io, root_path: []const u8, rel_path: []const u8, out: []u8) ReadTextFileError!usize {
+    validateRelativePathBounded(rel_path, max_internal_rel_path_len) catch return error.AccessDenied;
     var root = Io.Dir.cwd().openDir(io, root_path, .{}) catch return error.AccessDenied;
     defer root.close(io);
     var file = root.openFile(io, rel_path, .{}) catch |err| {
@@ -235,25 +257,51 @@ pub fn readTextFile(io: Io, root_path: []const u8, rel_path: []const u8, out: []
     return slice.len;
 }
 
-pub fn writeTextFile(io: Io, root_path: []const u8, rel_path: []const u8, data: []const u8) !void {
-    if (rel_path.len == 0 or data.len > max_file_bytes) return error.AccessDenied;
+pub fn writeFileAtomic(
+    io: Io,
+    root_path: []const u8,
+    rel_path: []const u8,
+    data: []const u8,
+    max_bytes: usize,
+) !void {
+    validateRelativePathBounded(rel_path, max_internal_rel_path_len) catch return error.AccessDenied;
+    if (data.len > max_bytes) return error.AccessDenied;
     var root = try Io.Dir.cwd().openDir(io, root_path, .{});
     defer root.close(io);
     if (std.fs.path.dirname(rel_path)) |parent| {
-        root.createDirPath(io, parent) catch {};
+        root.createDirPath(io, parent) catch return error.AccessDenied;
     }
-    root.writeFile(io, .{ .sub_path = rel_path, .data = data }) catch return error.AccessDenied;
+    var temp_buf: [max_atomic_temp_path_len]u8 = undefined;
+    const suffix = ".velocity-tmp";
+    const temp_len = rel_path.len + suffix.len;
+    if (temp_len > temp_buf.len) return error.AccessDenied;
+    @memcpy(temp_buf[0..rel_path.len], rel_path);
+    @memcpy(temp_buf[rel_path.len..][0..suffix.len], suffix);
+    const temp_path = temp_buf[0..temp_len];
+
+    // The deterministic temporary is bounded, same-directory, and removed on
+    // every failure path. Velocity serializes writes on its model thread.
+    root.deleteFile(io, temp_path) catch {};
+    errdefer root.deleteFile(io, temp_path) catch {};
+    root.writeFile(io, .{ .sub_path = temp_path, .data = data }) catch return error.AccessDenied;
+    root.rename(temp_path, root, rel_path, io) catch return error.AccessDenied;
+}
+
+pub fn writeTextFile(io: Io, root_path: []const u8, rel_path: []const u8, data: []const u8) !void {
+    validateRelativePath(rel_path) catch return error.AccessDenied;
+    try writeFileAtomic(io, root_path, rel_path, data, max_file_bytes);
 }
 
 pub fn deleteRelFile(io: Io, root_path: []const u8, rel_path: []const u8) !void {
-    if (rel_path.len == 0) return error.AccessDenied;
+    validateRelativePath(rel_path) catch return error.AccessDenied;
     var root = try Io.Dir.cwd().openDir(io, root_path, .{});
     defer root.close(io);
     root.deleteFile(io, rel_path) catch return error.AccessDenied;
 }
 
 pub fn renameRelFile(io: Io, root_path: []const u8, old_rel: []const u8, new_rel: []const u8) !void {
-    if (old_rel.len == 0 or new_rel.len == 0) return error.AccessDenied;
+    validateRelativePath(old_rel) catch return error.AccessDenied;
+    validateRelativePath(new_rel) catch return error.AccessDenied;
     var root = try Io.Dir.cwd().openDir(io, root_path, .{});
     defer root.close(io);
     if (std.fs.path.dirname(new_rel)) |parent| {
@@ -263,14 +311,14 @@ pub fn renameRelFile(io: Io, root_path: []const u8, old_rel: []const u8, new_rel
 }
 
 pub fn createRelDir(io: Io, root_path: []const u8, rel_path: []const u8) !void {
-    if (rel_path.len == 0) return error.AccessDenied;
+    validateRelativePath(rel_path) catch return error.AccessDenied;
     var root = try Io.Dir.cwd().openDir(io, root_path, .{});
     defer root.close(io);
     root.createDirPath(io, rel_path) catch return error.AccessDenied;
 }
 
 pub fn deleteRelDir(io: Io, root_path: []const u8, rel_path: []const u8) !void {
-    if (rel_path.len == 0) return error.AccessDenied;
+    validateRelativePath(rel_path) catch return error.AccessDenied;
     var root = try Io.Dir.cwd().openDir(io, root_path, .{});
     defer root.close(io);
     var target = root.openDir(io, rel_path, .{ .iterate = true }) catch return error.AccessDenied;
@@ -365,5 +413,56 @@ test "readTextFile rejects oversized files without truncating" {
     try std.testing.expectEqual(
         max_file_bytes,
         try readTextFile(std.testing.io, root, "exact.txt", &out),
+    );
+}
+
+test "writeTextFile atomically replaces target and rejects traversal" {
+    const root = "zig-out/test-scanner-atomic";
+    Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try Io.Dir.cwd().createDirPath(std.testing.io, root ++ "/nested");
+    try Io.Dir.cwd().writeFile(std.testing.io, .{
+        .sub_path = root ++ "/nested/a.txt",
+        .data = "before",
+    });
+
+    try writeTextFile(std.testing.io, root, "nested/a.txt", "after");
+    var out: [16]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        "after",
+        try Io.Dir.cwd().readFile(std.testing.io, root ++ "/nested/a.txt", &out),
+    );
+    try std.testing.expectError(
+        error.FileNotFound,
+        Io.Dir.cwd().statFile(std.testing.io, root ++ "/nested/a.txt.velocity-tmp", .{}),
+    );
+    try std.testing.expectError(
+        error.AccessDenied,
+        writeTextFile(std.testing.io, root, "../outside.txt", "no"),
+    );
+}
+
+test "atomic replacement failure preserves target and cleans temporary file" {
+    const root = "zig-out/test-scanner-atomic-failure";
+    Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try Io.Dir.cwd().createDirPath(std.testing.io, root ++ "/target");
+    try Io.Dir.cwd().writeFile(std.testing.io, .{
+        .sub_path = root ++ "/target/keep.txt",
+        .data = "preserved",
+    });
+
+    try std.testing.expectError(
+        error.AccessDenied,
+        writeTextFile(std.testing.io, root, "target", "replacement"),
+    );
+    var out: [16]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        "preserved",
+        try Io.Dir.cwd().readFile(std.testing.io, root ++ "/target/keep.txt", &out),
+    );
+    try std.testing.expectError(
+        error.FileNotFound,
+        Io.Dir.cwd().statFile(std.testing.io, root ++ "/target.velocity-tmp", .{}),
     );
 }
