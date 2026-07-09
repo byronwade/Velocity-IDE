@@ -46,7 +46,7 @@ pub const QuickOpenBuffers = struct {
         self.status = if (self.item_count == 0) "no files" else "done";
     }
 
-    fn push(self: *QuickOpenBuffers, file_id: u32, name: []const u8, path: []const u8) void {
+    pub fn push(self: *QuickOpenBuffers, file_id: u32, name: []const u8, path: []const u8) void {
         const idx = self.item_count;
         const nlen = @min(name.len, self.name_pool[idx].len);
         @memcpy(self.name_pool[idx][0..nlen], name[0..nlen]);

@@ -18,15 +18,17 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Reveal in explorer | Select active editor file in the tree. |
 | Find in file | Match list + next/prev in active document. |
 | Replace in file | Replace once / replace all using find + replace fields. |
-| Quick Open | Cmd+P filter workspace files by name/path. |
+| Quick Open | Cmd+P filter workspace files; empty query prefers recent files. |
+| Recent files | Last opened files feed Quick Open when the query is empty. |
 | Prefs | Persist theme, last path, panel visibility, recent paths under `.velocity/prefs.txt`. |
 | Recent projects | Launch screen lists prefs recent paths (falls back to mock list). |
 | Document stats | Status bar shows line + byte counts for active document. |
-| Breadcrumb | Editor header shows active relative path. |
+| Breadcrumb | Clickable path segments in the editor header (jump to folder / file). |
 | Copy path | Command / button copies active tab path into toast. |
 | Auto Save | Optional; persists in prefs; writes on each edit when on. |
 | Find case | Toggle case-sensitive find (persisted). |
-| Go to line | Cmd+G jump label for active document line count. |
+| Go to line | Cmd+G jumps to line and shows a context peek above the editor. |
+| Line peek | Bounded context window around focus line (textarea has no caret API yet). |
 | Close tab | Soft confirm when dirty; second close discards. |
 | Search | Bounded in-process text search over scanned files (no ripgrep). |
 | SCM | `git status --porcelain` + branch via governor; click entry to open file. |
@@ -37,7 +39,7 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Toggle comment | Cmd+/ toggles `//` / `#` / HTML comments on all lines. |
 | Indent / Outdent | Indent or outdent whole document by 2 spaces. |
 | Reopen closed tab | Cmd+Shift+T restores last closed file tab. |
-| Problems panel | Scans TODO/FIXME/HACK/XXX markers; click to open. |
+| Problems panel | Bottom-panel tab; scans TODO/FIXME/HACK/XXX markers; click to open. |
 | SCM diff preview | Selecting a git entry loads bounded `git diff` text. |
 | Workspace counts | Explorer + status bar show file/node counts. |
 | Dirty tab marker | Active tab title shows ` *` while unsaved. |
@@ -83,7 +85,11 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Format document | Trim trailing whitespace + ensure final newline (`Shift+Alt+F` / Fmt). Preserves CRLF. |
 | Hard wrap | Wrap long lines at column 80. |
 | Copy document | Copy active buffer into toast (truncated if huge). |
-| Go to symbol | Jump toast to first line matching find query (case-insensitive). |
+| Go to symbol | Cmd+Shift+O opens symbol palette from heuristic outline (or jumps via Find query). |
+| Outline | Sidebar panel lists heuristic symbols (fn/class/struct/def/headings); click to jump. |
+| Go to Definition | Cmd+Shift+D / Find→Def: bounded workspace text search for definition-like lines (no LSP). |
+| Bottom panel | Terminal / Output / Problems tabs under the editor (Ctrl+` toggles Terminal). |
+| Output channel | Bounded ring of status lines (definition search, etc.). |
 | New folder | Create relative directory from New-path field. |
 | File size | Toast active buffer byte size. |
 | Word wrap pref | Toggle + persist soft wrap preference (label; textarea wrap later). |
@@ -93,7 +99,7 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Window chrome | Trailing inset spacer; Minimize/Close via Effects; fullscreen toast when chrome insets clear. |
 | Settings page | Cursor-like grouped sections (Appearance / Editor / Workspace / Features / About) with search. |
 | File tree polish | Indent + folder/file marks; selecting a folder does not open an editor. |
-| Editor-first layout | Search / SCM / Problems live in the left sidebar; editor stays centered (Cursor-like). |
+| Editor-first layout | Search / SCM / Outline in the left sidebar; Problems + Terminal in the bottom panel; editor stays centered. |
 | Quiet chrome | Tab transforms + find/replace hidden by default; Cmd+F opens find; agent/terminal closed by default. |
 | Trim blank lines | Strip leading/trailing blank lines from the document. |
 | Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |

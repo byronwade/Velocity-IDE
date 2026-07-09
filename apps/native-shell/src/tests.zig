@@ -886,7 +886,8 @@ test "format hard wrap copy document go to symbol" {
     model.document.set("alpha\n  export function Widget()\nbeta\n");
     model.find_query.set("widget");
     main.update(&model, .go_to_symbol);
-    try testing.expect(std.mem.indexOf(u8, model.toast, "Symbol @ 2") != null);
+    try testing.expect(model.editor_focus_line == 2);
+    try testing.expect(model.hasPeek());
 }
 
 test "create folder file size word wrap close tab shortcut" {
@@ -942,7 +943,8 @@ test "sidebar keeps editor for search scm problems" {
     try testing.expect(model.showIdeChrome());
     main.update(&model, .{ .select_activity = .problems });
     try testing.expect(model.current_view == .ide);
-    try testing.expect(model.isProblems());
+    try testing.expect(model.showBottomProblems());
+    try testing.expect(model.problemsSelected());
     try testing.expect(model.showIdeChrome());
 }
 
@@ -998,4 +1000,92 @@ test "settings sections and chrome trailing" {
     main.update(&model, .{ .chrome_changed = .{ .insets = .{} } });
     try testing.expect(model.window_fullscreen);
     try testing.expectEqualStrings("Entered fullscreen", model.toast);
+}
+
+test "outline sidebar and symbol palette" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    var auth_id: ?u32 = null;
+    for (model.file_nodes) |n| {
+        if (std.mem.eql(u8, n.path, "src/server/auth.ts")) auth_id = n.id;
+    }
+    try testing.expect(auth_id != null);
+    main.update(&model, .{ .select_file = auth_id.? });
+    main.update(&model, .open_outline);
+    try testing.expect(model.showSidebarOutline());
+    try testing.expect(model.outline_symbols.len > 0);
+    main.update(&model, .go_to_symbol);
+    try testing.expect(model.symbol_palette_open);
+    const first = model.outline_symbols[0];
+    main.update(&model, .{ .select_outline_symbol = first.id });
+    try testing.expect(model.editor_focus_line == first.line);
+    try testing.expect(model.hasPeek());
+}
+
+test "go to definition finds symbol in workspace" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.find_query.set("createSession");
+    main.update(&model, .go_to_definition);
+    try testing.expect(model.def_hits.len > 0 or model.editor_focus_line > 0);
+    try testing.expect(model.hasPeek() or std.mem.indexOf(u8, model.toast, "Definition") != null or std.mem.indexOf(u8, model.toast, "not found") == null);
+}
+
+test "bottom panel tabs terminal output problems" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    try testing.expect(!model.showBottomPanel());
+    main.update(&model, .toggle_terminal);
+    try testing.expect(model.showBottomTerminal());
+    try testing.expect(model.terminalSelected());
+    main.update(&model, .{ .select_bottom_tab = .output });
+    try testing.expect(model.showBottomOutput());
+    main.update(&model, .{ .select_bottom_tab = .problems });
+    try testing.expect(model.showBottomProblems());
+    main.update(&model, .scan_problems);
+    try testing.expect(model.problems.len > 0);
+    main.update(&model, .toggle_bottom_panel);
+    try testing.expect(!model.showBottomPanel());
+}
+
+test "breadcrumb segments are clickable" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    var auth_id: ?u32 = null;
+    for (model.file_nodes) |n| {
+        if (std.mem.eql(u8, n.path, "src/server/auth.ts")) auth_id = n.id;
+    }
+    try testing.expect(auth_id != null);
+    main.update(&model, .{ .select_file = auth_id.? });
+    try testing.expect(model.breadcrumb_segs.len >= 2);
+    const root = model.breadcrumb_segs[0];
+    main.update(&model, .{ .select_breadcrumb = root.id });
+    try testing.expect(model.selected_activity == .explorer);
+}
+
+test "quick open prefers recent files" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    var auth_id: ?u32 = null;
+    for (model.file_nodes) |n| {
+        if (std.mem.eql(u8, n.path, "src/server/auth.ts")) auth_id = n.id;
+    }
+    try testing.expect(auth_id != null);
+    main.update(&model, .{ .select_file = auth_id.? });
+    try testing.expect(model.recent_file_count > 0);
+    model.quick_query.clear();
+    main.update(&model, .run_quick_open);
+    try testing.expect(model.quick_items.len > 0);
+    try testing.expect(std.mem.indexOf(u8, model.quick_items[0].path, "auth") != null);
+}
+
+test "line peek dismisses on escape" {
+    var model = main.initialModel();
+    model.document.set("a\nb\nc\nd\ne\n");
+    model.goto_line_input.set("3");
+    main.update(&model, .goto_line);
+    try testing.expect(model.editor_focus_line == 3);
+    try testing.expect(model.hasPeek());
+    main.update(&model, .dismiss_overlay);
+    try testing.expect(!model.hasPeek());
 }

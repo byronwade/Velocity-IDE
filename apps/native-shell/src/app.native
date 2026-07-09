@@ -46,10 +46,11 @@
           <button size="sm" variant="ghost" selected="{explorerSelected}" on-press="select_activity:{activity_explorer}" label="Explorer">Ex</button>
           <button size="sm" variant="ghost" selected="{searchSelected}" on-press="select_activity:{activity_search}" label="Search">Se</button>
           <button size="sm" variant="ghost" selected="{scmSelected}" on-press="select_activity:{activity_scm}" label="Source Control">Sc</button>
+          <button size="sm" variant="ghost" selected="{outlineSelected}" on-press="select_activity:{activity_outline}" label="Outline">Ol</button>
           <button size="sm" variant="ghost" selected="{problemsSelected}" on-press="select_activity:{activity_problems}" label="Problems">Pb</button>
           <button size="sm" variant="ghost" selected="{agentsSelected}" on-press="select_activity:{activity_agents}" label="Agents">Ag</button>
           <spacer grow="1" />
-          <button size="sm" variant="ghost" on-press="toggle_terminal" label="Terminal">Te</button>
+          <button size="sm" variant="ghost" selected="{terminalSelected}" on-press="toggle_terminal" label="Terminal">Te</button>
           <button size="sm" variant="ghost" selected="{settingsSelected}" on-press="select_activity:{activity_settings}" label="Settings">St</button>
         </column>
         <separator />
@@ -132,20 +133,19 @@
               </column>
             </if>
 
-            <if test="{isProblems}">
+            <if test="{showSidebarOutline}">
               <row gap="6" cross="center">
-                <text grow="1">Problems</text>
-                <badge variant="secondary">{problemsStatus}</badge>
-                <button size="sm" variant="ghost" on-press="scan_problems">Scan</button>
+                <text grow="1">Outline</text>
+                <badge variant="secondary">{outlineStatus}</badge>
               </row>
-              <scroll grow="1" label="Problems list">
+              <scroll grow="1" label="Document outline">
                 <column gap="2">
-                  <for each="problems" key="id" as="p">
-                    <list-item on-press="open_problem:{p.id}" padding="6" gap="4" label="{p.path}">
-                      <badge variant="secondary">{p.kind}</badge>
+                  <for each="outline_symbols" key="id" as="sym">
+                    <list-item on-press="select_outline_symbol:{sym.id}" padding="6" gap="4" label="{sym.name}">
+                      <badge variant="secondary">{sym.kind}</badge>
                       <column gap="2" grow="1">
-                        <text size="sm" wrap="false">{p.path}:{p.line}</text>
-                        <text size="sm" foreground="text_muted" wrap="true">{p.preview}</text>
+                        <text size="sm" wrap="false">{sym.name}</text>
+                        <text size="sm" foreground="text_muted" wrap="false">L{sym.line}</text>
                       </column>
                     </list-item>
                   </for>
@@ -171,9 +171,17 @@
             <separator />
             <row grow="1">
               <column grow="1" gap="4" padding="8">
-                <row gap="6" cross="center">
-                  <text size="sm" foreground="text_muted" wrap="false" grow="1">{breadcrumbText}</text>
+                <row gap="4" cross="center">
+                  <row gap="2" grow="1" cross="center">
+                    <for each="breadcrumb_segs" key="id" as="seg">
+                      <button size="sm" variant="ghost" on-press="select_breadcrumb:{seg.id}">{seg.label}</button>
+                    </for>
+                  </row>
+                  <if test="{hasPeek}">
+                    <badge variant="secondary">{editorFocusLabel}</badge>
+                  </if>
                   <badge variant="secondary">{dirtyLabel}</badge>
+                  <button size="sm" variant="ghost" on-press="go_to_symbol" label="Go to symbol">@</button>
                   <button size="sm" variant="ghost" on-press="run_quick_open">Go to</button>
                   <button size="sm" variant="primary" on-press="save_file">Save</button>
                 </row>
@@ -184,6 +192,7 @@
                     <button size="sm" variant="ghost" on-press="find_prev">↑</button>
                     <button size="sm" variant="ghost" on-press="find_next">↓</button>
                     <button size="sm" variant="secondary" on-press="run_find">Find</button>
+                    <button size="sm" variant="ghost" on-press="go_to_definition" label="Go to Definition">Def</button>
                     <button size="sm" variant="ghost" on-press="clear_find">×</button>
                   </row>
                   <row gap="4" cross="center">
@@ -191,6 +200,13 @@
                     <button size="sm" variant="ghost" on-press="replace_once">Once</button>
                     <button size="sm" variant="secondary" on-press="replace_all">All</button>
                   </row>
+                </if>
+                <if test="{hasPeek}">
+                  <column gap="1" padding="6" background="surface_subtle" label="Line peek">
+                    <for each="peek_lines" key="id" as="pl">
+                      <text size="sm" wrap="false" foreground="text_muted">{pl.text}</text>
+                    </for>
+                  </column>
                 </if>
                 <column grow="1" gap="0" padding="6" background="background">
                   <textarea text="{documentText}" placeholder="Open a file to edit..." on-input="edit_document" grow="1" label="Editor" />
@@ -224,28 +240,66 @@
               </if>
             </row>
 
-            <if test="{showTerminalChrome}">
+            <if test="{showBottomPanel}">
               <separator />
-              <column height="160" gap="4" padding="6" background="surface">
-                <row gap="6" cross="center">
-                  <text size="sm" grow="1">Terminal</text>
-                  <badge variant="secondary">{terminalStatus}</badge>
-                  <button size="sm" variant="ghost" on-press="clear_terminal">Clear</button>
-                  <button size="sm" variant="ghost" on-press="toggle_terminal">×</button>
-                </row>
+              <column height="180" gap="4" padding="6" background="surface">
                 <row gap="4" cross="center">
-                  <text-field text="{terminalCommandText}" placeholder="echo hello" on-input="update_terminal_command" on-submit="run_terminal_command" grow="1" label="Terminal command" />
-                  <button size="sm" variant="ghost" on-press="terminal_history_older">↑</button>
-                  <button size="sm" variant="ghost" on-press="terminal_history_newer">↓</button>
-                  <button size="sm" variant="primary" on-press="run_terminal_command">Run</button>
+                  <button size="sm" variant="ghost" selected="{showBottomTerminal}" on-press="select_bottom_tab:{bottom_tab_terminal}">Terminal</button>
+                  <button size="sm" variant="ghost" selected="{showBottomOutput}" on-press="select_bottom_tab:{bottom_tab_output}">Output</button>
+                  <button size="sm" variant="ghost" selected="{showBottomProblems}" on-press="select_bottom_tab:{bottom_tab_problems}">Problems</button>
+                  <spacer grow="1" />
+                  <if test="{showBottomTerminal}">
+                    <badge variant="secondary">{terminalStatus}</badge>
+                    <button size="sm" variant="ghost" on-press="clear_terminal">Clear</button>
+                  </if>
+                  <if test="{showBottomOutput}">
+                    <button size="sm" variant="ghost" on-press="clear_output">Clear</button>
+                  </if>
+                  <if test="{showBottomProblems}">
+                    <badge variant="secondary">{problemsStatus}</badge>
+                    <button size="sm" variant="ghost" on-press="scan_problems">Scan</button>
+                  </if>
+                  <button size="sm" variant="ghost" on-press="toggle_bottom_panel">×</button>
                 </row>
-                <scroll grow="1" label="Terminal output">
-                  <column gap="1">
-                    <for each="term_lines" as="line">
-                      <text size="sm" wrap="false">{line}</text>
-                    </for>
-                  </column>
-                </scroll>
+                <if test="{showBottomTerminal}">
+                  <row gap="4" cross="center">
+                    <text-field text="{terminalCommandText}" placeholder="echo hello" on-input="update_terminal_command" on-submit="run_terminal_command" grow="1" label="Terminal command" />
+                    <button size="sm" variant="ghost" on-press="terminal_history_older">↑</button>
+                    <button size="sm" variant="ghost" on-press="terminal_history_newer">↓</button>
+                    <button size="sm" variant="primary" on-press="run_terminal_command">Run</button>
+                  </row>
+                  <scroll grow="1" label="Terminal output">
+                    <column gap="1">
+                      <for each="term_lines" as="line">
+                        <text size="sm" wrap="false">{line}</text>
+                      </for>
+                    </column>
+                  </scroll>
+                </if>
+                <if test="{showBottomOutput}">
+                  <scroll grow="1" label="Output">
+                    <column gap="1">
+                      <for each="output_lines" key="id" as="oline">
+                        <text size="sm" wrap="false">{oline.text}</text>
+                      </for>
+                    </column>
+                  </scroll>
+                </if>
+                <if test="{showBottomProblems}">
+                  <scroll grow="1" label="Problems list">
+                    <column gap="2">
+                      <for each="problems" key="id" as="p">
+                        <list-item on-press="open_problem:{p.id}" padding="6" gap="4" label="{p.path}">
+                          <badge variant="secondary">{p.kind}</badge>
+                          <column gap="2" grow="1">
+                            <text size="sm" wrap="false">{p.path}:{p.line}</text>
+                            <text size="sm" foreground="text_muted" wrap="true">{p.preview}</text>
+                          </column>
+                        </list-item>
+                      </for>
+                    </column>
+                  </scroll>
+                </if>
               </column>
             </if>
           </if>
@@ -438,12 +492,36 @@
     </column>
   </if>
 
+  <if test="{symbol_palette_open}">
+    <column grow="1" main="start" cross="center" padding="24" background="scrim">
+      <column width="560" gap="8" padding="12" background="surface">
+        <row gap="6" cross="center">
+          <text grow="1">Go to Symbol</text>
+          <badge variant="secondary">{outlineStatus}</badge>
+          <button size="sm" variant="ghost" on-press="close_symbol_palette">×</button>
+        </row>
+        <search-field text="{symbolQueryText}" placeholder="Filter symbols..." on-input="update_symbol_query" label="Symbol search" />
+        <scroll height="280" label="Symbol results">
+          <column gap="2">
+            <for each="outline_symbols" key="id" as="sym">
+              <list-item on-press="open_symbol_item:{sym.id}" padding="8" gap="8" cross="center" label="{sym.name}">
+                <badge variant="secondary">{sym.kind}</badge>
+                <text grow="1" wrap="false">{sym.name}</text>
+                <text size="sm" foreground="text_muted">L{sym.line}</text>
+              </list-item>
+            </for>
+          </column>
+        </scroll>
+      </column>
+    </column>
+  </if>
+
   <if test="{shortcuts_help_visible}">
     <column grow="1" main="start" cross="center" padding="24" background="scrim">
       <column width="480" gap="8" padding="12" background="surface">
         <text>Keyboard Shortcuts</text>
         <text size="sm" foreground="text_muted">Cmd+K palette · Cmd+P quick open · Cmd+F find · Cmd+G go to line</text>
-        <text size="sm" foreground="text_muted">Cmd+S save · Cmd+W close tab · Shift+Alt+F format · Cmd+/ comment</text>
+        <text size="sm" foreground="text_muted">Cmd+Shift+O symbols · Cmd+Shift+D definition · Cmd+S save · Cmd+W close</text>
         <text size="sm" foreground="text_muted">Cmd+B sidebar · Ctrl+` terminal · Esc dismiss · Cmd+Z undo</text>
         <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>
       </column>

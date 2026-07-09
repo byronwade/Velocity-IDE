@@ -70,6 +70,8 @@ pub const app_shortcuts = [_]native_sdk.Shortcut{
     .{ .id = "new_untitled", .key = "n", .modifiers = .{ .primary = true } },
     .{ .id = "close_active_tab", .key = "w", .modifiers = .{ .primary = true } },
     .{ .id = "format_document", .key = "f", .modifiers = .{ .shift = true, .option = true } },
+    .{ .id = "go_to_symbol", .key = "o", .modifiers = .{ .primary = true, .shift = true } },
+    .{ .id = "go_to_definition", .key = "d", .modifiers = .{ .primary = true, .shift = true } },
     .{ .id = "escape", .key = "escape" },
     .{ .id = "toggle_terminal", .key = "`", .modifiers = .{ .control = true } },
     .{ .id = "save_file", .key = "s", .modifiers = .{ .primary = true } },
@@ -91,6 +93,8 @@ pub fn onCommand(name: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "new_untitled")) return .new_untitled;
     if (std.mem.eql(u8, name, "close_active_tab")) return .close_active_tab;
     if (std.mem.eql(u8, name, "format_document")) return .format_document;
+    if (std.mem.eql(u8, name, "go_to_symbol")) return .go_to_symbol;
+    if (std.mem.eql(u8, name, "go_to_definition")) return .go_to_definition;
     if (std.mem.eql(u8, name, "escape")) return .dismiss_overlay;
     if (std.mem.eql(u8, name, "toggle_terminal")) return .toggle_terminal;
     if (std.mem.eql(u8, name, "save_file")) return .save_file;
@@ -168,6 +172,9 @@ test {
     _ = @import("workspace/replace.zig");
     _ = @import("workspace/edit_transforms.zig");
     _ = @import("workspace/problems.zig");
+    _ = @import("workspace/outline.zig");
+    _ = @import("workspace/go_to_def.zig");
+    _ = @import("workspace/editor_view.zig");
     _ = @import("terminal/terminal_session.zig");
     _ = @import("scm/git_status.zig");
 }

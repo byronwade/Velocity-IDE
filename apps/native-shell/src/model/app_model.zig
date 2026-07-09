@@ -14,6 +14,9 @@ const replace_mod = @import("../workspace/replace.zig");
 const edit_transforms = @import("../workspace/edit_transforms.zig");
 const problems_mod = @import("../workspace/problems.zig");
 const scanner_mod = @import("../workspace/scanner.zig");
+const outline_mod = @import("../workspace/outline.zig");
+const go_to_def_mod = @import("../workspace/go_to_def.zig");
+const editor_view = @import("../workspace/editor_view.zig");
 const terminal_session = @import("../terminal/terminal_session.zig");
 const process_governor = @import("../processes/process_governor.zig");
 const git_status = @import("../scm/git_status.zig");
@@ -37,6 +40,20 @@ pub const GitEntry = git_status.GitEntry;
 pub const DocMatch = find_in_doc.DocMatch;
 pub const QuickItem = quick_open.QuickItem;
 pub const Problem = problems_mod.Problem;
+pub const OutlineSymbol = outline_mod.Symbol;
+pub const DefHit = go_to_def_mod.DefHit;
+pub const PeekLine = editor_view.PeekLine;
+
+pub const BreadcrumbSeg = struct {
+    id: u32 = 0,
+    label: []const u8 = "",
+    path: []const u8 = "",
+};
+
+pub const OutputLine = struct {
+    id: u32 = 0,
+    text: []const u8 = "",
+};
 
 pub const ClosedTab = struct {
     path: []const u8 = "",
@@ -44,7 +61,8 @@ pub const ClosedTab = struct {
 };
 
 pub const ViewKind = enum { launch, ide, plugins, settings, perf, features, processes, search, scm, debug, testing, problems };
-pub const Activity = enum { explorer, search, scm, agents, terminal, plugins, settings, debug, testing, features, processes, problems };
+pub const Activity = enum { explorer, search, scm, agents, terminal, plugins, settings, debug, testing, features, processes, problems, outline };
+pub const BottomPanelTab = enum { terminal, output, problems };
 pub const AgentStatus = enum { running, planning, ready_for_review, failed, completed };
 
 pub const FileNode = workspace_store.FileNode;
@@ -220,6 +238,18 @@ pub const Msg = union(enum) {
     close_window,
     toggle_notifications_panel,
     update_settings_query: canvas.TextInputEvent,
+    open_outline,
+    select_outline_symbol: u32,
+    go_to_definition,
+    open_def_hit: u32,
+    select_breadcrumb: u32,
+    select_bottom_tab: BottomPanelTab,
+    toggle_bottom_panel,
+    clear_output,
+    open_symbol_palette,
+    close_symbol_palette,
+    update_symbol_query: canvas.TextInputEvent,
+    open_symbol_item: u32,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -235,6 +265,18 @@ pub const Msg = union(enum) {
         "minimize_window",
         "close_window",
         "toggle_notifications_panel",
+        "open_outline",
+        "go_to_definition",
+        "select_bottom_tab",
+        "toggle_bottom_panel",
+        "clear_output",
+        "open_symbol_palette",
+        "close_symbol_palette",
+        "update_symbol_query",
+        "open_symbol_item",
+        "select_breadcrumb",
+        "select_outline_symbol",
+        "open_def_hit",
         "open_tab",
         "close_tab",
         "open_plugin_registry",
@@ -367,6 +409,38 @@ pub const Model = struct {
     show_terminal: bool = false,
     show_agent_panel: bool = false,
     show_find_panel: bool = false,
+    editor_focus_line: u32 = 0,
+    editor_focus_label: []const u8 = "",
+    editor_focus_buf: [32]u8 = undefined,
+    peek_lines: []const PeekLine = &.{},
+    peek_storage: [editor_view.max_peek_lines]PeekLine = [_]PeekLine{.{}} ** editor_view.max_peek_lines,
+    peek_pool: [editor_view.max_peek_bytes]u8 = undefined,
+    peek_lens: [editor_view.max_peek_lines]usize = [_]usize{0} ** editor_view.max_peek_lines,
+    peek_count: u32 = 0,
+    outline_bufs: ?*outline_mod.OutlineBuffers = null,
+    outline_symbols: []const OutlineSymbol = &.{},
+    outline_status: []const u8 = "idle",
+    symbol_palette_open: bool = false,
+    symbol_query: canvas.TextBuffer(64) = .{},
+    def_bufs: ?*go_to_def_mod.GoToDefBuffers = null,
+    def_hits: []const DefHit = &.{},
+    def_status: []const u8 = "idle",
+    breadcrumb_segs: []const BreadcrumbSeg = &.{},
+    breadcrumb_seg_storage: [12]BreadcrumbSeg = [_]BreadcrumbSeg{.{}} ** 12,
+    breadcrumb_label_pool: [12][48]u8 = undefined,
+    breadcrumb_path_pool: [12][240]u8 = undefined,
+    breadcrumb_seg_count: u32 = 0,
+    bottom_panel_open: bool = false,
+    bottom_panel_tab: BottomPanelTab = .terminal,
+    output_lines: []const OutputLine = &.{},
+    output_storage: [48]OutputLine = [_]OutputLine{.{}} ** 48,
+    output_pool: [48][120]u8 = undefined,
+    output_lens: [48]usize = [_]usize{0} ** 48,
+    output_count: u32 = 0,
+    output_next_id: u32 = 1,
+    recent_files: [8][240]u8 = undefined,
+    recent_file_lens: [8]usize = [_]usize{0} ** 8,
+    recent_file_count: u32 = 0,
     show_perf_hud: bool = false,
     safe_mode: bool = false,
     runtime_mode_label: []const u8 = "Core",
@@ -526,6 +600,10 @@ pub const Model = struct {
     activity_features: Activity = .features,
     activity_processes: Activity = .processes,
     activity_problems: Activity = .problems,
+    activity_outline: Activity = .outline,
+    bottom_tab_terminal: BottomPanelTab = .terminal,
+    bottom_tab_output: BottomPanelTab = .output,
+    bottom_tab_problems: BottomPanelTab = .problems,
     project_acme: []const u8 = "acme-dashboard",
     project_scratch: []const u8 = "scratch",
 
@@ -659,6 +737,31 @@ pub const Model = struct {
         "terminal_async",
         "governor",
         "editorBody",
+        "editor_focus_line",
+        "editor_focus_buf",
+        "peek_storage",
+        "peek_pool",
+        "peek_lens",
+        "peek_count",
+        "outline_bufs",
+        "outline_status",
+        "symbol_query",
+        "def_bufs",
+        "def_status",
+        "breadcrumb_seg_storage",
+        "breadcrumb_label_pool",
+        "breadcrumb_path_pool",
+        "breadcrumb_seg_count",
+        "bottom_panel_open",
+        "bottom_panel_tab",
+        "output_storage",
+        "output_pool",
+        "output_lens",
+        "output_count",
+        "output_next_id",
+        "recent_files",
+        "recent_file_lens",
+        "recent_file_count",
     };
 
     pub fn commandQuery(model: *const Model) []const u8 {
@@ -710,7 +813,7 @@ pub const Model = struct {
     }
 
     pub fn terminalSelected(model: *const Model) bool {
-        return model.selected_activity == .terminal;
+        return model.bottom_panel_open and model.bottom_panel_tab == .terminal;
     }
 
     pub fn pluginsSelected(model: *const Model) bool {
@@ -738,7 +841,51 @@ pub const Model = struct {
     }
 
     pub fn problemsSelected(model: *const Model) bool {
-        return model.selected_activity == .problems;
+        return model.selected_activity == .problems or (model.bottom_panel_open and model.bottom_panel_tab == .problems);
+    }
+
+    pub fn outlineSelected(model: *const Model) bool {
+        return model.selected_activity == .outline and model.showLeftPanel();
+    }
+
+    pub fn showSidebarOutline(model: *const Model) bool {
+        return model.showLeftPanel() and model.selected_activity == .outline;
+    }
+
+    pub fn showBottomPanel(model: *const Model) bool {
+        return model.bottom_panel_open and !model.focus_mode and model.showIdeChrome();
+    }
+
+    pub fn showBottomTerminal(model: *const Model) bool {
+        return model.showBottomPanel() and model.bottom_panel_tab == .terminal;
+    }
+
+    pub fn showBottomOutput(model: *const Model) bool {
+        return model.showBottomPanel() and model.bottom_panel_tab == .output;
+    }
+
+    pub fn showBottomProblems(model: *const Model) bool {
+        return model.showBottomPanel() and model.bottom_panel_tab == .problems;
+    }
+
+    pub fn hasPeek(model: *const Model) bool {
+        return model.peek_count > 0 and model.editor_focus_line > 0;
+    }
+
+    pub fn editorFocusLabel(model: *const Model) []const u8 {
+        return model.editor_focus_label;
+    }
+
+    pub fn outlineStatus(model: *const Model) []const u8 {
+        return model.outline_status;
+    }
+
+    pub fn defStatus(model: *const Model) []const u8 {
+        return model.def_status;
+    }
+
+    pub fn symbolQueryText(model: *const Model) []const u8 {
+        return model.symbol_query.text();
     }
 
     pub fn isFeatures(model: *const Model) bool {
@@ -766,7 +913,9 @@ pub const Model = struct {
     }
 
     pub fn isProblems(model: *const Model) bool {
-        return model.selected_activity == .problems and model.showLeftPanel();
+        _ = model;
+        // Problems live in the bottom panel; keep getter for markup compatibility.
+        return false;
     }
 
     pub fn showSidebarExplorer(model: *const Model) bool {
@@ -974,7 +1123,9 @@ pub const Model = struct {
     }
 
     pub fn showTerminalChrome(model: *const Model) bool {
-        return model.show_terminal and !model.focus_mode and model.showIdeChrome();
+        _ = model;
+        // Terminal lives in the bottom panel now.
+        return false;
     }
 
     pub fn findCaseLabel(model: *const Model) []const u8 {
@@ -1050,7 +1201,7 @@ pub const Model = struct {
         if (!model.show_sidebar or model.focus_mode) return false;
         if (model.current_view != .ide and model.current_view != .perf) return false;
         return switch (model.selected_activity) {
-            .explorer, .search, .scm, .problems => true,
+            .explorer, .search, .scm, .outline => true,
             else => false,
         };
     }
@@ -1190,6 +1341,10 @@ pub const commands = [_]CommandItem{
     .{ .id = "hard_wrap", .title = "Hard Wrap at 80", .hint = "" },
     .{ .id = "copy_document", .title = "Copy Document", .hint = "" },
     .{ .id = "go_to_symbol", .title = "Go to Symbol in File", .hint = "Cmd+Shift+O" },
+    .{ .id = "go_to_definition", .title = "Go to Definition", .hint = "Cmd+Shift+D" },
+    .{ .id = "open_outline", .title = "Open Outline", .hint = "" },
+    .{ .id = "toggle_bottom_panel", .title = "Toggle Bottom Panel", .hint = "" },
+    .{ .id = "clear_output", .title = "Clear Output", .hint = "" },
     .{ .id = "create_folder", .title = "New Folder", .hint = "" },
     .{ .id = "show_file_size", .title = "Show File Size", .hint = "" },
     .{ .id = "toggle_word_wrap", .title = "Toggle Word Wrap", .hint = "Alt+Z" },
@@ -1578,6 +1733,19 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 copyDocument(model);
             } else if (std.mem.eql(u8, id, "go_to_symbol")) {
                 goToSymbol(model);
+            } else if (std.mem.eql(u8, id, "go_to_definition")) {
+                runGoToDefinition(model);
+            } else if (std.mem.eql(u8, id, "open_outline")) {
+                model.selected_activity = .outline;
+                model.current_view = .ide;
+                model.show_sidebar = true;
+                refreshOutline(model);
+            } else if (std.mem.eql(u8, id, "toggle_bottom_panel")) {
+                model.bottom_panel_open = !model.bottom_panel_open;
+            } else if (std.mem.eql(u8, id, "clear_output")) {
+                model.output_count = 0;
+                model.output_lines = &.{};
+                model.toast = "Output cleared";
             } else if (std.mem.eql(u8, id, "create_folder")) {
                 createFolder(model);
             } else if (std.mem.eql(u8, id, "show_file_size")) {
@@ -1668,14 +1836,23 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                     model.current_view = .processes;
                 },
                 .problems => {
-                    model.selected_activity = .problems;
+                    model.current_view = .ide;
+                    openBottomPanel(model, .problems);
+                },
+                .outline => {
+                    model.selected_activity = .outline;
                     model.current_view = .ide;
                     model.show_sidebar = true;
-                    if (model.workspace_from_disk and model.problems.len == 0) scanProblems(model);
+                    refreshOutline(model);
                 },
                 .terminal => {
                     model.current_view = .ide;
-                    model.show_terminal = !model.show_terminal;
+                    if (model.bottom_panel_open and model.bottom_panel_tab == .terminal) {
+                        model.bottom_panel_open = false;
+                        model.show_terminal = false;
+                    } else {
+                        openBottomPanel(model, .terminal);
+                    }
                     persistPrefs(model);
                 },
                 .agents => {
@@ -1691,7 +1868,12 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             }
         },
         .toggle_terminal => {
-            model.show_terminal = !model.show_terminal;
+            if (model.bottom_panel_open and model.bottom_panel_tab == .terminal) {
+                model.bottom_panel_open = false;
+                model.show_terminal = false;
+            } else {
+                openBottomPanel(model, .terminal);
+            }
             persistPrefs(model);
         },
         .toggle_agent_panel => {
@@ -1715,6 +1897,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                     model.open_tabs = ws.tabsSlice();
                     if (ws.findNode(id)) |node| {
                         model.status_language = workspace_store.scannerLanguage(node.path);
+                        pushRecentFile(model, node.path);
                     }
                     syncDocumentFromWorkspace(model);
                     return;
@@ -1905,6 +2088,61 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .create_folder => createFolder(model),
         .show_file_size => showFileSize(model),
         .toggle_word_wrap => toggleWordWrap(model),
+        .open_outline => {
+            model.selected_activity = .outline;
+            model.current_view = .ide;
+            model.show_sidebar = true;
+            refreshOutline(model);
+        },
+        .select_outline_symbol => |id| {
+            if (model.outline_bufs) |bufs| {
+                for (bufs.symbolsSlice()) |sym| {
+                    if (sym.id == id) {
+                        jumpToDocumentLine(model, sym.line);
+                        return;
+                    }
+                }
+            }
+            model.toast = "Symbol not found";
+        },
+        .go_to_definition => runGoToDefinition(model),
+        .open_def_hit => |id| openDefHit(model, id),
+        .select_breadcrumb => |id| selectBreadcrumbSeg(model, id),
+        .select_bottom_tab => |tab| openBottomPanel(model, tab),
+        .toggle_bottom_panel => {
+            model.bottom_panel_open = !model.bottom_panel_open;
+            if (model.bottom_panel_open and model.bottom_panel_tab == .terminal) model.show_terminal = true;
+        },
+        .clear_output => {
+            model.output_count = 0;
+            model.output_lines = &.{};
+            model.toast = "Output cleared";
+        },
+        .open_symbol_palette => {
+            refreshOutline(model);
+            model.symbol_palette_open = true;
+            model.symbol_query.clear();
+        },
+        .close_symbol_palette => {
+            model.symbol_palette_open = false;
+            model.symbol_query.clear();
+        },
+        .update_symbol_query => |edit| {
+            model.symbol_query.apply(edit);
+            filterOutlineSymbols(model);
+        },
+        .open_symbol_item => |id| {
+            if (model.outline_bufs) |bufs| {
+                for (bufs.symbolsSlice()) |sym| {
+                    if (sym.id == id) {
+                        model.symbol_palette_open = false;
+                        jumpToDocumentLine(model, sym.line);
+                        return;
+                    }
+                }
+            }
+            model.toast = "Symbol not found";
+        },
         .open_git_entry => |id| openGitEntry(model, id),
         .clear_find => clearFind(model),
         .reopen_last_workspace => reopenLastWorkspace(model),
@@ -2058,6 +2296,8 @@ fn syncDocumentFromWorkspace(model: *Model) void {
         refreshDocStats(model);
         refreshBreadcrumb(model);
         syncActiveTabDirty(model);
+        refreshOutline(model);
+        if (model.editor_focus_line > 0) refreshPeek(model);
     }
 }
 
@@ -2091,12 +2331,50 @@ pub fn refreshBreadcrumb(model: *Model) void {
     const path = Model.activeTabPath(model);
     if (path.len == 0) {
         model.breadcrumb = model.project_name;
+        model.breadcrumb_seg_count = 0;
+        model.breadcrumb_segs = &.{};
         return;
     }
     const n = @min(path.len, model.breadcrumb_buf.len);
     @memcpy(model.breadcrumb_buf[0..n], path[0..n]);
-    // Soften separators for display: keep as-is (path is already relative)
     model.breadcrumb = model.breadcrumb_buf[0..n];
+
+    var count: u32 = 0;
+    {
+        const label = model.project_name;
+        const llen = @min(label.len, model.breadcrumb_label_pool[0].len);
+        @memcpy(model.breadcrumb_label_pool[0][0..llen], label[0..llen]);
+        model.breadcrumb_seg_storage[0] = .{
+            .id = 1,
+            .label = model.breadcrumb_label_pool[0][0..llen],
+            .path = "",
+        };
+        count = 1;
+    }
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= path.len and count < model.breadcrumb_seg_storage.len) : (i += 1) {
+        if (i == path.len or path[i] == '/' or path[i] == '\\') {
+            if (i > start) {
+                const label = path[start..i];
+                const prefix = path[0..i];
+                const idx = count;
+                const llen = @min(label.len, model.breadcrumb_label_pool[idx].len);
+                @memcpy(model.breadcrumb_label_pool[idx][0..llen], label[0..llen]);
+                const plen = @min(prefix.len, model.breadcrumb_path_pool[idx].len);
+                @memcpy(model.breadcrumb_path_pool[idx][0..plen], prefix[0..plen]);
+                model.breadcrumb_seg_storage[idx] = .{
+                    .id = idx + 1,
+                    .label = model.breadcrumb_label_pool[idx][0..llen],
+                    .path = model.breadcrumb_path_pool[idx][0..plen],
+                };
+                count += 1;
+            }
+            start = i + 1;
+        }
+    }
+    model.breadcrumb_seg_count = count;
+    model.breadcrumb_segs = model.breadcrumb_seg_storage[0..count];
 }
 
 fn basenameOf(path: []const u8) []const u8 {
@@ -2549,7 +2827,239 @@ fn jumpToDocumentLine(model: *Model, line_no: u32) void {
     const target = @min(line_no, total);
     const label = std.fmt.bufPrint(&model.goto_line_buf, "Line {d}/{d}", .{ target, total }) catch "line";
     model.goto_line_label = label;
+    model.editor_focus_line = target;
+    const fl = std.fmt.bufPrint(&model.editor_focus_buf, "L{d}", .{target}) catch "L?";
+    model.editor_focus_label = fl;
+    refreshPeek(model);
     model.toast = model.goto_line_label;
+}
+
+fn refreshPeek(model: *Model) void {
+    model.peek_count = editor_view.buildPeek(
+        model.document.text(),
+        model.editor_focus_line,
+        model.peek_storage[0..],
+        model.peek_pool[0..],
+        model.peek_lens[0..],
+    );
+    model.peek_lines = model.peek_storage[0..model.peek_count];
+}
+
+fn appendOutput(model: *Model, text: []const u8) void {
+    if (text.len == 0) return;
+    var i: usize = 47;
+    while (i > 0) : (i -= 1) {
+        if (i - 1 >= model.output_count) continue;
+        const len = model.output_lens[i - 1];
+        @memcpy(model.output_pool[i][0..len], model.output_pool[i - 1][0..len]);
+        model.output_lens[i] = len;
+        model.output_storage[i] = .{
+            .id = model.output_storage[i - 1].id,
+            .text = model.output_pool[i][0..len],
+        };
+    }
+    const n = @min(text.len, model.output_pool[0].len);
+    @memcpy(model.output_pool[0][0..n], text[0..n]);
+    model.output_lens[0] = n;
+    model.output_storage[0] = .{
+        .id = model.output_next_id,
+        .text = model.output_pool[0][0..n],
+    };
+    model.output_next_id +%= 1;
+    if (model.output_count < 48) model.output_count += 1;
+    model.output_lines = model.output_storage[0..model.output_count];
+}
+
+fn pushRecentFile(model: *Model, path: []const u8) void {
+    if (path.len == 0) return;
+    var i: u32 = 0;
+    while (i < model.recent_file_count) : (i += 1) {
+        if (std.mem.eql(u8, model.recent_files[i][0..model.recent_file_lens[i]], path)) {
+            var j = i;
+            while (j + 1 < model.recent_file_count) : (j += 1) {
+                const len = model.recent_file_lens[j + 1];
+                @memcpy(model.recent_files[j][0..len], model.recent_files[j + 1][0..len]);
+                model.recent_file_lens[j] = len;
+            }
+            model.recent_file_count -= 1;
+            break;
+        }
+    }
+    if (model.recent_file_count >= 8) model.recent_file_count = 7;
+    var k = model.recent_file_count;
+    while (k > 0) : (k -= 1) {
+        const len = model.recent_file_lens[k - 1];
+        @memcpy(model.recent_files[k][0..len], model.recent_files[k - 1][0..len]);
+        model.recent_file_lens[k] = len;
+    }
+    const n = @min(path.len, model.recent_files[0].len);
+    @memcpy(model.recent_files[0][0..n], path[0..n]);
+    model.recent_file_lens[0] = n;
+    model.recent_file_count += 1;
+}
+
+fn ensureOutlineBuffers(model: *Model) !*outline_mod.OutlineBuffers {
+    if (model.outline_bufs) |o| return o;
+    const o = try std.heap.page_allocator.create(outline_mod.OutlineBuffers);
+    o.* = .{};
+    model.outline_bufs = o;
+    return o;
+}
+
+fn ensureDefBuffers(model: *Model) !*go_to_def_mod.GoToDefBuffers {
+    if (model.def_bufs) |d| return d;
+    const d = try std.heap.page_allocator.create(go_to_def_mod.GoToDefBuffers);
+    d.* = .{};
+    model.def_bufs = d;
+    return d;
+}
+
+fn refreshOutline(model: *Model) void {
+    const bufs = ensureOutlineBuffers(model) catch {
+        model.outline_status = "alloc failed";
+        model.outline_symbols = &.{};
+        return;
+    };
+    const path = Model.activeTabPath(model);
+    bufs.scan(model.document.text(), path);
+    model.outline_status = bufs.status;
+    filterOutlineSymbols(model);
+}
+
+fn filterOutlineSymbols(model: *Model) void {
+    const bufs = model.outline_bufs orelse {
+        model.outline_symbols = &.{};
+        return;
+    };
+    // Always rescan so filtering never permanently shrinks the buffer.
+    const path = Model.activeTabPath(model);
+    bufs.scan(model.document.text(), path);
+    model.outline_status = bufs.status;
+    const q = model.symbol_query.text();
+    if (q.len == 0) {
+        model.outline_symbols = bufs.symbolsSlice();
+        return;
+    }
+    var write: u32 = 0;
+    var i: u32 = 0;
+    const total = bufs.count;
+    while (i < total) : (i += 1) {
+        const sym = bufs.symbols[i];
+        if (std.ascii.indexOfIgnoreCase(sym.name, q) != null) {
+            bufs.symbols[write] = sym;
+            bufs.symbols[write].id = write + 1;
+            write += 1;
+        }
+    }
+    bufs.count = write;
+    model.outline_symbols = bufs.symbolsSlice();
+}
+
+fn runGoToDefinition(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    var symbol: []const u8 = model.find_query.text();
+    if (symbol.len == 0) symbol = model.symbol_query.text();
+    if (symbol.len == 0) {
+        model.toast = "Enter symbol in Find then Go to Definition";
+        return;
+    }
+    const bufs = ensureDefBuffers(model) catch {
+        model.toast = "Go to Def alloc failed";
+        return;
+    };
+    bufs.search(modelIo(model), ws, symbol);
+    model.def_hits = bufs.hitsSlice();
+    model.def_status = bufs.status;
+    appendOutput(model, model.def_status);
+    if (bufs.count == 0) {
+        model.toast = "Definition not found";
+        return;
+    }
+    openDefHit(model, bufs.hits[0].id);
+}
+
+fn openDefHit(model: *Model, hit_id: u32) void {
+    if (model.def_bufs) |bufs| {
+        for (bufs.hitsSlice()) |hit| {
+            if (hit.id == hit_id) {
+                model.selected_file_id = hit.file_id;
+                model.current_view = .ide;
+                model.selected_activity = .explorer;
+                if (model.workspace) |ws| {
+                    ws.openFileById(modelIo(model), hit.file_id) catch {};
+                    model.active_tab_id = hit.file_id;
+                    model.open_tabs = ws.tabsSlice();
+                    if (ws.findNode(hit.file_id)) |node| {
+                        if (!node.is_dir) {
+                            model.status_language = workspace_store.scannerLanguage(node.path);
+                            pushRecentFile(model, node.path);
+                        }
+                    }
+                    syncDocumentFromWorkspace(model);
+                    jumpToDocumentLine(model, hit.line);
+                    model.toast = "Definition";
+                }
+                return;
+            }
+        }
+    }
+    model.toast = "Hit not found";
+}
+
+fn selectBreadcrumbSeg(model: *Model, seg_id: u32) void {
+    for (model.breadcrumb_segs) |seg| {
+        if (seg.id == seg_id) {
+            if (seg.path.len == 0) {
+                model.selected_activity = .explorer;
+                model.show_sidebar = true;
+                model.toast = "Explorer";
+                return;
+            }
+            if (model.workspace) |ws| {
+                if (ws.findNodeByPath(seg.path)) |node| {
+                    model.selected_file_id = node.id;
+                    model.selected_activity = .explorer;
+                    model.show_sidebar = true;
+                    if (node.is_dir) {
+                        model.explorer_filter.clear();
+                        applyExplorerFilter(model);
+                        model.toast = "Folder selected";
+                    } else {
+                        ws.openFileById(modelIo(model), node.id) catch {};
+                        model.active_tab_id = node.id;
+                        model.open_tabs = ws.tabsSlice();
+                        model.status_language = workspace_store.scannerLanguage(node.path);
+                        syncDocumentFromWorkspace(model);
+                        pushRecentFile(model, node.path);
+                        model.toast = "Opened";
+                    }
+                    return;
+                }
+            }
+            model.explorer_filter.set(seg.path);
+            applyExplorerFilter(model);
+            model.selected_activity = .explorer;
+            model.show_sidebar = true;
+            model.toast = "Filtered explorer";
+            return;
+        }
+    }
+}
+
+fn openBottomPanel(model: *Model, tab: BottomPanelTab) void {
+    model.bottom_panel_open = true;
+    model.bottom_panel_tab = tab;
+    if (tab == .terminal) model.show_terminal = true;
+    if (tab == .problems and model.workspace_from_disk and model.problems.len == 0) {
+        scanProblems(model);
+    }
 }
 
 fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
@@ -2567,6 +3077,7 @@ fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
     model.process_count = model.governor.aliveCount();
     model.terminal_process_count = 1;
     model.show_terminal = true;
+    openBottomPanel(model, .terminal);
 
     if (fx) |effects| {
         // Async path: wrap with cd when workspace is open (fx.spawn has no cwd).
@@ -2733,6 +3244,12 @@ fn clearFind(model: *Model) void {
 }
 
 fn dismissOverlay(model: *Model) void {
+    if (model.symbol_palette_open) {
+        model.symbol_palette_open = false;
+        model.symbol_query.clear();
+        model.toast = "";
+        return;
+    }
     if (model.shortcuts_help_visible) {
         model.shortcuts_help_visible = false;
         model.toast = "";
@@ -2757,6 +3274,14 @@ fn dismissOverlay(model: *Model) void {
     }
     if (model.show_find_panel) {
         clearFind(model);
+        return;
+    }
+    if (model.hasPeek()) {
+        model.peek_lines = &.{};
+        model.peek_count = 0;
+        model.editor_focus_line = 0;
+        model.editor_focus_label = "";
+        model.toast = "";
         return;
     }
     if (model.focus_mode) {
@@ -2920,8 +3445,7 @@ fn scanProblems(model: *Model) void {
     model.problems = bufs.itemsSlice();
     model.problems_status = bufs.status;
     model.current_view = .ide;
-    model.selected_activity = .problems;
-    model.show_sidebar = true;
+    openBottomPanel(model, .problems);
     model.toast = bufs.status;
 }
 
@@ -3345,7 +3869,24 @@ fn showQuickOpen(model: *Model) void {
 fn filterQuickOpen(model: *Model) void {
     const ws = model.workspace orelse return;
     const bufs = ensureQuickBuffers(model) catch return;
-    bufs.filter(ws, model.quick_query.text());
+    const q = model.quick_query.text();
+    if (q.len == 0 and model.recent_file_count > 0) {
+        // Prefer recent files when query empty.
+        bufs.clear();
+        var i: u32 = 0;
+        while (i < model.recent_file_count and bufs.item_count < quick_open.max_results) : (i += 1) {
+            const path = model.recent_files[i][0..model.recent_file_lens[i]];
+            if (ws.findNodeByPath(path)) |node| {
+                if (!node.is_dir) bufs.push(node.id, node.name, node.path);
+            }
+        }
+        if (bufs.item_count > 0) {
+            bufs.status = "recent";
+            model.quick_items = bufs.itemsSlice();
+            return;
+        }
+    }
+    bufs.filter(ws, q);
     model.quick_items = bufs.itemsSlice();
 }
 
@@ -3354,7 +3895,6 @@ fn openQuickItem(model: *Model, item_id: u32) void {
         for (bufs.itemsSlice()) |item| {
             if (item.id == item_id) {
                 model.quick_open_visible = false;
-                // Reuse select_file path
                 model.selected_file_id = item.file_id;
                 model.current_view = .ide;
                 model.selected_activity = .explorer;
@@ -3363,7 +3903,10 @@ fn openQuickItem(model: *Model, item_id: u32) void {
                     model.active_tab_id = item.file_id;
                     model.open_tabs = ws.tabsSlice();
                     if (ws.findNode(item.file_id)) |node| {
-                        if (!node.is_dir) model.status_language = workspace_store.scannerLanguage(node.path);
+                        if (!node.is_dir) {
+                            model.status_language = workspace_store.scannerLanguage(node.path);
+                            pushRecentFile(model, node.path);
+                        }
                     }
                     syncDocumentFromWorkspace(model);
                 }
@@ -3892,26 +4435,31 @@ fn copyDocument(model: *Model) void {
 }
 
 fn goToSymbol(model: *Model) void {
-    const query = model.find_query.text();
-    if (query.len == 0) {
-        model.toast = "Enter find query for symbol";
+    // Prefer outline scan when no find query — open symbol palette.
+    if (model.find_query.text().len == 0 and model.symbol_query.text().len == 0) {
+        refreshOutline(model);
+        model.symbol_palette_open = true;
+        model.toast = "Go to Symbol";
         return;
+    }
+    const query = if (model.symbol_query.text().len > 0) model.symbol_query.text() else model.find_query.text();
+    refreshOutline(model);
+    if (model.outline_bufs) |bufs| {
+        for (bufs.symbolsSlice()) |sym| {
+            if (std.ascii.indexOfIgnoreCase(sym.name, query) != null) {
+                jumpToDocumentLine(model, sym.line);
+                model.symbol_palette_open = false;
+                model.toast = "Symbol";
+                return;
+            }
+        }
     }
     const line = edit_transforms.findSymbolLine(model.document.text(), query) orelse {
         model.toast = "Symbol not found";
         return;
     };
-    var total: u32 = if (model.document.text().len == 0) 0 else 1;
-    for (model.document.text()) |c| {
-        if (c == '\n') total += 1;
-    }
-    if (model.document.text().len == 0) total = 0;
-    const label = std.fmt.bufPrint(&model.goto_line_buf, "Symbol @ {d}/{d}", .{ line, total }) catch "symbol";
-    model.goto_line_label = label;
-    model.toast = model.goto_line_label;
-    var num: [12]u8 = undefined;
-    const nn = std.fmt.bufPrint(&num, "{d}", .{line}) catch return;
-    model.goto_line_input.set(nn);
+    jumpToDocumentLine(model, line);
+    model.symbol_palette_open = false;
 }
 
 fn createFolder(model: *Model) void {
@@ -4178,14 +4726,7 @@ fn runGotoLine(model: *Model) void {
         model.toast = "Line must be >= 1";
         return;
     }
-    var total: u32 = 1;
-    for (model.document.text()) |c| {
-        if (c == '\n') total += 1;
-    }
-    const target = @min(line_no, total);
-    const label = std.fmt.bufPrint(&model.goto_line_buf, "Line {d}/{d}", .{ target, total }) catch "line";
-    model.goto_line_label = label;
-    model.toast = model.goto_line_label;
+    jumpToDocumentLine(model, line_no);
 }
 
 fn ensurePrefsLoaded(model: *Model) void {
