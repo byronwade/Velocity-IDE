@@ -12,6 +12,10 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Save file | Write active document back to disk (Cmd/Ctrl+S / command palette). |
 | New file | Create relative path in workspace from explorer. |
 | Delete file | Delete selected file from explorer (files only). |
+| Rename file | Rename selected file via New-path field. |
+| Find in file | Match list + next/prev in active document. |
+| Quick Open | Cmd+P filter workspace files by name/path. |
+| Prefs | Persist theme, last path, panel visibility under `.velocity/prefs.txt`. |
 | Search | Bounded in-process text search over scanned files (no ripgrep). |
 | SCM | `git status --porcelain` + branch via governor (lazy on SCM panel). |
 | Command palette | Open Folder, Save, Search, Git refresh, Terminal, theme, safe mode. |

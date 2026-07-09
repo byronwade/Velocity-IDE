@@ -8,9 +8,12 @@ const canvas = native_sdk.canvas;
 const theme = @import("../theme/tokens.zig");
 const workspace_store = @import("../workspace/workspace_store.zig");
 const workspace_search = @import("../workspace/search.zig");
+const find_in_doc = @import("../workspace/find_in_doc.zig");
+const quick_open = @import("../workspace/quick_open.zig");
 const terminal_session = @import("../terminal/terminal_session.zig");
 const process_governor = @import("../processes/process_governor.zig");
 const git_status = @import("../scm/git_status.zig");
+const prefs_mod = @import("../core/prefs.zig");
 
 pub const header_natural_height: f32 = 44;
 pub const max_command_query = 64;
@@ -20,8 +23,12 @@ pub const max_open_path = 240;
 pub const max_terminal_command = terminal_session.max_command;
 pub const max_search_query = workspace_search.max_query;
 pub const max_new_file_path = 160;
+pub const max_find_query = find_in_doc.max_query;
+pub const max_quick_query = quick_open.max_query;
 pub const SearchHit = workspace_search.SearchHit;
 pub const GitEntry = git_status.GitEntry;
+pub const DocMatch = find_in_doc.DocMatch;
+pub const QuickItem = quick_open.QuickItem;
 
 pub const ViewKind = enum { launch, ide, plugins, settings, perf, features, processes, search, scm, debug, testing };
 pub const Activity = enum { explorer, search, scm, agents, terminal, plugins, settings, debug, testing, features, processes };
@@ -97,6 +104,16 @@ pub const Msg = union(enum) {
     update_new_file_path: canvas.TextInputEvent,
     create_new_file,
     delete_selected_file,
+    rename_selected_file,
+    update_find_query: canvas.TextInputEvent,
+    run_find,
+    find_next,
+    find_prev,
+    update_quick_query: canvas.TextInputEvent,
+    run_quick_open,
+    open_quick_item: u32,
+    close_quick_open,
+    save_prefs,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -121,6 +138,13 @@ pub const Msg = union(enum) {
         "refresh_git",
         "create_new_file",
         "delete_selected_file",
+        "rename_selected_file",
+        "run_find",
+        "find_next",
+        "find_prev",
+        "run_quick_open",
+        "close_quick_open",
+        "save_prefs",
         "terminal_line",
         "terminal_exit",
     };
@@ -168,6 +192,18 @@ pub const Model = struct {
     git_summary: []const u8 = "not loaded",
     git_branch: []const u8 = "unknown",
     new_file_path: canvas.TextBuffer(max_new_file_path) = .{},
+    find_query: canvas.TextBuffer(max_find_query) = .{},
+    find_bufs: ?*find_in_doc.FindBuffers = null,
+    find_matches: []const DocMatch = &.{},
+    find_status: []const u8 = "idle",
+    find_active_label: []const u8 = "",
+    find_label_buf: [48]u8 = undefined,
+    quick_query: canvas.TextBuffer(max_quick_query) = .{},
+    quick_bufs: ?*quick_open.QuickOpenBuffers = null,
+    quick_items: []const QuickItem = &.{},
+    quick_open_visible: bool = false,
+    prefs: prefs_mod.Prefs = .{},
+    prefs_loaded: bool = false,
     terminal_effect_key: u64 = 0,
     terminal_async: bool = false,
     governor: process_governor.Governor = .{},
@@ -250,6 +286,15 @@ pub const Model = struct {
         "git_bufs",
         "search_query",
         "new_file_path",
+        "find_query",
+        "find_bufs",
+        "find_label_buf",
+        "find_status",
+        "find_matches",
+        "quick_query",
+        "quick_bufs",
+        "prefs",
+        "prefs_loaded",
         "terminal_effect_key",
         "terminal_async",
         "governor",
@@ -427,6 +472,14 @@ pub const Model = struct {
         return model.new_file_path.text();
     }
 
+    pub fn findQueryText(model: *const Model) []const u8 {
+        return model.find_query.text();
+    }
+
+    pub fn quickQueryText(model: *const Model) []const u8 {
+        return model.quick_query.text();
+    }
+
     pub fn searchStatus(model: *const Model) []const u8 {
         if (model.search_bufs) |s| return s.status;
         return "idle";
@@ -529,6 +582,9 @@ pub const commands = [_]CommandItem{
     .{ .id = "save_file", .title = "Save File", .hint = "Cmd+S" },
     .{ .id = "create_new_file", .title = "New File", .hint = "" },
     .{ .id = "delete_selected_file", .title = "Delete Selected File", .hint = "" },
+    .{ .id = "rename_selected_file", .title = "Rename Selected File", .hint = "" },
+    .{ .id = "quick_open", .title = "Quick Open File", .hint = "Cmd+P" },
+    .{ .id = "find_in_file", .title = "Find in File", .hint = "Cmd+F" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
     .{ .id = "run_terminal", .title = "Run Terminal Command", .hint = "" },
     .{ .id = "run_search", .title = "Search Workspace", .hint = "" },
@@ -582,6 +638,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .close_command_palette => {
             model.command_palette_open = false;
             model.command_query.clear();
+            model.quick_open_visible = false;
         },
         .update_command_query => |edit| model.command_query.apply(edit),
         .run_command => |id| {
@@ -603,6 +660,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 model.current_view = .perf;
             } else if (std.mem.eql(u8, id, "switch_theme")) {
                 cycleTheme(model);
+                persistPrefs(model);
             } else if (std.mem.eql(u8, id, "new_agent_task")) {
                 createTask(model);
             } else if (std.mem.eql(u8, id, "go_launch")) {
@@ -615,6 +673,12 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 createNewFile(model);
             } else if (std.mem.eql(u8, id, "delete_selected_file")) {
                 deleteSelectedFile(model);
+            } else if (std.mem.eql(u8, id, "rename_selected_file")) {
+                renameSelectedFile(model);
+            } else if (std.mem.eql(u8, id, "quick_open")) {
+                showQuickOpen(model);
+            } else if (std.mem.eql(u8, id, "find_in_file")) {
+                runFindInDocument(model);
             } else if (std.mem.eql(u8, id, "run_terminal")) {
                 runTerminalFromModel(model, fx);
             } else if (std.mem.eql(u8, id, "run_search")) {
@@ -735,7 +799,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .go_launch => model.current_view = .launch,
         .create_agent_task => createTask(model),
         .update_agent_prompt => |edit| model.agent_prompt.apply(edit),
-        .switch_theme => cycleTheme(model),
+        .switch_theme => {
+            cycleTheme(model);
+            persistPrefs(model);
+        },
         .open_plugin_registry => {
             model.current_view = .plugins;
             model.selected_activity = .plugins;
@@ -801,6 +868,22 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .update_new_file_path => |edit| model.new_file_path.apply(edit),
         .create_new_file => createNewFile(model),
         .delete_selected_file => deleteSelectedFile(model),
+        .rename_selected_file => renameSelectedFile(model),
+        .update_find_query => |edit| model.find_query.apply(edit),
+        .run_find => runFindInDocument(model),
+        .find_next => findNavigate(model, true),
+        .find_prev => findNavigate(model, false),
+        .update_quick_query => |edit| {
+            model.quick_query.apply(edit);
+            filterQuickOpen(model);
+        },
+        .run_quick_open => showQuickOpen(model),
+        .open_quick_item => |id| openQuickItem(model, id),
+        .close_quick_open => {
+            model.quick_open_visible = false;
+            model.toast = "";
+        },
+        .save_prefs => persistPrefs(model),
         .terminal_line => |line| {
             if (ensureTerminalBuffers(model)) |term| {
                 term.pushLine(line.line);
@@ -900,6 +983,11 @@ fn applyWorkspaceMeta(model: *Model, ws: *workspace_store.WorkspaceBuffers, meta
     model.selected_activity = .explorer;
     model.features_loaded = @max(model.features_loaded, 9);
     model.open_path.set(ws.rootPath());
+    ensurePrefsLoaded(model);
+    model.prefs.setLastPath(ws.rootPath());
+    model.prefs.show_terminal = model.show_terminal;
+    model.prefs.show_agent = model.show_agent_panel;
+    persistPrefs(model);
 }
 
 fn openWorkspacePath(model: *Model, path: []const u8) void {
@@ -1124,6 +1212,172 @@ fn deleteSelectedFile(model: *Model) void {
         model.active_tab_id = 0;
     }
     model.toast = "File deleted";
+}
+
+fn renameSelectedFile(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const new_rel = model.new_file_path.text();
+    if (new_rel.len == 0) {
+        model.toast = "Enter new path in New field";
+        return;
+    }
+    const id = ws.renameFileById(modelIo(model), model.selected_file_id, new_rel) catch {
+        model.toast = "Rename failed";
+        return;
+    };
+    model.file_nodes = ws.fileNodesSlice();
+    model.open_tabs = ws.tabsSlice();
+    model.workspace_node_count = ws.file_node_count;
+    model.selected_file_id = id;
+    model.active_tab_id = id;
+    model.status_language = workspace_store.scannerLanguage(new_rel);
+    syncDocumentFromWorkspace(model);
+    model.toast = "File renamed";
+    model.new_file_path.clear();
+}
+
+fn ensureFindBuffers(model: *Model) !*find_in_doc.FindBuffers {
+    if (model.find_bufs) |f| return f;
+    const f = try std.heap.page_allocator.create(find_in_doc.FindBuffers);
+    f.* = .{};
+    model.find_bufs = f;
+    return f;
+}
+
+fn ensureQuickBuffers(model: *Model) !*quick_open.QuickOpenBuffers {
+    if (model.quick_bufs) |q| return q;
+    const q = try std.heap.page_allocator.create(quick_open.QuickOpenBuffers);
+    q.* = .{};
+    model.quick_bufs = q;
+    return q;
+}
+
+fn updateFindLabel(model: *Model) void {
+    if (model.find_bufs) |f| {
+        if (f.match_count == 0) {
+            model.find_active_label = "0/0";
+            return;
+        }
+        const label = std.fmt.bufPrint(&model.find_label_buf, "{d}/{d} L{d}", .{
+            f.active_index + 1,
+            f.match_count,
+            if (f.activeMatch()) |m| m.line else 0,
+        }) catch "find";
+        model.find_active_label = label;
+    } else {
+        model.find_active_label = "";
+    }
+}
+
+fn runFindInDocument(model: *Model) void {
+    const bufs = ensureFindBuffers(model) catch {
+        model.toast = "Find alloc failed";
+        return;
+    };
+    bufs.find(model.document.text(), model.find_query.text());
+    model.find_matches = bufs.matchesSlice();
+    model.find_status = bufs.status;
+    updateFindLabel(model);
+    model.toast = bufs.status;
+}
+
+fn findNavigate(model: *Model, forward: bool) void {
+    const bufs = model.find_bufs orelse {
+        runFindInDocument(model);
+        return;
+    };
+    if (bufs.match_count == 0) {
+        runFindInDocument(model);
+        return;
+    }
+    if (forward) bufs.next() else bufs.prev();
+    updateFindLabel(model);
+    model.toast = model.find_active_label;
+}
+
+fn showQuickOpen(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    model.quick_open_visible = true;
+    model.command_palette_open = false;
+    filterQuickOpen(model);
+}
+
+fn filterQuickOpen(model: *Model) void {
+    const ws = model.workspace orelse return;
+    const bufs = ensureQuickBuffers(model) catch return;
+    bufs.filter(ws, model.quick_query.text());
+    model.quick_items = bufs.itemsSlice();
+}
+
+fn openQuickItem(model: *Model, item_id: u32) void {
+    if (model.quick_bufs) |bufs| {
+        for (bufs.itemsSlice()) |item| {
+            if (item.id == item_id) {
+                model.quick_open_visible = false;
+                // Reuse select_file path
+                model.selected_file_id = item.file_id;
+                model.current_view = .ide;
+                model.selected_activity = .explorer;
+                if (model.workspace) |ws| {
+                    ws.openFileById(modelIo(model), item.file_id) catch {};
+                    model.active_tab_id = item.file_id;
+                    model.open_tabs = ws.tabsSlice();
+                    if (ws.findNode(item.file_id)) |node| {
+                        if (!node.is_dir) model.status_language = workspace_store.scannerLanguage(node.path);
+                    }
+                    syncDocumentFromWorkspace(model);
+                }
+                model.toast = "Opened";
+                return;
+            }
+        }
+    }
+    model.toast = "File not found";
+}
+
+fn ensurePrefsLoaded(model: *Model) void {
+    if (model.prefs_loaded) return;
+    model.prefs.load(modelIo(model));
+    model.prefs_loaded = true;
+}
+
+fn applyPrefsToModel(model: *Model) void {
+    ensurePrefsLoaded(model);
+    if (std.mem.eql(u8, model.prefs.themeSlice(), "light")) model.theme_preference = .light;
+    if (std.mem.eql(u8, model.prefs.themeSlice(), "high_contrast")) model.theme_preference = .high_contrast;
+    if (std.mem.eql(u8, model.prefs.themeSlice(), "dark")) model.theme_preference = .dark;
+    model.show_terminal = model.prefs.show_terminal;
+    model.show_agent_panel = model.prefs.show_agent;
+    if (model.prefs.last_path_len > 0 and model.open_path.text().len == 0) {
+        model.open_path.set(model.prefs.lastPathSlice());
+    }
+}
+
+/// Called once from main after io is attached.
+pub fn ensurePrefsOnBoot(model: *Model) void {
+    applyPrefsToModel(model);
+}
+
+fn persistPrefs(model: *Model) void {
+    ensurePrefsLoaded(model);
+    model.prefs.setTheme(switch (model.theme_preference) {
+        .dark => "dark",
+        .light => "light",
+        .high_contrast => "high_contrast",
+    });
+    model.prefs.show_terminal = model.show_terminal;
+    model.prefs.show_agent = model.show_agent_panel;
+    model.prefs.save(modelIo(model));
 }
 
 fn refreshGitStatus(model: *Model) void {

@@ -238,3 +238,52 @@ test "delete selected file" {
         try testing.expect(!std.mem.eql(u8, n.path, "src/mvp_to_delete.ts"));
     }
 }
+
+test "rename selected file" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.new_file_path.set("src/mvp_rename_src.ts");
+    main.update(&model, .create_new_file);
+    model.new_file_path.set("src/mvp_rename_dst.ts");
+    main.update(&model, .rename_selected_file);
+    try testing.expectEqualStrings("File renamed", model.toast);
+    var found = false;
+    for (model.file_nodes) |n| {
+        if (std.mem.eql(u8, n.path, "src/mvp_rename_dst.ts")) found = true;
+        try testing.expect(!std.mem.eql(u8, n.path, "src/mvp_rename_src.ts"));
+    }
+    try testing.expect(found);
+    main.update(&model, .delete_selected_file);
+}
+
+test "find in document" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.find_query.set("Chart");
+    main.update(&model, .run_find);
+    try testing.expect(model.find_matches.len > 0);
+    main.update(&model, .find_next);
+    try testing.expect(model.find_active_label.len > 0);
+}
+
+test "quick open filters files" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.quick_query.set("auth");
+    main.update(&model, .run_quick_open);
+    try testing.expect(model.quick_open_visible);
+    try testing.expect(model.quick_items.len > 0);
+}
+
+test "prefs persist theme" {
+    var model = main.initialModel();
+    main.update(&model, .switch_theme);
+    try testing.expect(model.theme_preference == .light);
+    var model2 = main.initialModel();
+    model_mod.ensurePrefsOnBoot(&model2);
+    try testing.expect(model2.theme_preference == .light);
+    // restore dark for other tests
+    model2.theme_preference = .dark;
+    main.update(&model2, .save_prefs);
+    std.Io.Dir.cwd().deleteTree(std.testing.io, ".velocity") catch {};
+}

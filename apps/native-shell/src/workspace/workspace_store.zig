@@ -136,6 +136,23 @@ pub const WorkspaceBuffers = struct {
         _ = try self.openPath(io, root_copy[0..root.len]);
     }
 
+    pub fn renameFileById(self: *WorkspaceBuffers, io: std.Io, id: u32, new_rel: []const u8) !u32 {
+        const node = self.findNode(id) orelse return error.NotFound;
+        if (node.is_dir) return error.NotFound;
+        if (new_rel.len == 0) return error.NotFound;
+        try scanner.renameRelFile(io, self.rootPath(), node.path, new_rel);
+        const root = self.rootPath();
+        var root_copy: [max_root_path_len]u8 = undefined;
+        if (root.len > root_copy.len) return error.PathTooLong;
+        @memcpy(root_copy[0..root.len], root);
+        _ = try self.openPath(io, root_copy[0..root.len]);
+        if (self.findNodeByPath(new_rel)) |n| {
+            try self.openFileById(io, n.id);
+            return n.id;
+        }
+        return error.NotFound;
+    }
+
     pub fn clear(self: *WorkspaceBuffers) void {
         self.* = .{};
     }

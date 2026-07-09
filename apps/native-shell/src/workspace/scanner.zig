@@ -230,6 +230,16 @@ pub fn deleteRelFile(io: Io, root_path: []const u8, rel_path: []const u8) !void 
     root.deleteFile(io, rel_path) catch return error.AccessDenied;
 }
 
+pub fn renameRelFile(io: Io, root_path: []const u8, old_rel: []const u8, new_rel: []const u8) !void {
+    if (old_rel.len == 0 or new_rel.len == 0) return error.AccessDenied;
+    var root = try Io.Dir.cwd().openDir(io, root_path, .{});
+    defer root.close(io);
+    if (std.fs.path.dirname(new_rel)) |parent| {
+        root.createDirPath(io, parent) catch {};
+    }
+    root.rename(old_rel, root, new_rel, io) catch return error.AccessDenied;
+}
+
 /// Join root + relative path into `out`. Returns joined slice.
 pub fn joinRootRel(root: []const u8, rel: []const u8, out: []u8) ![]const u8 {
     if (root.len == 0) {

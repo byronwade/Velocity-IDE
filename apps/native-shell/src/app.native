@@ -80,6 +80,7 @@
             <row gap="4" cross="center">
               <text-field text="{newFilePathText}" placeholder="src/new.ts" on-input="update_new_file_path" on-submit="create_new_file" grow="1" label="New file path" />
               <button size="sm" variant="secondary" on-press="create_new_file">New</button>
+              <button size="sm" variant="ghost" on-press="rename_selected_file">Ren</button>
               <button size="sm" variant="ghost" on-press="delete_selected_file">Del</button>
             </row>
             <separator />
@@ -117,7 +118,15 @@
                   <text size="sm" foreground="text_muted" wrap="false" grow="1">{activeTabPath} / {status_language}</text>
                   <badge variant="secondary">{dirtyLabel}</badge>
                   <badge variant="secondary">{editor_mode_label}</badge>
+                  <button size="sm" variant="ghost" on-press="run_quick_open">Go to</button>
                   <button size="sm" variant="primary" on-press="save_file">Save</button>
+                </row>
+                <row gap="4" cross="center">
+                  <text-field text="{findQueryText}" placeholder="Find in file..." on-input="update_find_query" on-submit="run_find" grow="1" label="Find in file" />
+                  <badge variant="secondary">{find_active_label}</badge>
+                  <button size="sm" variant="ghost" on-press="find_prev">Prev</button>
+                  <button size="sm" variant="ghost" on-press="find_next">Next</button>
+                  <button size="sm" variant="secondary" on-press="run_find">Find</button>
                 </row>
                 <column grow="1" gap="4" padding="8" background="surface_subtle">
                   <textarea text="{documentText}" placeholder="Open a file to edit..." on-input="edit_document" grow="1" label="Editor" />
@@ -303,6 +312,7 @@
               <text>Settings</text>
               <text foreground="text_muted">Telemetry off / Surveys off / Plugins locked until trusted</text>
               <button variant="secondary" on-press="switch_theme">Theme: {themeLabel}</button>
+              <button variant="ghost" on-press="save_prefs">Save Preferences</button>
               <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
               <button variant="ghost" on-press="open_process_governor">Process Governor</button>
               <button variant="ghost" on-press="run_perf_check_placeholder">Run Performance Check</button>
@@ -345,6 +355,26 @@
           </for>
         </column>
         <button size="sm" variant="ghost" on-press="close_command_palette">Close</button>
+      </column>
+    </column>
+  </if>
+
+  <!-- Quick Open overlay -->
+  <if test="{quick_open_visible}">
+    <column grow="1" main="start" cross="center" padding="48" background="surface_pressed">
+      <column width="520" gap="8" padding="12" background="surface">
+        <text>Quick Open</text>
+        <search-field text="{quickQueryText}" placeholder="Filter files..." on-input="update_quick_query" label="Quick open" />
+        <scroll height="280" label="Quick open results">
+          <column gap="2">
+            <for each="quick_items" key="id" as="item">
+              <list-item on-press="open_quick_item:{item.id}" padding="8" gap="8" cross="center" label="{item.path}">
+                <text grow="1" wrap="false">{item.path}</text>
+              </list-item>
+            </for>
+          </column>
+        </scroll>
+        <button size="sm" variant="ghost" on-press="close_quick_open">Close</button>
       </column>
     </column>
   </if>

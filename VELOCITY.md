@@ -12,6 +12,9 @@ This repository contains:
 | Native SDK mock shell | Runs (`native check` / `test` / `build`) |
 | Workspace file I/O (M2) | Fixture + typed path open, bounded scan, text read |
 | Edit + Save (MVP) | Native textarea + disk write (Cmd+S) |
+| New / Rename / Delete | Explorer file ops + rescan |
+| Find + Quick Open | In-doc find; Cmd+P file filter |
+| Prefs | Theme / last path / panels in `.velocity/prefs.txt` |
 | Search (MVP) | Bounded in-process workspace text search |
 | SCM (MVP) | Lazy `git status` / branch via governor |
 | Terminal (MVP) | Async `fx.spawn` pipe runner (sync fallback in tests) |

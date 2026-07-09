@@ -56,6 +56,8 @@ const shell_scene: native_sdk.ShellConfig = .{ .windows = &shell_windows };
 
 pub const app_shortcuts = [_]native_sdk.Shortcut{
     .{ .id = "command_palette", .key = "k", .modifiers = .{ .primary = true } },
+    .{ .id = "quick_open", .key = "p", .modifiers = .{ .primary = true } },
+    .{ .id = "find_in_file", .key = "f", .modifiers = .{ .primary = true } },
     .{ .id = "escape", .key = "escape" },
     .{ .id = "toggle_terminal", .key = "`", .modifiers = .{ .control = true } },
     .{ .id = "save_file", .key = "s", .modifiers = .{ .primary = true } },
@@ -63,7 +65,14 @@ pub const app_shortcuts = [_]native_sdk.Shortcut{
 
 pub fn onCommand(name: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "command_palette")) return .open_command_palette;
-    if (std.mem.eql(u8, name, "escape")) return .close_command_palette;
+    if (std.mem.eql(u8, name, "quick_open")) return .run_quick_open;
+    if (std.mem.eql(u8, name, "find_in_file")) return .run_find;
+    if (std.mem.eql(u8, name, "escape")) {
+        // Prefer closing overlays in priority order via model — escape closes palette;
+        // quick open also listens via close_quick_open from UI. Map escape to palette close
+        // and also close quick open by sending close_quick_open when needed from update.
+        return .close_command_palette;
+    }
     if (std.mem.eql(u8, name, "toggle_terminal")) return .toggle_terminal;
     if (std.mem.eql(u8, name, "save_file")) return .save_file;
     return null;
@@ -109,6 +118,7 @@ pub fn main(init: std.process.Init) !void {
     defer app_state.destroy();
     app_state.model = initialModel();
     app_state.model.io = init.io;
+    model_mod.ensurePrefsOnBoot(&app_state.model);
 
     try runner.runWithOptions(app_state.app(), .{
         .app_name = "velocity-ide",
@@ -129,10 +139,13 @@ pub fn main(init: std.process.Init) !void {
 test {
     _ = @import("tests.zig");
     _ = @import("core/feature_registry.zig");
+    _ = @import("core/prefs.zig");
     _ = @import("processes/process_governor.zig");
     _ = @import("workspace/scanner.zig");
     _ = @import("workspace/workspace_store.zig");
     _ = @import("workspace/search.zig");
+    _ = @import("workspace/find_in_doc.zig");
+    _ = @import("workspace/quick_open.zig");
     _ = @import("terminal/terminal_session.zig");
     _ = @import("scm/git_status.zig");
 }

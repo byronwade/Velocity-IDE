@@ -6,4 +6,5 @@ node_modules/
 # Keep fixture vendor dirs so scanner skip rules stay testable in CI.
 !fixtures/**/node_modules/
 !fixtures/**/node_modules/**
+.velocity/
 *.log
