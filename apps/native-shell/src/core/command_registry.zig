@@ -11,7 +11,7 @@ pub const Command = struct {
 pub const builtin = [_]Command{
     .{ .id = "open_folder", .title = "Open Folder", .feature_id = "feature.workspace-manager", .hint = "Cmd+O" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .feature_id = "feature.terminal", .hint = "Ctrl+`" },
-    .{ .id = "toggle_agent", .title = "Toggle Agent Panel", .feature_id = "feature.agent-composer", .hint = "Cmd+." },
+    .{ .id = "toggle_agent", .title = "Toggle Agent Panel", .feature_id = "feature.agent-composer", .hint = "Cmd+Shift+A" },
     .{ .id = "open_plugins", .title = "Open Plugin Registry", .feature_id = "feature.plugin-marketplace-ui" },
     .{ .id = "open_settings", .title = "Open Settings", .feature_id = "feature.settings", .hint = "Cmd+," },
     .{ .id = "run_perf", .title = "Run Performance Check", .feature_id = "feature.performance-hud" },

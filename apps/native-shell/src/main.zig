@@ -83,7 +83,7 @@ pub const app_shortcuts = [_]native_sdk.Shortcut{
     .{ .id = "workspace_search", .key = "f", .modifiers = .{ .primary = true, .shift = true } },
     .{ .id = "toggle_bottom_panel", .key = "j", .modifiers = .{ .primary = true } },
     .{ .id = "run_selected_task", .key = "b", .modifiers = .{ .primary = true, .shift = true } },
-    .{ .id = "toggle_agent", .key = ".", .modifiers = .{ .primary = true } },
+    .{ .id = "toggle_agent", .key = "a", .modifiers = .{ .primary = true, .shift = true } },
     .{ .id = "toggle_word_wrap", .key = "z", .modifiers = .{ .option = true } },
     .{ .id = "escape", .key = "escape" },
     .{ .id = "toggle_terminal", .key = "`", .modifiers = .{ .control = true } },

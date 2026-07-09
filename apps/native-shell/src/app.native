@@ -603,7 +603,7 @@
         <text size="sm" foreground="text_muted">Cmd+K palette | Cmd+O open folder | Cmd+, settings | Cmd+P quick open</text>
         <text size="sm" foreground="text_muted">Cmd+F find | Cmd+Shift+F workspace search | Cmd+G go to line | Cmd+J bottom panel</text>
         <text size="sm" foreground="text_muted">Cmd+S save | Cmd+Shift+S save all | Cmd+Shift+B run task | Cmd+W close</text>
-        <text size="sm" foreground="text_muted">Cmd+B sidebar | Ctrl+` terminal | Cmd+. agent | Alt+Z word wrap</text>
+        <text size="sm" foreground="text_muted">Cmd+B sidebar | Ctrl+` terminal | Cmd+Shift+A agent | Alt+Z word wrap</text>
         <text size="sm" foreground="text_muted">Cmd+Z undo | Cmd+Shift+Z redo</text>
         <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>
       </column>

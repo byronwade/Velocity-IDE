@@ -1362,7 +1362,7 @@ pub const commands = [_]CommandItem{
     .{ .id = "reopen_closed_tab", .title = "Reopen Closed Tab", .hint = "Cmd+Shift+T" },
     .{ .id = "scan_problems", .title = "Scan TODO/FIXME Problems", .hint = "" },
     .{ .id = "parse_terminal_diagnostics", .title = "Parse Terminal Diagnostics", .hint = "" },
-    .{ .id = "toggle_agent", .title = "Toggle Agent Panel", .hint = "Cmd+." },
+    .{ .id = "toggle_agent", .title = "Toggle Agent Panel", .hint = "Cmd+Shift+A" },
     .{ .id = "open_plugins", .title = "Open Plugin Registry", .hint = "" },
     .{ .id = "open_settings", .title = "Open Settings", .hint = "Cmd+," },
     .{ .id = "run_perf", .title = "Run Performance Check", .hint = "" },
