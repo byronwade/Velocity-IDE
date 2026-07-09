@@ -21,7 +21,7 @@ native automate widget-click main-canvas "$OPEN_ID"
 sleep 1
 
 # Terminal is closed by default — open via activity rail
-TE_BTN="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=button name="Terminal".*/\1/p' | head -1)"
+TE_BTN="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=button name="Toggle integrated terminal".*/\1/p' | head -1)"
 test -n "$TE_BTN"
 native automate widget-click main-canvas "$TE_BTN"
 sleep 0.5
