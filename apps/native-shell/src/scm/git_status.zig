@@ -169,6 +169,146 @@ pub const GitBuffers = struct {
         return std.mem.eql(u8, toplevel, abs_cwd);
     }
 
+    /// Accept only normalized repository-relative paths. Commands pass this path as a
+    /// distinct argv value after `--`, so shell metacharacters remain literal.
+    fn isSafePath(path: []const u8) bool {
+        if (path.len == 0 or path.len > max_path) return false;
+        if (path[0] == '/' or path[0] == '\\') return false;
+        if (path.len >= 2 and std.ascii.isAlphabetic(path[0]) and path[1] == ':') return false;
+
+        var segment_start: usize = 0;
+        var i: usize = 0;
+        while (i <= path.len) : (i += 1) {
+            if (i < path.len) {
+                const byte = path[i];
+                if (byte < 0x20 or byte == 0x7f) return false;
+                if (byte != '/' and byte != '\\') continue;
+            }
+
+            const segment = path[segment_start..i];
+            if (segment.len == 0 or
+                std.mem.eql(u8, segment, ".") or
+                std.mem.eql(u8, segment, "..") or
+                std.ascii.eqlIgnoreCase(segment, ".git"))
+            {
+                return false;
+            }
+            segment_start = i + 1;
+        }
+        return true;
+    }
+
+    fn isTrackedPath(io: std.Io, cwd: []const u8, path: []const u8) bool {
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+        const result = std.process.run(gpa, io, .{
+            .argv = &.{ "git", "ls-files", "--error-unmatch", "--", path },
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(max_path + 1),
+            .stderr_limit = .limited(1024),
+        }) catch return false;
+        defer {
+            gpa.free(result.stdout);
+            gpa.free(result.stderr);
+        }
+        return switch (result.term) {
+            .exited => |code| code == 0,
+            else => false,
+        };
+    }
+
+    /// Stage one repository-relative path without invoking a shell.
+    pub fn stagePath(self: *GitBuffers, io: std.Io, cwd: []const u8, path: []const u8) []const u8 {
+        if (cwd.len == 0) return "no workspace";
+        if (!isSafePath(path)) return "unsafe path";
+        if (!isGitRoot(io, cwd)) return "not a git root";
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+        const result = std.process.run(gpa, io, .{
+            .argv = &.{ "git", "add", "--", path },
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(1024),
+            .stderr_limit = .limited(1024),
+        }) catch return "stage failed";
+        defer {
+            gpa.free(result.stdout);
+            gpa.free(result.stderr);
+        }
+        switch (result.term) {
+            .exited => |code| {
+                if (code == 0) {
+                    self.refresh(io, cwd);
+                    return "staged";
+                }
+            },
+            else => {},
+        }
+        return "stage failed";
+    }
+
+    /// Unstage one path while preserving its working-tree contents.
+    pub fn unstagePath(self: *GitBuffers, io: std.Io, cwd: []const u8, path: []const u8) []const u8 {
+        if (cwd.len == 0) return "no workspace";
+        if (!isSafePath(path)) return "unsafe path";
+        if (!isGitRoot(io, cwd)) return "not a git root";
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+        const result = std.process.run(gpa, io, .{
+            .argv = &.{ "git", "reset", "HEAD", "--", path },
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(1024),
+            .stderr_limit = .limited(1024),
+        }) catch return "unstage failed";
+        defer {
+            gpa.free(result.stdout);
+            gpa.free(result.stderr);
+        }
+        switch (result.term) {
+            .exited => |code| {
+                if (code == 0) {
+                    self.refresh(io, cwd);
+                    return "unstaged";
+                }
+            },
+            else => {},
+        }
+        return "unstage failed";
+    }
+
+    /// Restore one tracked path from the index. Untracked paths are never removed or overwritten.
+    pub fn restorePath(self: *GitBuffers, io: std.Io, cwd: []const u8, path: []const u8) []const u8 {
+        if (cwd.len == 0) return "no workspace";
+        if (!isSafePath(path)) return "unsafe path";
+        if (!isGitRoot(io, cwd)) return "not a git root";
+        if (!isTrackedPath(io, cwd, path)) return "refusing untracked path";
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+        const result = std.process.run(gpa, io, .{
+            .argv = &.{ "git", "checkout", "--", path },
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(1024),
+            .stderr_limit = .limited(1024),
+        }) catch return "restore failed";
+        defer {
+            gpa.free(result.stdout);
+            gpa.free(result.stderr);
+        }
+        switch (result.term) {
+            .exited => |code| {
+                if (code == 0) {
+                    self.refresh(io, cwd);
+                    return "restored";
+                }
+            },
+            else => {},
+        }
+        return "restore failed";
+    }
+
     /// `git add -A` in the workspace. Returns a short status string.
     pub fn stageAll(self: *GitBuffers, io: std.Io, cwd: []const u8) []const u8 {
         if (cwd.len == 0) return "no workspace";
@@ -328,7 +468,7 @@ pub const GitBuffers = struct {
         }
 
         const status_result = std.process.run(gpa, io, .{
-            .argv = &.{ "git", "status", "--porcelain", "-uall" },
+            .argv = &.{ "git", "status", "--porcelain=v1", "-z", "-uall" },
             .cwd = .{ .path = cwd },
             .stdout_limit = .limited(64 * 1024),
             .stderr_limit = .limited(1024),
@@ -354,7 +494,7 @@ pub const GitBuffers = struct {
                 return;
             },
         }
-        self.parsePorcelain(status_result.stdout);
+        self.parsePorcelainZ(status_result.stdout);
         if (self.entry_count == 0) {
             self.summary = "clean";
         } else {
@@ -383,6 +523,23 @@ pub const GitBuffers = struct {
         }
     }
 
+    fn parsePorcelainZ(self: *GitBuffers, data: []const u8) void {
+        var start: usize = 0;
+        while (start + 3 <= data.len and self.entry_count < max_entries) {
+            const terminator = std.mem.indexOfScalarPos(u8, data, start + 3, 0) orelse break;
+            const status = data[start .. start + 2];
+            self.pushEntry(status, data[start + 3 .. terminator]);
+            start = terminator + 1;
+
+            // In `-z` format a rename/copy stores the destination first and the source
+            // as a second NUL-delimited field. The panel operates on the destination.
+            if (status[0] == 'R' or status[0] == 'C' or status[1] == 'R' or status[1] == 'C') {
+                const source_terminator = std.mem.indexOfScalarPos(u8, data, start, 0) orelse break;
+                start = source_terminator + 1;
+            }
+        }
+    }
+
     fn pushEntry(self: *GitBuffers, status: []const u8, path: []const u8) void {
         const idx = self.entry_count;
         const slen = @min(status.len, self.status_pool[idx].len);
@@ -406,4 +563,91 @@ test "git buffers parse porcelain lines" {
     try std.testing.expect(g.entry_count == 2);
     try std.testing.expectEqualStrings(" M", g.entries[0].status);
     try std.testing.expectEqualStrings("src/app.tsx", g.entries[0].path);
+}
+
+test "git buffers parse exact nul-delimited paths and rename destination" {
+    var g: GitBuffers = .{};
+    g.parsePorcelainZ("?? space ;$' file.txt\x00R  new name.txt\x00old name.txt\x00");
+    try std.testing.expectEqual(@as(u32, 2), g.entry_count);
+    try std.testing.expectEqualStrings("space ;$' file.txt", g.entries[0].path);
+    try std.testing.expectEqualStrings("R ", g.entries[1].status);
+    try std.testing.expectEqualStrings("new name.txt", g.entries[1].path);
+}
+
+fn runTestGit(cwd: []const u8, argv: []const []const u8) !void {
+    const result = try std.process.run(std.testing.allocator, std.testing.io, .{
+        .argv = argv,
+        .cwd = .{ .path = cwd },
+        .stdout_limit = .limited(4096),
+        .stderr_limit = .limited(4096),
+    });
+    defer {
+        std.testing.allocator.free(result.stdout);
+        std.testing.allocator.free(result.stderr);
+    }
+    switch (result.term) {
+        .exited => |code| try std.testing.expectEqual(@as(u8, 0), code),
+        else => return error.TestUnexpectedResult,
+    }
+}
+
+fn initTestRepo(tmp: *std.testing.TmpDir, path_buf: []u8) ![]const u8 {
+    const cwd = try std.fmt.bufPrint(path_buf, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    try runTestGit(cwd, &.{ "git", "init", "-q" });
+    try runTestGit(cwd, &.{ "git", "config", "user.email", "scm-test@example.invalid" });
+    try runTestGit(cwd, &.{ "git", "config", "user.name", "SCM Test" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "tracked.txt", .data = "original\n" });
+    try runTestGit(cwd, &.{ "git", "add", "--", "tracked.txt" });
+    try runTestGit(cwd, &.{ "git", "commit", "-q", "-m", "initial" });
+    return cwd;
+}
+
+test "per-path stage and unstage preserve literal path contents" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [128]u8 = undefined;
+    const cwd = try initTestRepo(&tmp, &path_buf);
+    const literal_path = "space ;$' file.txt";
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = literal_path, .data = "literal\n" });
+
+    var g: GitBuffers = .{};
+    try std.testing.expectEqualStrings("staged", g.stagePath(std.testing.io, cwd, literal_path));
+    try std.testing.expectEqual(@as(u32, 1), g.entry_count);
+    try std.testing.expectEqualStrings("A ", g.entries[0].status);
+    try std.testing.expectEqualStrings(literal_path, g.entries[0].path);
+    try std.testing.expectEqualStrings("unstaged", g.unstagePath(std.testing.io, cwd, literal_path));
+    try std.testing.expectEqual(@as(u32, 1), g.entry_count);
+    try std.testing.expectEqualStrings("??", g.entries[0].status);
+    try std.testing.expectEqualStrings(literal_path, g.entries[0].path);
+
+    var out: [32]u8 = undefined;
+    const contents = try tmp.dir.readFile(std.testing.io, literal_path, &out);
+    try std.testing.expectEqualStrings("literal\n", contents);
+}
+
+test "restore path restores tracked file and refuses untracked file" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [128]u8 = undefined;
+    const cwd = try initTestRepo(&tmp, &path_buf);
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "tracked.txt", .data = "modified\n" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "untracked.txt", .data = "keep\n" });
+
+    var g: GitBuffers = .{};
+    try std.testing.expectEqualStrings("restored", g.restorePath(std.testing.io, cwd, "tracked.txt"));
+    try std.testing.expectEqualStrings("refusing untracked path", g.restorePath(std.testing.io, cwd, "untracked.txt"));
+
+    var out: [32]u8 = undefined;
+    const tracked = try tmp.dir.readFile(std.testing.io, "tracked.txt", &out);
+    try std.testing.expectEqualStrings("original\n", tracked);
+    const untracked = try tmp.dir.readFile(std.testing.io, "untracked.txt", &out);
+    try std.testing.expectEqualStrings("keep\n", untracked);
+}
+
+test "per-path operations reject absolute traversal and git metadata paths" {
+    var g: GitBuffers = .{};
+    try std.testing.expectEqualStrings("unsafe path", g.stagePath(std.testing.io, "/unused", "../outside.txt"));
+    try std.testing.expectEqualStrings("unsafe path", g.unstagePath(std.testing.io, "/unused", "/absolute.txt"));
+    try std.testing.expectEqualStrings("unsafe path", g.restorePath(std.testing.io, "/unused", ".git/config"));
+    try std.testing.expectEqualStrings("unsafe path", g.stagePath(std.testing.io, "/unused", "dir\\..\\outside.txt"));
 }
