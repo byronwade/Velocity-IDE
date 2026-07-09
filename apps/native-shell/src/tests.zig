@@ -756,3 +756,21 @@ test "sidebar toggle and search case and timestamp" {
     try testing.expect(model.document.text().len > "prefix ".len);
     try testing.expect(std.mem.startsWith(u8, model.document.text(), "prefix "));
 }
+
+test "title case collapse blanks copy tabs untitled" {
+    var model = main.initialModel();
+    model.document.set("hello WORLD");
+    main.update(&model, .transform_title);
+    try testing.expectEqualStrings("Hello World", model.document.text());
+    model.document.set("a\n\n\nb\n");
+    main.update(&model, .collapse_blank_lines);
+    try testing.expectEqualStrings("a\n\nb\n", model.document.text());
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .copy_all_tab_paths);
+    try testing.expect(model.path_toast.len > 0);
+    main.update(&model, .new_untitled);
+    try testing.expect(std.mem.indexOf(u8, model.toast, "Untitled") != null);
+    // Clean up untitled file
+    main.update(&model, .delete_selected_file);
+    main.update(&model, .delete_selected_file);
+}

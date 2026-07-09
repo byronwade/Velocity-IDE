@@ -68,6 +68,10 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Search case | Workspace search case-sensitive toggle (persisted). |
 | Insert timestamp | Appends UTC `YYYY-MM-DD HH:MM:SS` to the document. |
 | Toggle sidebar | Independent left explorer chrome (`Cmd+B`). |
+| Title case | Transform words to Title Case. |
+| Collapse blank lines | Reduce consecutive blank lines to one. |
+| Copy all tab paths | Join open tab paths into toast (newline-separated). |
+| New untitled | `Cmd+N` creates `Untitled-N.txt` in the workspace. |
 | Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |
 | Agent panel | Local task board only — no network AI. |

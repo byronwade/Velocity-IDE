@@ -144,6 +144,10 @@ pub const Msg = union(enum) {
     transform_lower,
     transform_sort_lines,
     transform_reverse_lines,
+    transform_title,
+    collapse_blank_lines,
+    copy_all_tab_paths,
+    new_untitled,
     toggle_trim_trailing,
     toggle_final_newline,
     delete_last_line,
@@ -233,6 +237,10 @@ pub const Msg = union(enum) {
         "transform_lower",
         "transform_sort_lines",
         "transform_reverse_lines",
+        "transform_title",
+        "collapse_blank_lines",
+        "copy_all_tab_paths",
+        "new_untitled",
         "toggle_trim_trailing",
         "toggle_final_newline",
         "delete_last_line",
@@ -382,6 +390,7 @@ pub const Model = struct {
     recent_path_pool: [prefs_mod.max_recent][prefs_mod.max_path]u8 = undefined,
     recent_path_lens: [prefs_mod.max_recent]usize = [_]usize{0} ** prefs_mod.max_recent,
     recent_name_lens: [prefs_mod.max_recent]usize = [_]usize{0} ** prefs_mod.max_recent,
+    untitled_seq: u32 = 1,
     prefs: prefs_mod.Prefs = .{},
     prefs_loaded: bool = false,
     terminal_effect_key: u64 = 0,
@@ -528,6 +537,7 @@ pub const Model = struct {
         "recent_path_pool",
         "recent_path_lens",
         "recent_name_lens",
+        "untitled_seq",
         "prefs",
         "prefs_loaded",
         "terminal_effect_key",
@@ -941,8 +951,12 @@ pub const commands = [_]CommandItem{
     .{ .id = "toggle_shortcuts_help", .title = "Keyboard Shortcuts Help", .hint = "Cmd+Shift+/" },
     .{ .id = "transform_upper", .title = "Transform: Upper Case", .hint = "" },
     .{ .id = "transform_lower", .title = "Transform: Lower Case", .hint = "" },
+    .{ .id = "transform_title", .title = "Transform: Title Case", .hint = "" },
     .{ .id = "transform_sort_lines", .title = "Transform: Sort Lines", .hint = "" },
     .{ .id = "transform_reverse_lines", .title = "Transform: Reverse Lines", .hint = "" },
+    .{ .id = "collapse_blank_lines", .title = "Collapse Blank Lines", .hint = "" },
+    .{ .id = "copy_all_tab_paths", .title = "Copy All Open Tab Paths", .hint = "" },
+    .{ .id = "new_untitled", .title = "New Untitled File", .hint = "Cmd+N" },
     .{ .id = "delete_last_line", .title = "Delete Last Line", .hint = "Cmd+Shift+K" },
     .{ .id = "join_lines", .title = "Join Lines", .hint = "" },
     .{ .id = "move_line_up", .title = "Move Last Line Up", .hint = "Alt+Up" },
@@ -1112,10 +1126,18 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 runTextTransform(model, .upper);
             } else if (std.mem.eql(u8, id, "transform_lower")) {
                 runTextTransform(model, .lower);
+            } else if (std.mem.eql(u8, id, "transform_title")) {
+                runTextTransform(model, .title);
             } else if (std.mem.eql(u8, id, "transform_sort_lines")) {
                 runTextTransform(model, .sort);
             } else if (std.mem.eql(u8, id, "transform_reverse_lines")) {
                 runTextTransform(model, .reverse);
+            } else if (std.mem.eql(u8, id, "collapse_blank_lines")) {
+                collapseBlankLines(model);
+            } else if (std.mem.eql(u8, id, "copy_all_tab_paths")) {
+                copyAllTabPaths(model);
+            } else if (std.mem.eql(u8, id, "new_untitled")) {
+                newUntitledBuffer(model);
             } else if (std.mem.eql(u8, id, "delete_last_line")) {
                 deleteLastLine(model);
             } else if (std.mem.eql(u8, id, "join_lines")) {
@@ -1295,6 +1317,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .transform_lower => runTextTransform(model, .lower),
         .transform_sort_lines => runTextTransform(model, .sort),
         .transform_reverse_lines => runTextTransform(model, .reverse),
+        .transform_title => runTextTransform(model, .title),
+        .collapse_blank_lines => collapseBlankLines(model),
+        .copy_all_tab_paths => copyAllTabPaths(model),
+        .new_untitled => newUntitledBuffer(model),
         .toggle_trim_trailing => toggleTrimTrailing(model),
         .toggle_final_newline => toggleFinalNewline(model),
         .delete_last_line => deleteLastLine(model),
@@ -2983,7 +3009,7 @@ fn toggleFocusMode(model: *Model) void {
     }
 }
 
-const TextTransformKind = enum { upper, lower, sort, reverse, sort_unique };
+const TextTransformKind = enum { upper, lower, title, sort, reverse, sort_unique };
 
 fn runTextTransform(model: *Model, kind: TextTransformKind) void {
     var out: [edit_transforms.max_out]u8 = undefined;
@@ -2991,6 +3017,7 @@ fn runTextTransform(model: *Model, kind: TextTransformKind) void {
     const n = switch (kind) {
         .upper => edit_transforms.toUpperCase(text, &out),
         .lower => edit_transforms.toLowerCase(text, &out),
+        .title => edit_transforms.toTitleCase(text, &out),
         .sort => edit_transforms.sortLines(text, &out),
         .reverse => edit_transforms.reverseLines(text, &out),
         .sort_unique => edit_transforms.sortUniqueLines(text, &out),
@@ -3001,11 +3028,83 @@ fn runTextTransform(model: *Model, kind: TextTransformKind) void {
     const toast: []const u8 = switch (kind) {
         .upper => "Uppercased",
         .lower => "Lowercased",
+        .title => "Title cased",
         .sort => "Sorted lines",
         .reverse => "Reversed lines",
         .sort_unique => "Sorted unique lines",
     };
     applyDocumentTransform(model, out[0..n], toast);
+}
+
+fn collapseBlankLines(model: *Model) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = edit_transforms.collapseBlankLines(model.document.text(), &out) orelse {
+        model.toast = "Collapse blank lines failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..n], "Collapsed blank lines");
+}
+
+fn copyAllTabPaths(model: *Model) void {
+    const open = model.open_tabs;
+    if (open.len == 0) {
+        model.toast = "No open tabs";
+        model.path_toast = "";
+        return;
+    }
+    var dst: usize = 0;
+    for (open, 0..) |tab, i| {
+        if (i > 0) {
+            if (dst + 1 > model.path_toast_buf.len) break;
+            model.path_toast_buf[dst] = '\n';
+            dst += 1;
+        }
+        const n = @min(tab.path.len, model.path_toast_buf.len - dst);
+        @memcpy(model.path_toast_buf[dst..][0..n], tab.path[0..n]);
+        dst += n;
+    }
+    model.path_toast = model.path_toast_buf[0..dst];
+    model.toast = model.path_toast;
+}
+
+fn newUntitledBuffer(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        // Scratch mode: just clear into a fresh buffer.
+        model.document.clear();
+        model.document_dirty = false;
+        model.undo_available = false;
+        model.editor_mode_label = "untitled";
+        model.breadcrumb = "Untitled";
+        refreshDocStats(model);
+        model.toast = "Untitled buffer";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    var path_buf: [64]u8 = undefined;
+    const rel = std.fmt.bufPrint(&path_buf, "Untitled-{d}.txt", .{model.untitled_seq}) catch {
+        model.toast = "Untitled path failed";
+        return;
+    };
+    model.untitled_seq += 1;
+    const id = ws.createFile(modelIo(model), rel, "") catch {
+        model.toast = "Create untitled failed";
+        return;
+    };
+    model.file_nodes = ws.fileNodesSlice();
+    model.open_tabs = ws.tabsSlice();
+    model.workspace_node_count = ws.file_node_count;
+    refreshWorkspaceFileCount(model);
+    applyExplorerFilter(model);
+    model.selected_file_id = id;
+    model.active_tab_id = id;
+    model.status_language = "Plain Text";
+    syncDocumentFromWorkspace(model);
+    model.current_view = .ide;
+    model.selected_activity = .explorer;
+    model.toast = "Untitled created";
 }
 
 fn toggleTrimTrailing(model: *Model) void {

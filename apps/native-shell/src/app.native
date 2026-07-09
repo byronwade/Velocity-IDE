@@ -123,6 +123,7 @@
               <button size="sm" variant="ghost" on-press="outdent_document">Out</button>
               <button size="sm" variant="ghost" on-press="transform_upper">AA</button>
               <button size="sm" variant="ghost" on-press="transform_lower">aa</button>
+              <button size="sm" variant="ghost" on-press="transform_title">Aa</button>
               <button size="sm" variant="ghost" on-press="transform_sort_lines">Sort</button>
               <button size="sm" variant="ghost" on-press="transform_sort_unique">Uniq</button>
               <button size="sm" variant="ghost" on-press="transform_reverse_lines">Rev</button>
@@ -131,6 +132,7 @@
               <button size="sm" variant="ghost" on-press="move_line_up">LnUp</button>
               <button size="sm" variant="ghost" on-press="move_line_down">LnDn</button>
               <button size="sm" variant="ghost" on-press="remove_blank_lines">NoBlank</button>
+              <button size="sm" variant="ghost" on-press="collapse_blank_lines">Collapse</button>
               <button size="sm" variant="ghost" on-press="insert_blank_line">+Blank</button>
               <button size="sm" variant="ghost" on-press="convert_tabs_to_spaces">Tab>Sp</button>
               <button size="sm" variant="ghost" on-press="convert_spaces_to_tabs">Sp>Tab</button>
@@ -159,6 +161,8 @@
                   <button size="sm" variant="ghost" on-press="copy_active_path">Path</button>
                   <button size="sm" variant="ghost" on-press="copy_absolute_path">Abs</button>
                   <button size="sm" variant="ghost" on-press="copy_filename">Name</button>
+                  <button size="sm" variant="ghost" on-press="copy_all_tab_paths">Tabs</button>
+                  <button size="sm" variant="ghost" on-press="new_untitled">Untitled</button>
                   <button size="sm" variant="ghost" on-press="show_word_count">Words</button>
                   <button size="sm" variant="ghost" on-press="revert_file">Revert</button>
                   <button size="sm" variant="ghost" on-press="save_all">Save All</button>

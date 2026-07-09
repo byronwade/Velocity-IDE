@@ -193,6 +193,74 @@ pub fn toLowerCase(text: []const u8, out: []u8) ?usize {
     return text.len;
 }
 
+/// Title Case: uppercase first letter of each whitespace-separated word.
+pub fn toTitleCase(text: []const u8, out: []u8) ?usize {
+    if (text.len > out.len) return null;
+    var cap_next = true;
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        const c = text[i];
+        if (c == ' ' or c == '\t' or c == '\n' or c == '\r') {
+            out[i] = c;
+            cap_next = true;
+        } else if (cap_next) {
+            out[i] = std.ascii.toUpper(c);
+            cap_next = false;
+        } else {
+            out[i] = std.ascii.toLower(c);
+        }
+    }
+    return text.len;
+}
+
+/// Collapse runs of blank lines to a single blank line.
+pub fn collapseBlankLines(text: []const u8, out: []u8) ?usize {
+    var dst: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    var blank_run: u32 = 0;
+    const has_trailing_nl = text.len > 0 and text[text.len - 1] == '\n';
+    while (i <= text.len) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            if (i == text.len and has_trailing_nl and start == text.len) break;
+            const line = text[start..i];
+            const is_blank = std.mem.trim(u8, line, " \t\r").len == 0;
+            if (is_blank) {
+                blank_run += 1;
+                if (blank_run == 1) {
+                    if (dst > 0) {
+                        if (dst + 1 > out.len) return null;
+                        out[dst] = '\n';
+                        dst += 1;
+                    }
+                }
+            } else {
+                if (dst > 0) {
+                    if (dst + 1 > out.len) return null;
+                    out[dst] = '\n';
+                    dst += 1;
+                }
+                if (dst + line.len > out.len) return null;
+                @memcpy(out[dst..][0..line.len], line);
+                dst += line.len;
+                blank_run = 0;
+            }
+            start = i + 1;
+            if (i == text.len) break;
+        }
+    }
+    if (has_trailing_nl and dst > 0 and (dst == 0 or out[dst - 1] != '\n')) {
+        if (dst + 1 > out.len) return null;
+        out[dst] = '\n';
+        dst += 1;
+    } else if (has_trailing_nl and blank_run > 0 and dst > 0 and out[dst - 1] != '\n') {
+        if (dst + 1 > out.len) return null;
+        out[dst] = '\n';
+        dst += 1;
+    }
+    return dst;
+}
+
 /// Lexicographic sort of lines (stable enough for MVP; trailing newline preserved if present).
 pub fn sortLines(text: []const u8, out: []u8) ?usize {
     const max_lines = 512;
@@ -748,10 +816,14 @@ test "case and sort transforms" {
     try std.testing.expectEqualStrings("ABC", out[0..u]);
     const l = toLowerCase("AbC", &out).?;
     try std.testing.expectEqualStrings("abc", out[0..l]);
+    const t = toTitleCase("hello WORLD\nfoo", &out).?;
+    try std.testing.expectEqualStrings("Hello World\nFoo", out[0..t]);
     const s = sortLines("c\na\nb\n", &out).?;
     try std.testing.expectEqualStrings("a\nb\nc\n", out[0..s]);
     const r = reverseLines("a\nb\nc\n", &out).?;
     try std.testing.expectEqualStrings("c\nb\na\n", out[0..r]);
+    const c = collapseBlankLines("a\n\n\nb\n", &out).?;
+    try std.testing.expectEqualStrings("a\n\nb\n", out[0..c]);
 }
 
 test "trim trailing and final newline" {
