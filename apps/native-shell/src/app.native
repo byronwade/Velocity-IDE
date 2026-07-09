@@ -28,6 +28,11 @@
           <button variant="ghost" on-press="open_project:{project_scratch}">New Scratch</button>
         </row>
         <column gap="6" width="480" padding="12" background="surface_subtle">
+          <text size="sm" foreground="text_muted">Open path (relative or absolute)</text>
+          <text-field text="{openPathText}" placeholder="fixtures/acme-dashboard" on-input="update_open_path" on-submit="submit_open_path" label="Folder path" />
+          <button size="sm" variant="secondary" on-press="submit_open_path">Open Path</button>
+        </column>
+        <column gap="6" width="480" padding="12" background="surface_subtle">
           <text size="sm" foreground="text_muted">Recent projects</text>
           <for each="recent" as="p">
             <list-item on-press="open_project:{p.name}" padding="8" gap="8" cross="center" label="{p.name}">
@@ -101,14 +106,17 @@
             </row>
             <separator />
             <row grow="1">
-              <!-- Editor island placeholder -->
+              <!-- Editor island (native textarea MVP; Monaco later) -->
               <column grow="1" gap="8" padding="12">
-                <text size="sm" foreground="text_muted" wrap="false">{activeTabPath} / {status_language}</text>
-                <column grow="1" gap="4" padding="12" background="surface_subtle">
-                  <text size="sm" foreground="text_muted">Editor island (placeholder)</text>
-                  <text wrap="true">{editorBody}</text>
-                  <spacer grow="1" />
-                  <text size="sm" foreground="text_muted">Monaco bridge loads after first paint / Cmd+K for commands</text>
+                <row gap="8" cross="center">
+                  <text size="sm" foreground="text_muted" wrap="false" grow="1">{activeTabPath} / {status_language}</text>
+                  <badge variant="secondary">{dirtyLabel}</badge>
+                  <badge variant="secondary">{editor_mode_label}</badge>
+                  <button size="sm" variant="primary" on-press="save_file">Save</button>
+                </row>
+                <column grow="1" gap="4" padding="8" background="surface_subtle">
+                  <textarea text="{documentText}" placeholder="Open a file to edit..." on-input="edit_document" grow="1" label="Editor" />
+                  <text size="sm" foreground="text_muted">{toast}</text>
                 </column>
               </column>
 
@@ -145,13 +153,19 @@
               </if>
             </row>
 
-            <!-- Terminal -->
+            <!-- Terminal (pipe runner MVP) -->
             <if test="{show_terminal}">
               <separator />
-              <column height="160" gap="4" padding="8" background="surface">
+              <column height="200" gap="4" padding="8" background="surface">
                 <row gap="8" cross="center">
                   <text size="sm" grow="1">Terminal</text>
-                  <text size="sm" foreground="text_muted">fast mode / mock pty</text>
+                  <badge variant="secondary">{terminalStatus}</badge>
+                  <text size="sm" foreground="text_muted">pipe / sh -c</text>
+                  <button size="sm" variant="ghost" on-press="clear_terminal">Clear</button>
+                </row>
+                <row gap="6" cross="center">
+                  <text-field text="{terminalCommandText}" placeholder="echo hello" on-input="update_terminal_command" on-submit="run_terminal_command" grow="1" label="Terminal command" />
+                  <button size="sm" variant="primary" on-press="run_terminal_command">Run</button>
                 </row>
                 <scroll grow="1" label="Terminal output">
                   <column gap="2">

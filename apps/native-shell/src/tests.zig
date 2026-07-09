@@ -134,3 +134,60 @@ test "selecting a disk file loads contents" {
     try testing.expect(std.mem.indexOf(u8, model.editorBody(), "createSession") != null);
     try testing.expectEqualStrings("TypeScript", model.status_language);
 }
+
+test "edit and save document roundtrip" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    try testing.expect(model.workspace_from_disk);
+    const original = model.document.text();
+    try testing.expect(original.len > 0);
+
+    // Append a marker via TextBuffer.set (simulates edit)
+    var buf: [model_mod.max_document]u8 = undefined;
+    const marker = "\n// velocity-mvp-save\n";
+    @memcpy(buf[0..original.len], original);
+    const mark_len = @min(marker.len, buf.len - original.len);
+    @memcpy(buf[original.len..][0..mark_len], marker[0..mark_len]);
+    model.document.set(buf[0 .. original.len + mark_len]);
+    model.document_dirty = true;
+    main.update(&model, .save_file);
+    try testing.expect(!model.document_dirty);
+    try testing.expectEqualStrings("Saved", model.toast);
+
+    // Re-open file and confirm marker persisted
+    const path = model.activeTabPath();
+    var file_id: ?u32 = null;
+    for (model.file_nodes) |node| {
+        if (std.mem.eql(u8, node.path, path)) file_id = node.id;
+    }
+    try testing.expect(file_id != null);
+    main.update(&model, .{ .select_file = file_id.? });
+    try testing.expect(std.mem.indexOf(u8, model.document.text(), "velocity-mvp-save") != null);
+
+    // Restore original contents so fixture stays clean for other tests
+    model.document.set(original);
+    model.document_dirty = true;
+    main.update(&model, .save_file);
+}
+
+test "open path from typed folder" {
+    var model = main.initialModel();
+    model.open_path.set("fixtures/acme-dashboard");
+    main.update(&model, .submit_open_path);
+    try testing.expect(model.workspace_from_disk);
+    try testing.expect(model.workspace_node_count > 0);
+}
+
+test "terminal pipe command runs through governor" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.terminal_command.set("echo velocity-mvp");
+    main.update(&model, .run_terminal_command);
+    try testing.expect(model.term_lines.len >= 2);
+    var found = false;
+    for (model.term_lines) |line| {
+        if (std.mem.indexOf(u8, line, "velocity-mvp") != null) found = true;
+    }
+    try testing.expect(found);
+    try testing.expectEqualStrings("Command ok", model.toast);
+}

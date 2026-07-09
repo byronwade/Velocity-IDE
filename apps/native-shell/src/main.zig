@@ -57,12 +57,14 @@ pub const app_shortcuts = [_]native_sdk.Shortcut{
     .{ .id = "command_palette", .key = "k", .modifiers = .{ .primary = true } },
     .{ .id = "escape", .key = "escape" },
     .{ .id = "toggle_terminal", .key = "`", .modifiers = .{ .control = true } },
+    .{ .id = "save_file", .key = "s", .modifiers = .{ .primary = true } },
 };
 
 pub fn onCommand(name: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "command_palette")) return .open_command_palette;
     if (std.mem.eql(u8, name, "escape")) return .close_command_palette;
     if (std.mem.eql(u8, name, "toggle_terminal")) return .toggle_terminal;
+    if (std.mem.eql(u8, name, "save_file")) return .save_file;
     return null;
 }
 
@@ -129,4 +131,5 @@ test {
     _ = @import("processes/process_governor.zig");
     _ = @import("workspace/scanner.zig");
     _ = @import("workspace/workspace_store.zig");
+    _ = @import("terminal/terminal_session.zig");
 }

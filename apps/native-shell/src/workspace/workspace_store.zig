@@ -93,6 +93,20 @@ pub const WorkspaceBuffers = struct {
         return self.editor_path_buf[0..self.editor_path_len];
     }
 
+    pub fn setEditorText(self: *WorkspaceBuffers, text: []const u8) void {
+        const n = @min(text.len, self.editor_buf.len);
+        @memcpy(self.editor_buf[0..n], text[0..n]);
+        self.editor_len = n;
+        self.editor_truncated = false;
+    }
+
+    pub fn saveActiveFile(self: *WorkspaceBuffers, io: std.Io, text: []const u8) !void {
+        const rel = self.editorPath();
+        if (rel.len == 0) return error.NotFound;
+        try scanner.writeTextFile(io, self.rootPath(), rel, text);
+        self.setEditorText(text);
+    }
+
     pub fn clear(self: *WorkspaceBuffers) void {
         self.* = .{};
     }

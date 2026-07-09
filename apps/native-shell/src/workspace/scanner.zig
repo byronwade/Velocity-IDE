@@ -213,6 +213,31 @@ pub fn readTextFile(io: Io, root_path: []const u8, rel_path: []const u8, out: []
     return slice.len;
 }
 
+pub fn writeTextFile(io: Io, root_path: []const u8, rel_path: []const u8, data: []const u8) !void {
+    if (rel_path.len == 0 or data.len > max_file_bytes) return error.AccessDenied;
+    var root = try Io.Dir.cwd().openDir(io, root_path, .{});
+    defer root.close(io);
+    if (std.fs.path.dirname(rel_path)) |parent| {
+        root.createDirPath(io, parent) catch {};
+    }
+    root.writeFile(io, .{ .sub_path = rel_path, .data = data }) catch return error.AccessDenied;
+}
+
+/// Join root + relative path into `out`. Returns joined slice.
+pub fn joinRootRel(root: []const u8, rel: []const u8, out: []u8) ![]const u8 {
+    if (root.len == 0) {
+        if (rel.len > out.len) return error.PathTooLong;
+        @memcpy(out[0..rel.len], rel);
+        return out[0..rel.len];
+    }
+    const need = root.len + 1 + rel.len;
+    if (need > out.len) return error.PathTooLong;
+    @memcpy(out[0..root.len], root);
+    out[root.len] = '/';
+    @memcpy(out[root.len + 1 ..][0..rel.len], rel);
+    return out[0..need];
+}
+
 pub fn languageForPath(path: []const u8) []const u8 {
     if (std.mem.endsWith(u8, path, ".tsx")) return "TypeScript React";
     if (std.mem.endsWith(u8, path, ".ts")) return "TypeScript";

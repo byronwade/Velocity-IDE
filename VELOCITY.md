@@ -10,12 +10,14 @@ This repository contains:
 | Area | Status |
 |---|---|
 | Native SDK mock shell | Runs (`native check` / `test` / `build`) |
-| Workspace file I/O (M2) | Fixture folder open + bounded scan + text read |
+| Workspace file I/O (M2) | Fixture + typed path open, bounded scan, text read |
+| Edit + Save (MVP) | Native textarea + disk write (Cmd+S) |
+| Terminal (MVP) | Pipe `sh -c` via Process Governor (not PTY) |
 | Feature modules | 200 stubs under `src/features/` |
 | Feature registry + activation policy | Scaffold |
-| Process Governor | Scaffold (no OS spawn yet) |
+| Process Governor | Tracks terminal runs (no async spawn yet) |
 | Performance HUD / Feature Matrix | UI + mock metrics labeled **mock** |
-| Research docs | `docs/velocity/11-*.md` … `17-*.md` |
+| Research docs | `docs/velocity/11-*.md` … `18-*.md` |
 
 Codename **Velocity** is temporary and rename-ready.
 
@@ -41,9 +43,11 @@ npm run dev
 
 ## Next
 
-1. Native open-directory dialog (beyond fixture path)  
+1. OS folder dialog (`showOpenDialog`) when Runtime hook is wired  
 2. Monaco editor island after first paint  
-3. Native terminal PTY via Process Governor  
+3. Real PTY terminal (replace pipe runner)  
 4. Git provider + LSP broker  
+
+MVP definition: `docs/velocity/18-mvp-definition.md`
 
 Do **not** rewrite the Electron workbench for Velocity features in this phase.

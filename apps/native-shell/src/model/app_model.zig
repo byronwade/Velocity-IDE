@@ -7,10 +7,15 @@ const native_sdk = @import("native_sdk");
 const canvas = native_sdk.canvas;
 const theme = @import("../theme/tokens.zig");
 const workspace_store = @import("../workspace/workspace_store.zig");
+const terminal_session = @import("../terminal/terminal_session.zig");
+const process_governor = @import("../processes/process_governor.zig");
 
 pub const header_natural_height: f32 = 44;
 pub const max_command_query = 64;
 pub const max_agent_prompt = 160;
+pub const max_document = workspace_store.max_editor_bytes;
+pub const max_open_path = 240;
+pub const max_terminal_command = terminal_session.max_command;
 
 pub const ViewKind = enum { launch, ide, plugins, settings, perf, features, processes, search, scm, debug, testing };
 pub const Activity = enum { explorer, search, scm, agents, terminal, plugins, settings, debug, testing, features, processes };
@@ -72,6 +77,13 @@ pub const Msg = union(enum) {
     run_perf_check_placeholder,
     kill_all_workspace_processes,
     instant_safe_mode,
+    edit_document: canvas.TextInputEvent,
+    save_file,
+    update_open_path: canvas.TextInputEvent,
+    submit_open_path,
+    update_terminal_command: canvas.TextInputEvent,
+    run_terminal_command,
+    clear_terminal,
     chrome_changed: native_sdk.WindowChrome,
     set_appearance: native_sdk.Appearance,
 
@@ -86,6 +98,10 @@ pub const Msg = union(enum) {
         "open_process_governor",
         "kill_all_workspace_processes",
         "instant_safe_mode",
+        "save_file",
+        "submit_open_path",
+        "run_terminal_command",
+        "clear_terminal",
     };
 };
 
@@ -116,6 +132,14 @@ pub const Model = struct {
     workspace: ?*workspace_store.WorkspaceBuffers = null,
     /// Runtime Io from process.Init; tests fall back to std.testing.io.
     io: ?std.Io = null,
+    document: canvas.TextBuffer(max_document) = .{},
+    document_dirty: bool = false,
+    open_path: canvas.TextBuffer(max_open_path) = .{},
+    terminal_command: canvas.TextBuffer(max_terminal_command) = .{},
+    terminal: ?*terminal_session.TerminalBuffers = null,
+    governor: process_governor.Governor = .{},
+    toast: []const u8 = "",
+    editor_mode_label: []const u8 = "read-only mock",
     theme_preference: theme.ThemePreference = .dark,
     appearance: native_sdk.Appearance = .{},
     chrome_leading: f32 = 0,
@@ -184,6 +208,13 @@ pub const Model = struct {
         "workspace_from_disk",
         "workspace_scan_error",
         "io",
+        "document",
+        "document_dirty",
+        "open_path",
+        "terminal_command",
+        "terminal",
+        "governor",
+        "editorBody",
     };
 
     pub fn commandQuery(model: *const Model) []const u8 {
@@ -295,11 +326,6 @@ pub const Model = struct {
         return "Registered 200 / Loaded 8 (mock) / Startup-critical only at boot";
     }
 
-    pub fn processGovernorSummary(model: *const Model) []const u8 {
-        _ = model;
-        return "Processes 0 / Leaks 0 / Terminal PTY pending (mock)";
-    }
-
     pub fn activeTabTitle(model: *const Model) []const u8 {
         if (model.workspace_from_disk) {
             if (model.workspace) |ws| {
@@ -332,6 +358,8 @@ pub const Model = struct {
 
     pub fn editorBody(model: *const Model) []const u8 {
         if (model.workspace_from_disk) {
+            const text = model.document.text();
+            if (text.len > 0 or model.document_dirty) return text;
             if (model.workspace) |ws| {
                 const body = ws.editorText();
                 if (body.len > 0 or ws.editor_path_len > 0) return body;
@@ -340,10 +368,36 @@ pub const Model = struct {
         return editor_placeholder;
     }
 
+    pub fn documentText(model: *const Model) []const u8 {
+        return model.document.text();
+    }
+
+    pub fn openPathText(model: *const Model) []const u8 {
+        return model.open_path.text();
+    }
+
+    pub fn terminalCommandText(model: *const Model) []const u8 {
+        return model.terminal_command.text();
+    }
+
+    pub fn dirtyLabel(model: *const Model) []const u8 {
+        return if (model.document_dirty) "dirty" else "clean";
+    }
+
+    pub fn terminalStatus(model: *const Model) []const u8 {
+        if (model.terminal) |t| return t.status;
+        return "idle";
+    }
+
     pub fn workspaceStatus(model: *const Model) []const u8 {
         if (model.workspace_scan_error.len > 0) return model.workspace_scan_error;
         if (model.workspace_from_disk) return "disk";
         return "mock";
+    }
+
+    pub fn processGovernorSummary(model: *const Model) []const u8 {
+        _ = model;
+        return "Pipe terminal via governor / no PTY yet";
     }
 
     pub fn themeLabel(model: *const Model) []const u8 {
@@ -420,7 +474,9 @@ pub const plugin_registry = [_]PluginEntry{
 
 pub const commands = [_]CommandItem{
     .{ .id = "open_folder", .title = "Open Folder", .hint = "Cmd+O" },
+    .{ .id = "save_file", .title = "Save File", .hint = "Cmd+S" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
+    .{ .id = "run_terminal", .title = "Run Terminal Command", .hint = "" },
     .{ .id = "toggle_agent", .title = "Toggle Agent Panel", .hint = "Cmd+." },
     .{ .id = "open_plugins", .title = "Open Plugin Registry", .hint = "" },
     .{ .id = "open_settings", .title = "Open Settings", .hint = "Cmd+," },
@@ -487,6 +543,10 @@ pub fn update(model: *Model, msg: Msg) void {
                 model.current_view = .launch;
             } else if (std.mem.eql(u8, id, "open_folder")) {
                 openFixtureWorkspace(model, "acme-dashboard");
+            } else if (std.mem.eql(u8, id, "save_file")) {
+                saveActiveDocument(model);
+            } else if (std.mem.eql(u8, id, "run_terminal")) {
+                runTerminalFromModel(model);
             } else if (std.mem.eql(u8, id, "open_feature_matrix")) {
                 model.current_view = .features;
                 model.selected_activity = .features;
@@ -544,6 +604,7 @@ pub fn update(model: *Model, msg: Msg) void {
                             model.status_language = workspace_store.scannerLanguage(node.path);
                         }
                     }
+                    syncDocumentFromWorkspace(model);
                     return;
                 }
             }
@@ -565,6 +626,7 @@ pub fn update(model: *Model, msg: Msg) void {
                 if (model.workspace) |ws| {
                     ws.openFileById(modelIo(model), id) catch {};
                     model.open_tabs = ws.tabsSlice();
+                    syncDocumentFromWorkspace(model);
                 }
             }
         },
@@ -575,6 +637,9 @@ pub fn update(model: *Model, msg: Msg) void {
                 model.workspace_from_disk = false;
                 model.file_nodes = &file_tree;
                 model.open_tabs = &tabs;
+                model.document.set(editor_placeholder);
+                model.document_dirty = false;
+                model.editor_mode_label = "scratch";
                 model.current_view = .ide;
                 model.selected_activity = .explorer;
             } else {
@@ -607,17 +672,41 @@ pub fn update(model: *Model, msg: Msg) void {
             model.selected_activity = .processes;
         },
         .kill_all_workspace_processes => {
-            model.process_count = 0;
+            model.governor.killFeature("feature.terminal");
+            model.process_count = model.governor.aliveCount();
             model.terminal_process_count = 0;
             model.lsp_process_count = 0;
             model.plugin_process_count = 0;
-            model.process_leaked = 0;
+            model.process_leaked = model.governor.leak_count;
+            model.toast = "Killed workspace processes";
         },
         .instant_safe_mode => {
             model.safe_mode = true;
             model.runtime_mode_label = "Safe";
             model.show_agent_panel = false;
             model.features_loaded = 3;
+        },
+        .edit_document => |edit| {
+            model.document.apply(edit);
+            model.document_dirty = true;
+            model.toast = "";
+        },
+        .save_file => saveActiveDocument(model),
+        .update_open_path => |edit| model.open_path.apply(edit),
+        .submit_open_path => {
+            const path = model.open_path.text();
+            if (path.len == 0) {
+                model.toast = "Enter a folder path";
+            } else {
+                openWorkspacePath(model, path);
+            }
+        },
+        .update_terminal_command => |edit| model.terminal_command.apply(edit),
+        .run_terminal_command => runTerminalFromModel(model),
+        .clear_terminal => {
+            if (model.terminal) |t| t.clear();
+            model.term_lines = &.{};
+            model.toast = "Terminal cleared";
         },
         .chrome_changed => |chrome| {
             model.chrome_leading = chrome.insets.left;
@@ -643,24 +732,24 @@ fn ensureWorkspaceBuffers(model: *Model) !*workspace_store.WorkspaceBuffers {
     return ws;
 }
 
-fn openFixtureWorkspace(model: *Model, key: []const u8) void {
-    const path = workspace_store.fixturePathForKey(key) orelse {
-        model.project_name = key;
-        model.current_view = .ide;
-        model.selected_activity = .explorer;
-        return;
-    };
-    const ws = ensureWorkspaceBuffers(model) catch {
-        model.workspace_scan_error = "Allocator failed";
-        model.current_view = .ide;
-        return;
-    };
-    const meta = ws.openPath(modelIo(model), path) catch {
-        model.workspace_scan_error = "Open failed";
-        model.current_view = .ide;
-        model.selected_activity = .explorer;
-        return;
-    };
+fn ensureTerminalBuffers(model: *Model) !*terminal_session.TerminalBuffers {
+    if (model.terminal) |t| return t;
+    const t = try std.heap.page_allocator.create(terminal_session.TerminalBuffers);
+    t.* = .{};
+    model.terminal = t;
+    return t;
+}
+
+fn syncDocumentFromWorkspace(model: *Model) void {
+    if (model.workspace) |ws| {
+        model.document.set(ws.editorText());
+        model.document_dirty = false;
+        model.editor_mode_label = "editable";
+        model.toast = "";
+    }
+}
+
+fn applyWorkspaceMeta(model: *Model, ws: *workspace_store.WorkspaceBuffers, meta: workspace_store.Workspace) void {
     model.workspace_from_disk = meta.from_disk;
     model.workspace_node_count = meta.node_count;
     model.workspace_scan_error = meta.scan_error;
@@ -674,9 +763,82 @@ fn openFixtureWorkspace(model: *Model, key: []const u8) void {
         model.selected_file_id = ws.tabs[0].id;
         model.status_language = ws.tabs[0].language;
     }
+    syncDocumentFromWorkspace(model);
     model.current_view = .ide;
     model.selected_activity = .explorer;
     model.features_loaded = @max(model.features_loaded, 9);
+    model.open_path.set(ws.rootPath());
+}
+
+fn openWorkspacePath(model: *Model, path: []const u8) void {
+    const ws = ensureWorkspaceBuffers(model) catch {
+        model.workspace_scan_error = "Allocator failed";
+        model.toast = "Allocator failed";
+        model.current_view = .ide;
+        return;
+    };
+    const meta = ws.openPath(modelIo(model), path) catch {
+        model.workspace_scan_error = "Open failed";
+        model.toast = "Could not open folder";
+        model.current_view = .ide;
+        model.selected_activity = .explorer;
+        return;
+    };
+    applyWorkspaceMeta(model, ws, meta);
+    if (meta.scan_error.len > 0) {
+        model.toast = meta.scan_error;
+    } else {
+        model.toast = "Workspace opened";
+    }
+}
+
+fn openFixtureWorkspace(model: *Model, key: []const u8) void {
+    const path = workspace_store.fixturePathForKey(key) orelse {
+        // Treat unknown keys as literal relative paths (MVP path open).
+        openWorkspacePath(model, key);
+        return;
+    };
+    openWorkspacePath(model, path);
+}
+
+fn saveActiveDocument(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Nothing to save (mock workspace)";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    ws.saveActiveFile(modelIo(model), model.document.text()) catch {
+        model.toast = "Save failed";
+        return;
+    };
+    model.document_dirty = false;
+    model.toast = "Saved";
+}
+
+fn runTerminalFromModel(model: *Model) void {
+    const cmd = model.terminal_command.text();
+    if (cmd.len == 0) {
+        model.toast = "Enter a command";
+        return;
+    }
+    const term = ensureTerminalBuffers(model) catch {
+        model.toast = "Terminal alloc failed";
+        return;
+    };
+    const cwd = if (model.workspace_from_disk) model.project_path else "";
+    _ = model.governor.spawn("feature.terminal", cmd) catch {};
+    model.process_count = model.governor.aliveCount();
+    model.terminal_process_count = 1;
+    model.show_terminal = true;
+    term.runCommand(modelIo(model), cwd, cmd);
+    model.term_lines = term.linesSlice();
+    model.governor.killFeature("feature.terminal");
+    model.terminal_process_count = 0;
+    model.process_count = model.governor.aliveCount();
+    model.toast = if (term.last_exit == 0) "Command ok" else "Command exited";
 }
 
 fn pathForFile(id: u32) []const u8 {
