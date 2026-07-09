@@ -143,6 +143,11 @@ export interface NativeParsedArgs {
 	'disable-layout-restore'?: boolean;
 	'disable-experiments'?: boolean;
 
+	// Performance fork overrides (see docs/performance-fork/)
+	'perf-fork-mode'?: 'core' | 'developer' | 'compat';
+	'perf-fork-enable'?: string;
+	'perf-fork-disable'?: string;
+
 	// chromium command line args: https://electronjs.org/docs/all#supported-chrome-command-line-switches
 	'no-proxy-server'?: boolean;
 	'no-sandbox'?: boolean;
