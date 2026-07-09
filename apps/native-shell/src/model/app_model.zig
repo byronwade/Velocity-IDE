@@ -112,6 +112,8 @@ pub const Msg = union(enum) {
     create_new_file,
     delete_selected_file,
     rename_selected_file,
+    reveal_in_explorer,
+    update_explorer_filter: canvas.TextInputEvent,
     update_find_query: canvas.TextInputEvent,
     run_find,
     find_next,
@@ -161,6 +163,7 @@ pub const Msg = union(enum) {
         "create_new_file",
         "delete_selected_file",
         "rename_selected_file",
+        "reveal_in_explorer",
         "run_find",
         "find_next",
         "find_prev",
@@ -229,6 +232,9 @@ pub const Model = struct {
     git_summary: []const u8 = "not loaded",
     git_branch: []const u8 = "unknown",
     new_file_path: canvas.TextBuffer(max_new_file_path) = .{},
+    explorer_filter: canvas.TextBuffer(64) = .{},
+    explorer_filtered: [workspace_store.max_nodes]FileNode = [_]FileNode{.{}} ** workspace_store.max_nodes,
+    explorer_filtered_count: u32 = 0,
     find_query: canvas.TextBuffer(max_find_query) = .{},
     find_bufs: ?*find_in_doc.FindBuffers = null,
     find_matches: []const DocMatch = &.{},
@@ -348,6 +354,9 @@ pub const Model = struct {
         "git_bufs",
         "search_query",
         "new_file_path",
+        "explorer_filter",
+        "explorer_filtered",
+        "explorer_filtered_count",
         "find_query",
         "find_bufs",
         "find_label_buf",
@@ -553,6 +562,10 @@ pub const Model = struct {
         return model.new_file_path.text();
     }
 
+    pub fn explorerFilterText(model: *const Model) []const u8 {
+        return model.explorer_filter.text();
+    }
+
     pub fn findQueryText(model: *const Model) []const u8 {
         return model.find_query.text();
     }
@@ -704,6 +717,7 @@ pub const commands = [_]CommandItem{
     .{ .id = "create_new_file", .title = "New File", .hint = "" },
     .{ .id = "delete_selected_file", .title = "Delete Selected File", .hint = "" },
     .{ .id = "rename_selected_file", .title = "Rename Selected File", .hint = "" },
+    .{ .id = "reveal_in_explorer", .title = "Reveal Active File in Explorer", .hint = "" },
     .{ .id = "quick_open", .title = "Quick Open File", .hint = "Cmd+P" },
     .{ .id = "find_in_file", .title = "Find in File", .hint = "Cmd+F" },
     .{ .id = "replace_once", .title = "Replace Once", .hint = "" },
@@ -809,6 +823,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 deleteSelectedFile(model);
             } else if (std.mem.eql(u8, id, "rename_selected_file")) {
                 renameSelectedFile(model);
+            } else if (std.mem.eql(u8, id, "reveal_in_explorer")) {
+                revealInExplorer(model);
             } else if (std.mem.eql(u8, id, "quick_open")) {
                 showQuickOpen(model);
             } else if (std.mem.eql(u8, id, "find_in_file")) {
@@ -1041,6 +1057,11 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .create_new_file => createNewFile(model),
         .delete_selected_file => deleteSelectedFile(model),
         .rename_selected_file => renameSelectedFile(model),
+        .reveal_in_explorer => revealInExplorer(model),
+        .update_explorer_filter => |edit| {
+            model.explorer_filter.apply(edit);
+            applyExplorerFilter(model);
+        },
         .update_find_query => |edit| model.find_query.apply(edit),
         .run_find => runFindInDocument(model),
         .find_next => findNavigate(model, true),
@@ -1300,6 +1321,7 @@ fn applyWorkspaceMeta(model: *Model, ws: *workspace_store.WorkspaceBuffers, meta
     }
     syncDocumentFromWorkspace(model);
     refreshWorkspaceFileCount(model);
+    applyExplorerFilter(model);
     model.current_view = .ide;
     model.selected_activity = .explorer;
     model.features_loaded = @max(model.features_loaded, 9);
@@ -1623,6 +1645,7 @@ fn createNewFile(model: *Model) void {
     model.open_tabs = ws.tabsSlice();
     model.workspace_node_count = ws.file_node_count;
     refreshWorkspaceFileCount(model);
+    applyExplorerFilter(model);
     model.selected_file_id = id;
     model.active_tab_id = id;
     model.status_language = workspace_store.scannerLanguage(rel);
@@ -1643,13 +1666,17 @@ fn deleteSelectedFile(model: *Model) void {
         return;
     };
     const id = model.selected_file_id;
-    if (ws.findNode(id)) |node| {
-        if (node.is_dir) {
-            model.toast = "Cannot delete directories yet";
-            return;
-        }
-    } else {
+    const node = ws.findNode(id) orelse {
         model.toast = "No file selected";
+        return;
+    };
+    if (node.is_dir) {
+        model.toast = "Cannot delete directories yet";
+        return;
+    }
+    if (!std.mem.startsWith(u8, model.toast, "Delete ")) {
+        const msg = std.fmt.bufPrint(&model.action_toast_buf, "Delete {s}? Del again to confirm", .{node.name}) catch "Delete again to confirm";
+        model.toast = msg;
         return;
     }
     ws.deleteFileById(modelIo(model), id) catch {
@@ -1660,6 +1687,7 @@ fn deleteSelectedFile(model: *Model) void {
     model.open_tabs = ws.tabsSlice();
     model.workspace_node_count = ws.file_node_count;
     refreshWorkspaceFileCount(model);
+    applyExplorerFilter(model);
     if (ws.tab_count > 0) {
         model.active_tab_id = ws.tabs[0].id;
         model.selected_file_id = ws.tabs[0].id;
@@ -1672,6 +1700,57 @@ fn deleteSelectedFile(model: *Model) void {
         model.active_tab_id = 0;
     }
     model.toast = "File deleted";
+}
+
+fn revealInExplorer(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const path = Model.activeTabPath(model);
+    if (path.len == 0) {
+        model.toast = "No active file";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    if (ws.findNodeByPath(path)) |node| {
+        model.selected_file_id = node.id;
+        model.current_view = .ide;
+        model.selected_activity = .explorer;
+        model.explorer_filter.clear();
+        applyExplorerFilter(model);
+        model.toast = "Revealed in explorer";
+        return;
+    }
+    model.toast = "Not in explorer";
+}
+
+pub fn applyExplorerFilter(model: *Model) void {
+    const query = model.explorer_filter.text();
+    if (query.len == 0) {
+        // Keep full tree slice from workspace / mock.
+        if (model.workspace_from_disk) {
+            if (model.workspace) |ws| model.file_nodes = ws.fileNodesSlice();
+        }
+        return;
+    }
+    var count: u32 = 0;
+    const source: []const FileNode = if (model.workspace_from_disk)
+        if (model.workspace) |ws| ws.fileNodesSlice() else model.file_nodes
+    else
+        &file_tree;
+    for (source) |n| {
+        if (count >= model.explorer_filtered.len) break;
+        if (std.ascii.indexOfIgnoreCase(n.name, query) != null or std.ascii.indexOfIgnoreCase(n.path, query) != null) {
+            model.explorer_filtered[count] = n;
+            count += 1;
+        }
+    }
+    model.explorer_filtered_count = count;
+    model.file_nodes = model.explorer_filtered[0..count];
 }
 
 fn renameSelectedFile(model: *Model) void {
@@ -1696,6 +1775,7 @@ fn renameSelectedFile(model: *Model) void {
     model.open_tabs = ws.tabsSlice();
     model.workspace_node_count = ws.file_node_count;
     refreshWorkspaceFileCount(model);
+    applyExplorerFilter(model);
     model.selected_file_id = id;
     model.active_tab_id = id;
     model.status_language = workspace_store.scannerLanguage(new_rel);

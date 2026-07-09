@@ -82,7 +82,9 @@
               <button size="sm" variant="secondary" on-press="create_new_file">New</button>
               <button size="sm" variant="ghost" on-press="rename_selected_file">Ren</button>
               <button size="sm" variant="ghost" on-press="delete_selected_file">Del</button>
+              <button size="sm" variant="ghost" on-press="reveal_in_explorer">Loc</button>
             </row>
+            <text-field text="{explorerFilterText}" placeholder="Filter files..." on-input="update_explorer_filter" label="Explorer filter" />
             <separator />
             <scroll grow="1" label="File explorer">
               <column gap="1">
@@ -122,6 +124,7 @@
                   <badge variant="secondary">{dirtyLabel}</badge>
                   <badge variant="secondary">{editor_mode_label}</badge>
                   <button size="sm" variant="ghost" on-press="run_quick_open">Go to</button>
+                  <button size="sm" variant="ghost" on-press="reveal_in_explorer">Reveal</button>
                   <button size="sm" variant="primary" on-press="save_file">Save</button>
                 </row>
                 <row gap="4" cross="center">

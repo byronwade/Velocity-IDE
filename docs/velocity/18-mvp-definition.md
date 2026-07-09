@@ -11,8 +11,10 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Edit file | Native `<textarea>` bound to document buffer (dirty tracking). |
 | Save file | Write active document back to disk (Cmd/Ctrl+S / command palette). |
 | New file | Create relative path in workspace from explorer. |
-| Delete file | Delete selected file from explorer (files only). |
+| Delete file | Soft-confirm then delete selected file from explorer (files only). |
 | Rename file | Rename selected file via New-path field. |
+| Explorer filter | Filter tree by name/path substring. |
+| Reveal in explorer | Select active editor file in the tree. |
 | Find in file | Match list + next/prev in active document. |
 | Replace in file | Replace once / replace all using find + replace fields. |
 | Quick Open | Cmd+P filter workspace files by name/path. |

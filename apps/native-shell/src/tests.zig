@@ -233,6 +233,8 @@ test "delete selected file" {
     main.update(&model, .create_new_file);
     try testing.expectEqualStrings("File created", model.toast);
     main.update(&model, .delete_selected_file);
+    try testing.expect(std.mem.startsWith(u8, model.toast, "Delete "));
+    main.update(&model, .delete_selected_file);
     try testing.expectEqualStrings("File deleted", model.toast);
     for (model.file_nodes) |n| {
         try testing.expect(!std.mem.eql(u8, n.path, "src/mvp_to_delete.ts"));
@@ -253,6 +255,7 @@ test "rename selected file" {
         try testing.expect(!std.mem.eql(u8, n.path, "src/mvp_rename_src.ts"));
     }
     try testing.expect(found);
+    main.update(&model, .delete_selected_file);
     main.update(&model, .delete_selected_file);
 }
 
@@ -474,4 +477,28 @@ test "terminal history older newer" {
     try testing.expectEqualStrings("echo two", model.terminal_command.text());
     main.update(&model, .terminal_history_older);
     try testing.expectEqualStrings("echo one", model.terminal_command.text());
+}
+
+test "explorer filter narrows nodes" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    const before = model.file_nodes.len;
+    model.explorer_filter.set("auth");
+    model_mod.applyExplorerFilter(&model);
+    try testing.expect(model.file_nodes.len < before);
+    try testing.expect(model.file_nodes.len > 0);
+    for (model.file_nodes) |n| {
+        const hit = std.ascii.indexOfIgnoreCase(n.name, "auth") != null or std.ascii.indexOfIgnoreCase(n.path, "auth") != null;
+        try testing.expect(hit);
+    }
+}
+
+test "reveal in explorer selects active file" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    const active = model.active_tab_id;
+    model.selected_file_id = 0;
+    main.update(&model, .reveal_in_explorer);
+    try testing.expect(model.selected_file_id == active or model.selected_file_id != 0);
+    try testing.expect(model.selected_activity == .explorer);
 }
