@@ -223,6 +223,13 @@ pub fn writeTextFile(io: Io, root_path: []const u8, rel_path: []const u8, data: 
     root.writeFile(io, .{ .sub_path = rel_path, .data = data }) catch return error.AccessDenied;
 }
 
+pub fn deleteRelFile(io: Io, root_path: []const u8, rel_path: []const u8) !void {
+    if (rel_path.len == 0) return error.AccessDenied;
+    var root = try Io.Dir.cwd().openDir(io, root_path, .{});
+    defer root.close(io);
+    root.deleteFile(io, rel_path) catch return error.AccessDenied;
+}
+
 /// Join root + relative path into `out`. Returns joined slice.
 pub fn joinRootRel(root: []const u8, rel: []const u8, out: []u8) ![]const u8 {
     if (root.len == 0) {

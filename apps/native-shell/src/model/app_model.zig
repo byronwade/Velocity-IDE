@@ -96,6 +96,7 @@ pub const Msg = union(enum) {
     refresh_git,
     update_new_file_path: canvas.TextInputEvent,
     create_new_file,
+    delete_selected_file,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -119,6 +120,7 @@ pub const Msg = union(enum) {
         "run_search",
         "refresh_git",
         "create_new_file",
+        "delete_selected_file",
         "terminal_line",
         "terminal_exit",
     };
@@ -526,6 +528,7 @@ pub const commands = [_]CommandItem{
     .{ .id = "open_folder", .title = "Open Folder", .hint = "Cmd+O" },
     .{ .id = "save_file", .title = "Save File", .hint = "Cmd+S" },
     .{ .id = "create_new_file", .title = "New File", .hint = "" },
+    .{ .id = "delete_selected_file", .title = "Delete Selected File", .hint = "" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
     .{ .id = "run_terminal", .title = "Run Terminal Command", .hint = "" },
     .{ .id = "run_search", .title = "Search Workspace", .hint = "" },
@@ -610,6 +613,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 saveActiveDocument(model);
             } else if (std.mem.eql(u8, id, "create_new_file")) {
                 createNewFile(model);
+            } else if (std.mem.eql(u8, id, "delete_selected_file")) {
+                deleteSelectedFile(model);
             } else if (std.mem.eql(u8, id, "run_terminal")) {
                 runTerminalFromModel(model, fx);
             } else if (std.mem.eql(u8, id, "run_search")) {
@@ -795,6 +800,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .refresh_git => refreshGitStatus(model),
         .update_new_file_path => |edit| model.new_file_path.apply(edit),
         .create_new_file => createNewFile(model),
+        .delete_selected_file => deleteSelectedFile(model),
         .terminal_line => |line| {
             if (ensureTerminalBuffers(model)) |term| {
                 term.pushLine(line.line);
@@ -1078,6 +1084,46 @@ fn createNewFile(model: *Model) void {
     model.selected_activity = .explorer;
     model.toast = "File created";
     model.new_file_path.clear();
+}
+
+fn deleteSelectedFile(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const id = model.selected_file_id;
+    if (ws.findNode(id)) |node| {
+        if (node.is_dir) {
+            model.toast = "Cannot delete directories yet";
+            return;
+        }
+    } else {
+        model.toast = "No file selected";
+        return;
+    }
+    ws.deleteFileById(modelIo(model), id) catch {
+        model.toast = "Delete failed";
+        return;
+    };
+    model.file_nodes = ws.fileNodesSlice();
+    model.open_tabs = ws.tabsSlice();
+    model.workspace_node_count = ws.file_node_count;
+    if (ws.tab_count > 0) {
+        model.active_tab_id = ws.tabs[0].id;
+        model.selected_file_id = ws.tabs[0].id;
+        model.status_language = ws.tabs[0].language;
+        syncDocumentFromWorkspace(model);
+    } else {
+        model.document.clear();
+        model.document_dirty = false;
+        model.selected_file_id = 0;
+        model.active_tab_id = 0;
+    }
+    model.toast = "File deleted";
 }
 
 fn refreshGitStatus(model: *Model) void {

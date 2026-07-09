@@ -125,6 +125,17 @@ pub const WorkspaceBuffers = struct {
         return error.NotFound;
     }
 
+    pub fn deleteFileById(self: *WorkspaceBuffers, io: std.Io, id: u32) !void {
+        const node = self.findNode(id) orelse return error.NotFound;
+        if (node.is_dir) return error.NotFound;
+        try scanner.deleteRelFile(io, self.rootPath(), node.path);
+        const root = self.rootPath();
+        var root_copy: [max_root_path_len]u8 = undefined;
+        if (root.len > root_copy.len) return error.PathTooLong;
+        @memcpy(root_copy[0..root.len], root);
+        _ = try self.openPath(io, root_copy[0..root.len]);
+    }
+
     pub fn clear(self: *WorkspaceBuffers) void {
         self.* = .{};
     }

@@ -225,3 +225,16 @@ test "create new file in workspace" {
     const io = model.io orelse std.testing.io;
     std.Io.Dir.cwd().deleteFile(io, "fixtures/acme-dashboard/src/mvp_created.ts") catch {};
 }
+
+test "delete selected file" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.new_file_path.set("src/mvp_to_delete.ts");
+    main.update(&model, .create_new_file);
+    try testing.expectEqualStrings("File created", model.toast);
+    main.update(&model, .delete_selected_file);
+    try testing.expectEqualStrings("File deleted", model.toast);
+    for (model.file_nodes) |n| {
+        try testing.expect(!std.mem.eql(u8, n.path, "src/mvp_to_delete.ts"));
+    }
+}
