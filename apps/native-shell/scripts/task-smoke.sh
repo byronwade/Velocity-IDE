@@ -19,12 +19,14 @@ test -n "$OPEN_ID"
 native automate widget-click main-canvas "$OPEN_ID"
 sleep 1
 
-TERMINAL_ID="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=button name="Toggle integrated terminal".*/\1/p' | head -1)"
-test -n "$TERMINAL_ID"
-native automate widget-click main-canvas "$TERMINAL_ID"
-sleep 0.5
-
 TASK_ID="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=button name="echo velocity-task-smoke".*/\1/p' | head -1)"
+if test -z "$TASK_ID"; then
+  TERMINAL_ID="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=button name="Toggle integrated terminal".*/\1/p' | head -1)"
+  test -n "$TERMINAL_ID"
+  native automate widget-click main-canvas "$TERMINAL_ID"
+  sleep 0.5
+  TASK_ID="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=button name="echo velocity-task-smoke".*/\1/p' | head -1)"
+fi
 test -n "$TASK_ID"
 native automate widget-click main-canvas "$TASK_ID"
 

@@ -20,13 +20,14 @@ test -n "$OPEN_ID"
 native automate widget-click main-canvas "$OPEN_ID"
 sleep 1
 
-# Terminal is closed by default — open via activity rail
-TE_BTN="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=button name="Toggle integrated terminal".*/\1/p' | head -1)"
-test -n "$TE_BTN"
-native automate widget-click main-canvas "$TE_BTN"
-sleep 0.5
-
 TERM_BOX="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=textbox name="Terminal command".*/\1/p' | head -1)"
+if test -z "$TERM_BOX"; then
+  TE_BTN="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=button name="Toggle integrated terminal".*/\1/p' | head -1)"
+  test -n "$TE_BTN"
+  native automate widget-click main-canvas "$TE_BTN"
+  sleep 0.5
+  TERM_BOX="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=textbox name="Terminal command".*/\1/p' | head -1)"
+fi
 RUN_BTN="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=button name="Run".*/\1/p' | head -1)"
 test -n "$TERM_BOX" && test -n "$RUN_BTN"
 
