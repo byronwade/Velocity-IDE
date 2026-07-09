@@ -32,6 +32,9 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Escape dismiss | Closes palette → quick open → clears find (priority order). |
 | Duplicate line | Appends a copy of the last document line (MVP). |
 | Workspace counts | Explorer + status bar show file/node counts. |
+| Dirty tab marker | Active tab title shows ` *` while unsaved. |
+| Search hit count | Search status badge reports `N hits`. |
+| Terminal history | ↑/↓ recall last commands (in-session). |
 | Command palette | Open Folder, Save, Search, Git refresh, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |
 | Agent panel | Local task board only — no network AI. |

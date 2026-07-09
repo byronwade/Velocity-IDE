@@ -7,6 +7,7 @@ pub const max_lines: usize = 200;
 pub const max_line_bytes: usize = 240;
 pub const max_command: usize = 160;
 pub const max_output_collect: usize = 32 * 1024;
+pub const max_history: usize = 12;
 
 pub const TerminalBuffers = struct {
     line_pool: [max_lines][max_line_bytes]u8 = undefined,
@@ -16,6 +17,10 @@ pub const TerminalBuffers = struct {
     status: []const u8 = "idle",
     last_exit: i32 = 0,
     running: bool = false,
+    history: [max_history][max_command]u8 = undefined,
+    history_lens: [max_history]usize = [_]usize{0} ** max_history,
+    history_count: u32 = 0,
+    history_cursor: i32 = -1,
 
     pub fn linesSlice(self: *TerminalBuffers) []const []const u8 {
         return self.lines[0..self.line_count];
@@ -54,6 +59,61 @@ pub const TerminalBuffers = struct {
         @memcpy(buf[0..prefix.len], prefix);
         @memcpy(buf[prefix.len..][0..take], cmd[0..take]);
         self.pushLine(buf[0 .. prefix.len + take]);
+        self.pushHistory(cmd);
+    }
+
+    pub fn pushHistory(self: *TerminalBuffers, cmd: []const u8) void {
+        if (cmd.len == 0) return;
+        if (self.history_count > 0 and std.mem.eql(u8, self.historySlice(0), cmd)) {
+            self.history_cursor = -1;
+            return;
+        }
+        if (self.history_count >= max_history) {
+            var i: u32 = max_history - 1;
+            while (i > 0) : (i -= 1) {
+                const len = self.history_lens[i - 1];
+                @memcpy(self.history[i][0..len], self.history[i - 1][0..len]);
+                self.history_lens[i] = len;
+            }
+            self.history_count = max_history - 1;
+        }
+        var k = self.history_count;
+        while (k > 0) : (k -= 1) {
+            const len = self.history_lens[k - 1];
+            @memcpy(self.history[k][0..len], self.history[k - 1][0..len]);
+            self.history_lens[k] = len;
+        }
+        const n = @min(cmd.len, max_command);
+        @memcpy(self.history[0][0..n], cmd[0..n]);
+        self.history_lens[0] = n;
+        self.history_count += 1;
+        self.history_cursor = -1;
+    }
+
+    pub fn historySlice(self: *const TerminalBuffers, newest_index: u32) []const u8 {
+        if (newest_index >= self.history_count) return "";
+        return self.history[newest_index][0..self.history_lens[newest_index]];
+    }
+
+    /// Move toward older commands. Returns recalled command or null.
+    pub fn historyOlder(self: *TerminalBuffers) ?[]const u8 {
+        if (self.history_count == 0) return null;
+        if (self.history_cursor + 1 >= @as(i32, @intCast(self.history_count))) {
+            return self.historySlice(@intCast(self.history_cursor));
+        }
+        self.history_cursor += 1;
+        return self.historySlice(@intCast(self.history_cursor));
+    }
+
+    /// Move toward newer commands.
+    pub fn historyNewer(self: *TerminalBuffers) ?[]const u8 {
+        if (self.history_count == 0) return null;
+        if (self.history_cursor <= 0) {
+            self.history_cursor = -1;
+            return "";
+        }
+        self.history_cursor -= 1;
+        return self.historySlice(@intCast(self.history_cursor));
     }
 
     /// Run a shell command via `/bin/sh -c` and capture stdout/stderr lines.
@@ -127,4 +187,13 @@ test "run echo command" {
     }
     try std.testing.expect(found);
     try std.testing.expect(t.last_exit == 0);
+}
+
+test "terminal history recall" {
+    var t: TerminalBuffers = .{};
+    t.pushHistory("echo a");
+    t.pushHistory("echo b");
+    try std.testing.expectEqualStrings("echo b", t.historyOlder().?);
+    try std.testing.expectEqualStrings("echo a", t.historyOlder().?);
+    try std.testing.expectEqualStrings("echo b", t.historyNewer().?);
 }

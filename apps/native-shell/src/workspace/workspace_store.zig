@@ -302,6 +302,34 @@ pub const WorkspaceBuffers = struct {
         try self.ensureTab(node);
     }
 
+    pub fn setTabDirty(self: *WorkspaceBuffers, id: u32, dirty: bool) void {
+        var i: u32 = 0;
+        while (i < self.tab_count) : (i += 1) {
+            if (self.tabs[i].id == id) {
+                self.tabs[i].dirty = dirty;
+                const base = scanner.baseName(self.tabs[i].path);
+                if (dirty) {
+                    const suffix = " *";
+                    const max_t = self.tab_title_pool[i].len;
+                    const blen = @min(base.len, if (max_t > suffix.len) max_t - suffix.len else max_t);
+                    @memcpy(self.tab_title_pool[i][0..blen], base[0..blen]);
+                    if (blen + suffix.len <= max_t) {
+                        @memcpy(self.tab_title_pool[i][blen..][0..suffix.len], suffix);
+                        self.tab_title_lens[i] = blen + suffix.len;
+                    } else {
+                        self.tab_title_lens[i] = blen;
+                    }
+                } else {
+                    const tlen = @min(base.len, self.tab_title_pool[i].len);
+                    @memcpy(self.tab_title_pool[i][0..tlen], base[0..tlen]);
+                    self.tab_title_lens[i] = tlen;
+                }
+                self.tabs[i].title = self.tab_title_pool[i][0..self.tab_title_lens[i]];
+                return;
+            }
+        }
+    }
+
     fn ensureTab(self: *WorkspaceBuffers, node: FileNode) !void {
         // Reuse existing tab for path
         var i: u32 = 0;

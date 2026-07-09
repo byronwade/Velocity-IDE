@@ -24,6 +24,7 @@ pub const SearchBuffers = struct {
     preview_pool: [max_hits][max_preview]u8 = undefined,
     preview_lens: [max_hits]usize = [_]usize{0} ** max_hits,
     status: []const u8 = "idle",
+    status_buf: [48]u8 = undefined,
 
     pub fn hitsSlice(self: *SearchBuffers) []const SearchHit {
         return self.hits[0..self.hit_count];
@@ -54,7 +55,11 @@ pub const SearchBuffers = struct {
             const n = scanner.readTextFile(io, ws.rootPath(), node.path, file_buf[0..]) catch continue;
             self.scanFile(node.path, file_buf[0..n], query);
         }
-        self.status = if (self.hit_count == 0) "no matches" else "done";
+        if (self.hit_count == 0) {
+            self.status = "no matches";
+        } else {
+            self.status = std.fmt.bufPrint(&self.status_buf, "{d} hits", .{self.hit_count}) catch "done";
+        }
     }
 
     fn scanFile(self: *SearchBuffers, path: []const u8, content: []const u8, query: []const u8) void {

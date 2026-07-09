@@ -442,3 +442,36 @@ test "workspace file count label after open" {
     try testing.expect(model.workspace_file_count > 0);
     try testing.expect(std.mem.indexOf(u8, model.workspace_files_label, "files") != null);
 }
+
+test "search status reports hit count" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.search_query.set("createSession");
+    main.update(&model, .run_search);
+    try testing.expect(model.search_hits.len > 0);
+    try testing.expect(std.mem.indexOf(u8, model.search_bufs.?.status, "hits") != null);
+}
+
+test "dirty tab title gets marker" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    var marked = false;
+    for (model.open_tabs) |t| {
+        if (t.id == model.active_tab_id and t.dirty) marked = true;
+    }
+    try testing.expect(marked);
+}
+
+test "terminal history older newer" {
+    var model = main.initialModel();
+    model.terminal_command.set("echo one");
+    main.update(&model, .run_terminal_command);
+    model.terminal_command.set("echo two");
+    main.update(&model, .run_terminal_command);
+    main.update(&model, .terminal_history_older);
+    try testing.expectEqualStrings("echo two", model.terminal_command.text());
+    main.update(&model, .terminal_history_older);
+    try testing.expectEqualStrings("echo one", model.terminal_command.text());
+}

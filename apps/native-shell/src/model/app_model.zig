@@ -132,6 +132,8 @@ pub const Msg = union(enum) {
     toggle_auto_save,
     toggle_find_case,
     duplicate_line,
+    terminal_history_older,
+    terminal_history_newer,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -175,6 +177,8 @@ pub const Msg = union(enum) {
         "toggle_find_case",
         "duplicate_line",
         "dismiss_overlay",
+        "terminal_history_older",
+        "terminal_history_newer",
         "terminal_line",
         "terminal_exit",
     };
@@ -1004,6 +1008,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.document_dirty = true;
             model.toast = "";
             refreshDocStats(model);
+            syncActiveTabDirty(model);
             if (model.auto_save and model.workspace_from_disk) {
                 saveActiveDocument(model);
             }
@@ -1048,6 +1053,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .toggle_auto_save => toggleAutoSave(model),
         .toggle_find_case => toggleFindCase(model),
         .duplicate_line => duplicateDocumentTail(model),
+        .terminal_history_older => terminalHistory(model, true),
+        .terminal_history_newer => terminalHistory(model, false),
         .update_quick_query => |edit| {
             model.quick_query.apply(edit);
             filterQuickOpen(model);
@@ -1140,7 +1147,20 @@ fn syncDocumentFromWorkspace(model: *Model) void {
         model.toast = "";
         refreshDocStats(model);
         refreshBreadcrumb(model);
+        syncActiveTabDirty(model);
     }
+}
+
+fn syncActiveTabDirty(model: *Model) void {
+    if (model.workspace) |ws| {
+        ws.setTabDirty(model.active_tab_id, model.document_dirty);
+        model.open_tabs = ws.tabsSlice();
+    }
+}
+
+/// Test helper — same as syncActiveTabDirty.
+pub fn syncActiveTabDirtyForTest(model: *Model) void {
+    syncActiveTabDirty(model);
 }
 
 pub fn refreshDocStats(model: *Model) void {
@@ -1338,6 +1358,7 @@ fn saveActiveDocument(model: *Model) void {
     };
     model.document_dirty = false;
     model.toast = "Saved";
+    syncActiveTabDirty(model);
 }
 
 fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
@@ -1551,8 +1572,23 @@ fn duplicateDocumentTail(model: *Model) void {
     model.document.set(out[0 .. text.len + 1 + last_line.len]);
     model.document_dirty = true;
     refreshDocStats(model);
+    syncActiveTabDirty(model);
     if (model.auto_save and model.workspace_from_disk) saveActiveDocument(model);
     model.toast = "Duplicated last line";
+}
+
+fn terminalHistory(model: *Model, older: bool) void {
+    const term = ensureTerminalBuffers(model) catch {
+        model.toast = "Terminal alloc failed";
+        return;
+    };
+    const recalled = if (older) term.historyOlder() else term.historyNewer();
+    if (recalled) |cmd| {
+        model.terminal_command.set(cmd);
+        model.toast = if (cmd.len == 0) "History end" else "History";
+    } else {
+        model.toast = "No history";
+    }
 }
 
 fn reopenLastWorkspace(model: *Model) void {

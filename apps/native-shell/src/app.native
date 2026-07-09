@@ -190,6 +190,8 @@
                 </row>
                 <row gap="6" cross="center">
                   <text-field text="{terminalCommandText}" placeholder="echo hello" on-input="update_terminal_command" on-submit="run_terminal_command" grow="1" label="Terminal command" />
+                  <button size="sm" variant="ghost" on-press="terminal_history_older">↑</button>
+                  <button size="sm" variant="ghost" on-press="terminal_history_newer">↓</button>
                   <button size="sm" variant="primary" on-press="run_terminal_command">Run</button>
                 </row>
                 <scroll grow="1" label="Terminal output">
