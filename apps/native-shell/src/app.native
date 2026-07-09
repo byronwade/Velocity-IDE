@@ -510,7 +510,7 @@
       <column width="480" gap="8" padding="12" background="surface">
         <text>Keyboard Shortcuts</text>
         <text size="sm" foreground="text_muted">Cmd+K palette / Cmd+P quick open / Cmd+F find / Cmd+G go to line</text>
-        <text size="sm" foreground="text_muted">Cmd+S save / Cmd+W close tab / Cmd+/ comment / Cmd+Shift+T reopen / Cmd+Z undo / Cmd+B sidebar</text>
+        <text size="sm" foreground="text_muted">Cmd+S save / Cmd+W close tab / Shift+Alt+F format / Cmd+/ comment / Cmd+Shift+T reopen / Cmd+Z undo / Cmd+B sidebar</text>
         <text size="sm" foreground="text_muted">Ctrl+Tab next tab / Ctrl+Shift+Tab prev tab / Ctrl+` terminal</text>
         <text size="sm" foreground="text_muted">Esc dismiss / Focus mode / DelLn Join / LF CRLF / Time stamp</text>
         <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>

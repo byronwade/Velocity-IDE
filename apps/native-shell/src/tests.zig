@@ -859,6 +859,19 @@ test "format hard wrap copy document go to symbol" {
     main.update(&model, .format_document);
     try testing.expectEqualStrings("hello\nfoo\n", model.document.text());
     try testing.expectEqualStrings("Formatted document", model.toast);
+    // Idempotent when already clean.
+    main.update(&model, .format_document);
+    try testing.expectEqualStrings("Already formatted", model.toast);
+    // Missing final newline + trailing spaces.
+    model.document.set("line  ");
+    main.update(&model, .format_document);
+    try testing.expectEqualStrings("line\n", model.document.text());
+    // CRLF documents keep CR when formatting.
+    model.document.set("a  \r\nb\t");
+    main.update(&model, .format_document);
+    try testing.expectEqualStrings("a\r\nb\r\n", model.document.text());
+    // Shortcut wiring.
+    try testing.expect(main.onCommand("format_document") != null);
     // 90+ chars so hard wrap at 80 inserts a break.
     model.document.set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz");
     main.update(&model, .hard_wrap);

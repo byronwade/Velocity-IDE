@@ -3475,10 +3475,15 @@ fn insertUuid(model: *Model) void {
 
 fn formatDocument(model: *Model) void {
     var out: [edit_transforms.max_out]u8 = undefined;
-    const n = edit_transforms.formatDocument(model.document.text(), &out) orelse {
+    const text = model.document.text();
+    const n = edit_transforms.formatDocument(text, &out) orelse {
         model.toast = "Format failed";
         return;
     };
+    if (std.mem.eql(u8, text, out[0..n])) {
+        model.toast = "Already formatted";
+        return;
+    }
     applyDocumentTransform(model, out[0..n], "Formatted document");
 }
 

@@ -392,7 +392,11 @@ pub fn trimTrailingWhitespace(text: []const u8, out: []u8) ?usize {
     while (i <= text.len) : (i += 1) {
         if (i == text.len or text[i] == '\n') {
             var end = i;
-            while (end > start and (text[end - 1] == ' ' or text[end - 1] == '\t' or text[end - 1] == '\r')) {
+            // Preserve CRLF: treat a CR immediately before LF as part of the EOL,
+            // not as trailing whitespace to strip.
+            const has_cr = end > start and text[end - 1] == '\r';
+            if (has_cr) end -= 1;
+            while (end > start and (text[end - 1] == ' ' or text[end - 1] == '\t')) {
                 end -= 1;
             }
             const line = text[start..end];
@@ -400,9 +404,16 @@ pub fn trimTrailingWhitespace(text: []const u8, out: []u8) ?usize {
             @memcpy(out[dst..][0..line.len], line);
             dst += line.len;
             if (i < text.len) {
-                if (dst + 1 > out.len) return null;
-                out[dst] = '\n';
-                dst += 1;
+                if (has_cr) {
+                    if (dst + 2 > out.len) return null;
+                    out[dst] = '\r';
+                    out[dst + 1] = '\n';
+                    dst += 2;
+                } else {
+                    if (dst + 1 > out.len) return null;
+                    out[dst] = '\n';
+                    dst += 1;
+                }
             }
             start = i + 1;
         }
@@ -420,6 +431,14 @@ pub fn ensureFinalNewline(text: []const u8, out: []u8) ?usize {
         if (text.len > out.len) return null;
         @memcpy(out[0..text.len], text);
         return text.len;
+    }
+    const crlf = std.mem.eql(u8, detectEol(text), "CRLF");
+    if (crlf) {
+        if (text.len + 2 > out.len) return null;
+        @memcpy(out[0..text.len], text);
+        out[text.len] = '\r';
+        out[text.len + 1] = '\n';
+        return text.len + 2;
     }
     if (text.len + 1 > out.len) return null;
     @memcpy(out[0..text.len], text);
@@ -1023,6 +1042,13 @@ test "trim trailing and final newline" {
     try std.testing.expectEqualStrings("a\nb\n", out[0..t]);
     const n = ensureFinalNewline("hi", &out).?;
     try std.testing.expectEqualStrings("hi\n", out[0..n]);
+    // CRLF documents must keep CR before LF when trimming / ensuring newline.
+    const crlf_trim = trimTrailingWhitespace("a  \r\nb\t\r\n", &out).?;
+    try std.testing.expectEqualStrings("a\r\nb\r\n", out[0..crlf_trim]);
+    const crlf_nl = ensureFinalNewline("hi\r\nthere", &out).?;
+    try std.testing.expectEqualStrings("hi\r\nthere\r\n", out[0..crlf_nl]);
+    const fmt = formatDocument("x  \r\ny\t", &out).?;
+    try std.testing.expectEqualStrings("x\r\ny\r\n", out[0..fmt]);
 }
 
 test "delete join and move last line" {
