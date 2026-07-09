@@ -23,6 +23,7 @@ const process_governor = @import("../processes/process_governor.zig");
 const git_status = @import("../scm/git_status.zig");
 const prefs_mod = @import("../core/prefs.zig");
 const undo_stack = @import("../workspace/undo_stack.zig");
+const tab_history = @import("../workspace/tab_history.zig");
 const disk_sync = @import("../workspace/disk_sync.zig");
 const hot_exit_store = @import("../workspace/hot_exit_store.zig");
 const task_detector = @import("../workspace/task_detector.zig");
@@ -191,6 +192,7 @@ pub const Msg = union(enum) {
     undo_edit,
     redo_edit,
     revert_file,
+    restore_backup,
     copy_absolute_path,
     next_tab,
     prev_tab,
@@ -312,6 +314,7 @@ pub const Msg = union(enum) {
         "move_line_down",
         "undo_edit",
         "redo_edit",
+        "restore_backup",
         "copy_absolute_path",
         "next_tab",
         "prev_tab",
@@ -437,8 +440,8 @@ pub const Model = struct {
     document: canvas.TextBuffer(max_document) = .{},
     document_dirty: bool = false,
     disk_changed: bool = false,
-    /// Model-global bounded history, reset when the active document changes.
-    undo_history: ?*undo_stack.UndoStack = null,
+    /// Bounded histories keyed by open tab path.
+    tab_histories: ?*tab_history.Store = null,
     disk_checker: disk_sync.Checker = .{},
     disk_poll_interval_ms: u32 = prefs_mod.default_disk_poll_interval_ms,
     disk_poll_armed: bool = false,
@@ -459,6 +462,10 @@ pub const Model = struct {
     task_running: bool = false,
     task_status: []const u8 = "No tasks detected",
     replace_status: []const u8 = "Preview changes before applying",
+    backup_restore_status: []const u8 = "",
+    backup_status_buf: [160]u8 = undefined,
+    backup_restore_confirm_tab_id: u32 = 0,
+    backup_restore_confirm_hash: u64 = 0,
     task_status_buf: [96]u8 = undefined,
     replace_status_buf: [128]u8 = undefined,
     git_entries: []const GitEntry = &.{},
@@ -644,7 +651,7 @@ pub const Model = struct {
         "document",
         "document_dirty",
         "disk_changed",
-        "undo_history",
+        "tab_histories",
         "disk_checker",
         "disk_poll_interval_ms",
         "disk_poll_armed",
@@ -662,6 +669,9 @@ pub const Model = struct {
         "replace_status",
         "task_status_buf",
         "replace_status_buf",
+        "backup_status_buf",
+        "backup_restore_confirm_tab_id",
+        "backup_restore_confirm_hash",
         "new_file_path",
         "explorer_filter",
         "explorer_filtered",
@@ -1146,6 +1156,10 @@ pub const Model = struct {
         return model.disk_changed and model.showIdeChrome();
     }
 
+    pub fn showBackupRestoreStatus(model: *const Model) bool {
+        return model.backup_restore_status.len > 0 and model.showIdeChrome();
+    }
+
     pub fn terminalStatus(model: *const Model) []const u8 {
         if (model.terminal) |t| return t.status;
         return "idle";
@@ -1180,6 +1194,14 @@ pub const Model = struct {
     pub fn perfSummary(model: *const Model) []const u8 {
         _ = model;
         return "MOCK perf: startup 312ms / paint 184ms / palette 21ms / terminal panel 18ms / RSS 48MB / featuresLoaded 8 / processes 0";
+    }
+
+    pub fn deinit(model: *Model) void {
+        if (model.tab_histories) |store| {
+            store.deinit();
+            std.heap.page_allocator.destroy(store);
+            model.tab_histories = null;
+        }
     }
 };
 
@@ -1271,6 +1293,7 @@ pub const commands = [_]CommandItem{
     .{ .id = "undo_edit", .title = "Undo Last Edit", .hint = "Cmd+Z" },
     .{ .id = "redo_edit", .title = "Redo Last Edit", .hint = "Cmd+Shift+Z" },
     .{ .id = "revert_file", .title = "Revert File from Disk", .hint = "" },
+    .{ .id = "restore_backup", .title = "Restore Active File from Backup", .hint = "" },
     .{ .id = "copy_absolute_path", .title = "Copy Absolute Path", .hint = "" },
     .{ .id = "next_tab", .title = "Next Tab", .hint = "Ctrl+Tab" },
     .{ .id = "prev_tab", .title = "Previous Tab", .hint = "Ctrl+Shift+Tab" },
@@ -1723,6 +1746,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 redoLastEdit(model);
             } else if (std.mem.eql(u8, id, "revert_file")) {
                 revertActiveFile(model);
+            } else if (std.mem.eql(u8, id, "restore_backup")) {
+                restoreActiveBackup(model);
             } else if (std.mem.eql(u8, id, "copy_absolute_path")) {
                 copyAbsolutePath(model);
             } else if (std.mem.eql(u8, id, "next_tab")) {
@@ -2036,6 +2061,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .undo_edit => undoLastEdit(model),
         .redo_edit => redoLastEdit(model),
         .revert_file => revertActiveFile(model),
+        .restore_backup => restoreActiveBackup(model),
         .copy_absolute_path => copyAbsolutePath(model),
         .next_tab => cycleTab(model, true),
         .prev_tab => cycleTab(model, false),
@@ -2129,6 +2155,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         },
         .edit_document => |edit| {
             refreshDiskSync(model, false);
+            model.backup_restore_status = "";
+            model.backup_restore_confirm_tab_id = 0;
             pushUndoSnapshot(model);
             model.document.apply(edit);
             recordUndoResult(model);
@@ -2593,10 +2621,13 @@ fn ensureWorkspaceReplaceBuffers(model: *Model) !*workspace_replace.WorkspaceRep
 
 fn syncDocumentFromWorkspace(model: *Model) void {
     if (model.workspace) |ws| {
+        model.backup_restore_status = "";
+        model.backup_restore_confirm_tab_id = 0;
         model.document.set(ws.editorText());
         model.document_dirty = ws.activeTabDirty();
         model.disk_changed = ws.activeFileChanged(modelIo(model));
-        resetUndoHistory(model);
+        reconcileTabHistories(model);
+        _ = ensureActiveHistory(model) catch {};
         model.editor_mode_label = "editable";
         model.toast = "";
         refreshDocStats(model);
@@ -2900,12 +2931,12 @@ fn cycleTab(model: *Model, forward: bool) void {
 }
 
 fn pushUndoSnapshot(model: *Model) void {
-    const history = ensureUndoHistory(model) catch return;
+    const history = ensureActiveHistory(model) catch return;
     _ = history.record(model.document.text()) catch {};
 }
 
 fn undoLastEdit(model: *Model) void {
-    const history = model.undo_history orelse {
+    const history = activeHistory(model) orelse {
         model.toast = "Nothing to undo";
         return;
     };
@@ -2926,7 +2957,7 @@ fn undoLastEdit(model: *Model) void {
 }
 
 fn redoLastEdit(model: *Model) void {
-    const history = model.undo_history orelse {
+    const history = activeHistory(model) orelse {
         model.toast = "Nothing to redo";
         return;
     };
@@ -2946,27 +2977,54 @@ fn redoLastEdit(model: *Model) void {
     model.toast = "Redone";
 }
 
-fn ensureUndoHistory(model: *Model) !*undo_stack.UndoStack {
-    if (model.undo_history) |history| return history;
-    const history = try std.heap.page_allocator.create(undo_stack.UndoStack);
-    errdefer std.heap.page_allocator.destroy(history);
-    history.* = try undo_stack.UndoStack.init(std.heap.page_allocator, .{
+fn historyPath(model: *const Model) []const u8 {
+    const active = Model.activeTabPath(model);
+    if (active.len > 0) return active;
+    return if (model.workspace_from_disk) "" else "__scratch__";
+}
+
+fn ensureHistoryStore(model: *Model) !*tab_history.Store {
+    if (model.tab_histories) |store| return store;
+    const store = try std.heap.page_allocator.create(tab_history.Store);
+    store.* = tab_history.Store.init(std.heap.page_allocator);
+    model.tab_histories = store;
+    return store;
+}
+
+fn ensureActiveHistory(model: *Model) !*undo_stack.UndoStack {
+    const path = historyPath(model);
+    if (path.len == 0) return error.NoActiveDocument;
+    const store = try ensureHistoryStore(model);
+    return try store.ensure(path, model.document.text(), .{
         .max_entries = 32,
         .max_bytes = max_document * 16,
     });
-    model.undo_history = history;
-    return history;
+}
+
+fn activeHistory(model: *Model) ?*undo_stack.UndoStack {
+    const store = model.tab_histories orelse return null;
+    return store.get(historyPath(model));
 }
 
 fn recordUndoResult(model: *Model) void {
-    const history = ensureUndoHistory(model) catch return;
+    const history = ensureActiveHistory(model) catch return;
     _ = history.record(model.document.text()) catch {};
 }
 
-fn resetUndoHistory(model: *Model) void {
-    const history = ensureUndoHistory(model) catch return;
-    history.clear();
-    _ = history.record(model.document.text()) catch {};
+fn resetActiveHistory(model: *Model) void {
+    const path = historyPath(model);
+    if (path.len == 0) return;
+    const store = ensureHistoryStore(model) catch return;
+    store.remove(path);
+    _ = ensureActiveHistory(model) catch {};
+}
+
+fn reconcileTabHistories(model: *Model) void {
+    const store = model.tab_histories orelse return;
+    if (!model.workspace_from_disk) return;
+    var paths: [workspace_store.max_open_tabs][]const u8 = undefined;
+    for (model.open_tabs, 0..) |tab, index| paths[index] = tab.path;
+    store.retainPaths(paths[0..model.open_tabs.len]);
 }
 
 fn revertActiveFile(model: *Model) void {
@@ -2999,6 +3057,76 @@ fn revertActiveFile(model: *Model) void {
     }
     recordUndoResult(model);
     model.toast = "Reverted from disk";
+}
+
+fn restoreActiveBackup(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.backup_restore_status = "Open a workspace first";
+        model.toast = model.backup_restore_status;
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.backup_restore_status = "No workspace";
+        model.toast = model.backup_restore_status;
+        return;
+    };
+    if (model.active_tab_id == 0) {
+        model.backup_restore_status = "No active file";
+        model.toast = model.backup_restore_status;
+        return;
+    }
+    if (model.document_dirty or ws.tabIsDirty(model.active_tab_id)) {
+        model.backup_restore_confirm_tab_id = 0;
+        model.backup_restore_status = "Save or discard unsaved changes before restoring a backup";
+        model.toast = model.backup_restore_status;
+        return;
+    }
+
+    var preview: [workspace_store.max_editor_bytes]u8 = undefined;
+    const backup_len = ws.readActiveBackup(modelIo(model), &preview) catch |err| {
+        model.backup_restore_confirm_tab_id = 0;
+        model.backup_restore_status = if (err == error.FileNotFound)
+            "No backup exists for the active file"
+        else
+            "Backup could not be read";
+        model.toast = model.backup_restore_status;
+        return;
+    };
+    const preview_hash = std.hash.Wyhash.hash(0, preview[0..backup_len]);
+    if (model.backup_restore_confirm_tab_id != model.active_tab_id or
+        model.backup_restore_confirm_hash != preview_hash)
+    {
+        model.backup_restore_confirm_tab_id = model.active_tab_id;
+        model.backup_restore_confirm_hash = preview_hash;
+        const differs = !std.mem.eql(u8, preview[0..backup_len], model.document.text());
+        model.backup_restore_status = std.fmt.bufPrint(
+            &model.backup_status_buf,
+            "Backup preview: {d} bytes ({s}). Restore again to confirm",
+            .{ backup_len, if (differs) "different" else "matches current file" },
+        ) catch "Backup preview ready. Restore again to confirm";
+        model.toast = model.backup_restore_status;
+        return;
+    }
+
+    ws.restoreActiveBackup(modelIo(model)) catch {
+        model.backup_restore_confirm_tab_id = 0;
+        model.backup_restore_status = "Backup restore failed; active file was not changed";
+        model.toast = model.backup_restore_status;
+        return;
+    };
+    model.open_tabs = ws.tabsSlice();
+    model.document.set(ws.editorText());
+    model.document_dirty = false;
+    model.disk_changed = false;
+    model.disk_checker.reset();
+    ws.setTabStale(model.active_tab_id, false);
+    resetActiveHistory(model);
+    refreshDocStats(model);
+    refreshBreadcrumb(model);
+    refreshOutline(model);
+    model.backup_restore_confirm_tab_id = 0;
+    model.backup_restore_status = "Backup restored; disk baseline and editor cache refreshed";
+    model.toast = model.backup_restore_status;
 }
 
 fn applyWorkspaceMeta(model: *Model, ws: *workspace_store.WorkspaceBuffers, meta: workspace_store.Workspace) void {
@@ -3037,6 +3165,7 @@ fn openWorkspacePath(model: *Model, path: []const u8) void {
         model.current_view = .ide;
         return;
     };
+    if (model.tab_histories) |store| store.clear();
     const meta = ws.openPath(modelIo(model), path) catch {
         model.workspace_scan_error = "Open failed";
         model.toast = "Could not open folder";
@@ -4390,9 +4519,16 @@ fn deleteSelectedFile(model: *Model) void {
         model.toast = "No file selected";
         return;
     };
-    if (!std.mem.startsWith(u8, model.toast, "Delete ")) {
-        const msg = std.fmt.bufPrint(&model.action_toast_buf, "Delete {s}? Del again to confirm", .{node.name}) catch "Delete again to confirm";
-        model.toast = msg;
+    var confirm_buf: [128]u8 = undefined;
+    const confirmation = std.fmt.bufPrint(
+        &confirm_buf,
+        "Delete {s} #{d}? Del again to confirm",
+        .{ if (node.is_dir) "empty folder" else "file", node.id },
+    ) catch "Delete selected item? Del again to confirm";
+    if (!std.mem.eql(u8, model.toast, confirmation)) {
+        const n = @min(confirmation.len, model.action_toast_buf.len);
+        @memcpy(model.action_toast_buf[0..n], confirmation[0..n]);
+        model.toast = model.action_toast_buf[0..n];
         return;
     }
     syncActiveTabDirty(model);
@@ -4400,8 +4536,11 @@ fn deleteSelectedFile(model: *Model) void {
         ws.deleteEmptyFolderById(modelIo(model), id)
     else
         ws.deleteFileById(modelIo(model), id);
-    delete_result catch {
-        model.toast = "Delete failed";
+    delete_result catch |err| {
+        model.toast = if (err == error.DirectoryNotEmpty)
+            "Folder is not empty; recursive deletion is refused"
+        else
+            "Delete failed; nothing was removed";
         return;
     };
     model.file_nodes = ws.fileNodesSlice();
@@ -4424,6 +4563,7 @@ fn deleteSelectedFile(model: *Model) void {
         model.document_dirty = false;
         model.selected_file_id = 0;
         model.active_tab_id = 0;
+        reconcileTabHistories(model);
     }
     model.toast = if (node.is_dir) "Folder deleted" else "File deleted";
 }
@@ -4495,11 +4635,23 @@ fn renameSelectedFile(model: *Model) void {
         model.toast = "Enter new path in New field";
         return;
     }
+    const selected = ws.findNode(model.selected_file_id) orelse {
+        model.toast = "No file selected";
+        return;
+    };
+    var old_path_buf: [scanner_mod.max_rel_path_len]u8 = undefined;
+    if (selected.path.len > old_path_buf.len) {
+        model.toast = "Rename path too long";
+        return;
+    }
+    @memcpy(old_path_buf[0..selected.path.len], selected.path);
+    const old_path = old_path_buf[0..selected.path.len];
     syncActiveTabDirty(model);
     const id = ws.renameFileById(modelIo(model), model.selected_file_id, new_rel) catch {
         model.toast = "Rename failed";
         return;
     };
+    if (model.tab_histories) |store| store.rename(old_path, new_rel) catch {};
     model.file_nodes = ws.fileNodesSlice();
     model.open_tabs = ws.tabsSlice();
     model.workspace_node_count = ws.file_node_count;
@@ -4892,6 +5044,7 @@ fn closeAllTabs(model: *Model) void {
         model.active_tab_id = 0;
         model.selected_file_id = 0;
         model.pinned_tab_id = 0;
+        reconcileTabHistories(model);
     }
     model.toast = "Closed all tabs";
 }
@@ -5391,7 +5544,7 @@ fn newUntitledBuffer(model: *Model) void {
         // Scratch mode: just clear into a fresh buffer.
         model.document.clear();
         model.document_dirty = false;
-        resetUndoHistory(model);
+        resetActiveHistory(model);
         model.editor_mode_label = "untitled";
         model.breadcrumb = "Untitled";
         refreshDocStats(model);
@@ -5474,6 +5627,7 @@ fn closeTabById(model: *Model, id: u32) void {
             } else {
                 model.document.clear();
                 model.active_tab_id = 0;
+                reconcileTabHistories(model);
             }
             model.toast = "Tab closed";
             return;

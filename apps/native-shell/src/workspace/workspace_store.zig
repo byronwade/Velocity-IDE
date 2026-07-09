@@ -175,6 +175,19 @@ pub const WorkspaceBuffers = struct {
         );
     }
 
+    pub fn readActiveBackup(self: *const WorkspaceBuffers, io: std.Io, out: []u8) !usize {
+        const rel = self.editorPath();
+        if (rel.len == 0) return error.NotFound;
+        return try backup_store.read(io, self.rootPath(), rel, out);
+    }
+
+    pub fn restoreActiveBackup(self: *WorkspaceBuffers, io: std.Io) !void {
+        const idx = self.activeTabIndex() orelse return error.NotFound;
+        const id = self.tabs[idx].id;
+        try backup_store.restore(io, self.rootPath(), self.tabs[idx].path);
+        try self.reloadFileById(io, id);
+    }
+
     pub fn saveTabById(self: *WorkspaceBuffers, io: std.Io, id: u32) !void {
         const idx = self.tabIndexById(id) orelse return error.NotFound;
         if (!self.tab_text_loaded[idx]) return error.NotFound;

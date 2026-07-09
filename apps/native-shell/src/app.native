@@ -211,6 +211,7 @@
                   <badge variant="secondary">{dirtyLabel}</badge>
                   <button size="sm" variant="ghost" on-press="go_to_symbol" label="Go to symbol">@</button>
                   <button size="sm" variant="ghost" on-press="run_quick_open">Go to</button>
+                  <button size="sm" variant="ghost" on-press="restore_backup">Backup</button>
                   <button size="sm" variant="primary" on-press="save_file">Save</button>
                 </row>
                 <if test="{showDiskConflict}">
@@ -218,8 +219,15 @@
                     <text foreground="warning_text">External Change Conflict</text>
                     <text size="sm" foreground="warning_text" grow="1" wrap="false">The file changed on disk. Your unsaved working copy is protected.</text>
                     <button size="sm" variant="secondary" on-press="compare_with_saved">Compare</button>
+                    <button size="sm" variant="secondary" on-press="restore_backup">Restore Backup</button>
                     <button size="sm" variant="secondary" on-press="revert_file">Reload from Disk</button>
                     <button size="sm" variant="primary" on-press="overwrite_file">Keep Mine</button>
+                  </row>
+                </if>
+                <if test="{showBackupRestoreStatus}">
+                  <row gap="6" padding="6" cross="center" background="surface_subtle" label="Backup restore status">
+                    <text size="sm" grow="1" wrap="true">{backup_restore_status}</text>
+                    <button size="sm" variant="secondary" on-press="restore_backup">Restore Backup</button>
                   </row>
                 </if>
                 <if test="{showFindPanel}">

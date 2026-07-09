@@ -50,6 +50,13 @@ with unsaved or externally changed contents. Source Control provides per-file
 Stage, Unstage, and guarded Restore controls in addition to Stage All and
 Commit.
 
+Undo and redo histories are independently bounded per open tab and survive tab
+switches. Confirmed conflict overwrites create stable backups under
+`.velocity/backups/`; use **Restore Active File from Backup** to preview and
+double-confirm a restore. Restore refuses dirty buffers or missing backups.
+Explorer deletion supports files and empty directories only. Directory deletion
+is double-confirmed and recursive tree deletion is always refused.
+
 # Layout
 
 | Path | Role |

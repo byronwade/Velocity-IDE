@@ -13,7 +13,7 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Save all | Writes every dirty tab's bounded working copy; stops on external conflicts. |
 | Per-tab working copies | Up to 8 bounded 16 KiB buffers survive tab switches and explorer rescans. |
 | New file | Create relative path in workspace from explorer. |
-| Delete file | Soft-confirm then delete selected file from explorer (files only). |
+| Delete file / empty folder | Double-confirm explorer deletion; directories must be empty and recursive deletion is refused. |
 | Rename file | Rename selected file via New-path field. |
 | Explorer filter | Filter tree by name/path substring. |
 | Reveal in explorer | Select active editor file in the tree. |
@@ -54,9 +54,9 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Focus mode | Hides left panel, agent, and terminal chrome for editing. |
 | Shortcuts help | Overlay lists core keybindings (Cmd+Shift+/). |
 | Delete / join / move lines | Last-line MVP ops (no caret API yet); Cmd+Shift+K deletes. |
-| Undo / redo edits | Bounded 32-entry model history (minimum 16 full-size snapshots); Cmd+Z / Cmd+Shift+Z. |
+| Undo / redo edits | Independent per-tab bounded 32-entry histories (minimum 16 full-size snapshots each) survive tab switches and are released with their tabs; Cmd+Z / Cmd+Shift+Z. |
 | Revert file | Reload active file from disk; undo restores discarded buffer. |
-| Safe overwrite backups | Confirmed conflict overwrite first stores the disk version under `.velocity/backups/`. |
+| Safe overwrite backups | Confirmed conflict overwrite first stores the disk version under `.velocity/backups/`; active-file restore previews and double-confirms, refuses dirty/missing state, and refreshes cache/fingerprints. |
 | Disk refresh | Bounded interaction polling plus a manual **Refresh Files from Disk** command; recurring Effects timer remains deferred until app-lifetime ownership and teardown cancellation are stable. |
 | Hot exit | Close Window persists bounded tabs and dirty text to `.velocity/hot-exit.bin` and restores the matching workspace. |
 | Copy absolute path | Join workspace root + relative path into toast. |

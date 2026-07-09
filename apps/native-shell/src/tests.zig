@@ -1480,6 +1480,125 @@ test "bounded edit history supports multi-level undo and redo" {
     try testing.expectEqualStrings("Redone", model.toast);
 }
 
+test "undo histories survive tab switches without mixing documents" {
+    const root = "zig-out/test-model-tab-histories";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "a\n" });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/b.txt", .data = "b\n" });
+
+    var model = main.initialModel();
+    defer model.deinit();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    const ws = model.workspace.?;
+    const a = ws.findNodeByPath("a.txt").?;
+    const b = ws.findNodeByPath("b.txt").?;
+
+    main.update(&model, .{ .select_file = a.id });
+    main.update(&model, .insert_blank_line);
+    try testing.expectEqualStrings("a\n\n", model.document.text());
+    main.update(&model, .{ .select_file = b.id });
+    main.update(&model, .insert_blank_line);
+    try testing.expectEqualStrings("b\n\n", model.document.text());
+
+    main.update(&model, .{ .select_tab = a.id });
+    main.update(&model, .undo_edit);
+    try testing.expectEqualStrings("a\n", model.document.text());
+    main.update(&model, .{ .select_tab = b.id });
+    try testing.expectEqualStrings("b\n\n", model.document.text());
+    main.update(&model, .undo_edit);
+    try testing.expectEqualStrings("b\n", model.document.text());
+    try testing.expectEqual(@as(usize, 2), model.tab_histories.?.count());
+
+    main.update(&model, .{ .close_tab = a.id });
+    main.update(&model, .{ .close_tab = a.id });
+    try testing.expect(model.tab_histories.?.get("a.txt") == null);
+    try testing.expect(model.tab_histories.?.get("b.txt") != null);
+}
+
+test "active backup restore previews confirms and refuses unsafe states" {
+    const root = "zig-out/test-model-backup-restore";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "original\n" });
+
+    var model = main.initialModel();
+    defer model.deinit();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+
+    main.update(&model, .restore_backup);
+    try testing.expectEqualStrings("No backup exists for the active file", model.backup_restore_status);
+
+    model.document.set("working\n");
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    main.update(&model, .restore_backup);
+    try testing.expect(std.mem.startsWith(u8, model.backup_restore_status, "Save or discard"));
+
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "external\n" });
+    main.update(&model, .save_file);
+    main.update(&model, .overwrite_file);
+    main.update(&model, .overwrite_file);
+    try testing.expect(!model.document_dirty);
+
+    main.update(&model, .restore_backup);
+    try testing.expect(std.mem.startsWith(u8, model.backup_restore_status, "Backup preview:"));
+    var out: [64]u8 = undefined;
+    try testing.expectEqualStrings(
+        "working\n",
+        try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out),
+    );
+    main.update(&model, .restore_backup);
+    try testing.expectEqualStrings(
+        "external\n",
+        try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out),
+    );
+    try testing.expectEqualStrings("external\n", model.document.text());
+    try testing.expect(!model.workspace.?.activeFileChanged(std.testing.io));
+}
+
+test "folder deletion removes only empty directories and refuses trees" {
+    const root = "zig-out/test-model-folder-delete";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root ++ "/empty");
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root ++ "/full");
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/full/keep.txt", .data = "keep\n" });
+
+    var model = main.initialModel();
+    defer model.deinit();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    const ws = model.workspace.?;
+    const keep = ws.findNodeByPath("full/keep.txt").?;
+    main.update(&model, .{ .select_file = keep.id });
+    const tab_count = ws.tab_count;
+
+    const full = ws.findNodeByPath("full").?;
+    main.update(&model, .{ .select_file = full.id });
+    main.update(&model, .delete_selected_file);
+    main.update(&model, .delete_selected_file);
+    try testing.expectEqualStrings("Folder is not empty; recursive deletion is refused", model.toast);
+    _ = try std.Io.Dir.cwd().statFile(std.testing.io, root ++ "/full/keep.txt", .{});
+    try testing.expectEqual(tab_count, ws.tab_count);
+
+    const empty = ws.findNodeByPath("empty").?;
+    main.update(&model, .{ .select_file = empty.id });
+    main.update(&model, .delete_selected_file);
+    main.update(&model, .delete_selected_file);
+    try testing.expectEqualStrings("Folder deleted", model.toast);
+    try testing.expectError(
+        error.FileNotFound,
+        std.Io.Dir.cwd().statFile(std.testing.io, root ++ "/empty", .{}),
+    );
+    try testing.expectEqual(tab_count, ws.tab_count);
+    try testing.expectEqualStrings("keep\n", model.document.text());
+}
+
 test "all dirty tabs and oversized files map to non-destructive UX" {
     const root = "zig-out/test-model-open-errors";
     std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};

@@ -42,6 +42,20 @@ pub fn backupBeforeOverwrite(io: std.Io, root_path: []const u8, original_path: [
     try scanner.writeTextFile(io, root_path, backup_path, bytes[0..len]);
 }
 
+/// Read the stable backup for a workspace-relative file into caller-owned memory.
+pub fn read(io: std.Io, root_path: []const u8, original_path: []const u8, out: []u8) !usize {
+    var path_buf: [max_backup_path_len]u8 = undefined;
+    const backup_path = try pathFor(original_path, &path_buf);
+    return try scanner.readTextFile(io, root_path, backup_path, out);
+}
+
+/// Replace a file with its stable backup. The backup remains available.
+pub fn restore(io: std.Io, root_path: []const u8, original_path: []const u8) !void {
+    var bytes: [max_backup_bytes]u8 = undefined;
+    const len = try read(io, root_path, original_path, &bytes);
+    try scanner.writeTextFile(io, root_path, original_path, bytes[0..len]);
+}
+
 /// Back up the current contents, then replace the original with `new_data`.
 pub fn overwrite(io: std.Io, root_path: []const u8, original_path: []const u8, new_data: []const u8) !void {
     if (new_data.len > scanner.max_file_bytes) return error.FileTooLarge;
@@ -100,4 +114,26 @@ test "backup paths cannot escape the workspace store" {
     var out: [max_backup_path_len]u8 = undefined;
     try std.testing.expectError(error.InvalidPath, pathFor("../outside.txt", &out));
     try std.testing.expectError(error.InvalidPath, pathFor("/absolute.txt", &out));
+}
+
+test "restore roundtrips stable backup without consuming it" {
+    const root = "zig-out/test-backup-restore";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{
+        .sub_path = root ++ "/a.txt",
+        .data = "before",
+    });
+
+    try overwrite(std.testing.io, root, "a.txt", "after");
+    try restore(std.testing.io, root, "a.txt");
+
+    var out: [32]u8 = undefined;
+    const current = try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out);
+    try std.testing.expectEqualStrings("before", current);
+    try std.testing.expectEqual(
+        @as(usize, "before".len),
+        try read(std.testing.io, root, "a.txt", &out),
+    );
 }

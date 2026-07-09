@@ -166,6 +166,7 @@ pub fn main(init: std.process.Init) !void {
     });
     defer app_state.destroy();
     app_state.model = initialModel();
+    defer app_state.model.deinit();
     app_state.model.io = init.io;
     model_mod.ensurePrefsOnBoot(&app_state.model);
 

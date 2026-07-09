@@ -273,6 +273,12 @@ pub fn deleteRelDir(io: Io, root_path: []const u8, rel_path: []const u8) !void {
     if (rel_path.len == 0) return error.AccessDenied;
     var root = try Io.Dir.cwd().openDir(io, root_path, .{});
     defer root.close(io);
+    var target = root.openDir(io, rel_path, .{ .iterate = true }) catch return error.AccessDenied;
+    defer target.close(io);
+    var iterator = target.iterate();
+    if ((iterator.next(io) catch return error.AccessDenied) != null) {
+        return error.DirectoryNotEmpty;
+    }
     root.deleteDir(io, rel_path) catch return error.AccessDenied;
 }
 
