@@ -39,6 +39,40 @@ fn expectByText(widget: canvas.Widget, kind: canvas.WidgetKind, text: []const u8
     };
 }
 
+fn shortcutMatchesHint(shortcut: native_sdk.Shortcut, hint: []const u8) bool {
+    var primary = false;
+    var control = false;
+    var shift = false;
+    var option = false;
+    var key: []const u8 = "";
+    var parts = std.mem.splitScalar(u8, hint, '+');
+    while (parts.next()) |part| {
+        if (std.mem.eql(u8, part, "Cmd")) {
+            primary = true;
+        } else if (std.mem.eql(u8, part, "Ctrl")) {
+            control = true;
+        } else if (std.mem.eql(u8, part, "Shift")) {
+            shift = true;
+        } else if (std.mem.eql(u8, part, "Alt")) {
+            option = true;
+        } else {
+            key = part;
+        }
+    }
+    return std.ascii.eqlIgnoreCase(shortcut.key, key) and
+        shortcut.modifiers.primary == primary and
+        shortcut.modifiers.control == control and
+        shortcut.modifiers.shift == shift and
+        shortcut.modifiers.option == option;
+}
+
+fn hasShortcutHint(hint: []const u8) bool {
+    for (main.app_shortcuts) |shortcut| {
+        if (shortcutMatchesHint(shortcut, hint)) return true;
+    }
+    return false;
+}
+
 test "launch screen shows Velocity title" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
@@ -718,7 +752,7 @@ test "focus mode hides chrome helpers" {
     main.update(&model, .toggle_focus_mode);
     try testing.expect(model.focus_mode);
     try testing.expect(!model_mod.Model.showLeftPanel(&model));
-    try testing.expect(!model_mod.Model.showTerminalChrome(&model));
+    try testing.expect(!model_mod.Model.showBottomPanel(&model));
     try testing.expect(!model_mod.Model.showAgentChrome(&model));
 }
 
@@ -1112,6 +1146,27 @@ test "settings sections and chrome trailing" {
     try testing.expectEqualStrings("Entered fullscreen", model.toast);
 }
 
+test "settings accessibility labels and empty search state" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var model = main.initialModel();
+    main.update(&model, .open_settings);
+    model.appearance.high_contrast = true;
+    model.appearance.reduce_motion = true;
+    try testing.expect(model.showSettingsAccessibility());
+    try testing.expectEqualStrings("System high contrast: enabled", model.systemHighContrastLabel());
+    try testing.expectEqualStrings("System reduce motion: enabled", model.systemReduceMotionLabel());
+    const accessibility_tree = try buildTree(arena_state.allocator(), &model);
+    _ = try expectByText(accessibility_tree.root, .text, "Accessibility");
+    _ = try expectByText(accessibility_tree.root, .button, "Keyboard Shortcuts");
+    _ = try expectByText(accessibility_tree.root, .button, "Notification History");
+
+    model.settings_query.set("does-not-exist");
+    try testing.expect(model.showSettingsNoResults());
+    const empty_tree = try buildTree(arena_state.allocator(), &model);
+    _ = try expectByText(empty_tree.root, .text, "No settings found");
+}
+
 test "outline sidebar and symbol palette" {
     var model = main.initialModel();
     main.update(&model, .{ .open_project = "acme-dashboard" });
@@ -1156,6 +1211,23 @@ test "bottom panel tabs terminal output problems" {
     try testing.expect(model.problems.len > 0);
     main.update(&model, .toggle_bottom_panel);
     try testing.expect(!model.showBottomPanel());
+}
+
+test "palette terminal command uses bottom panel state" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .{ .run_command = "toggle_terminal" });
+    try testing.expect(model.bottom_panel_open);
+    try testing.expect(model.bottom_panel_tab == .terminal);
+    try testing.expectEqualStrings("Integrated terminal panel: shown", model.terminalPanelLabel());
+
+    main.update(&model, .{ .select_bottom_tab = .output });
+    try testing.expectEqualStrings("Integrated terminal panel: hidden", model.terminalPanelLabel());
+    main.update(&model, .{ .run_command = "toggle_terminal" });
+    try testing.expect(model.bottom_panel_open);
+    try testing.expect(model.bottom_panel_tab == .terminal);
+    main.update(&model, .{ .run_command = "toggle_terminal" });
+    try testing.expect(!model.bottom_panel_open);
 }
 
 test "breadcrumb segments are clickable" {
@@ -1600,6 +1672,24 @@ test "high value native shortcuts are wired without replacing redo" {
     try testing.expect(main.onCommand("toggle_bottom_panel") != null);
     try testing.expect(main.onCommand("run_selected_task") != null);
     try testing.expect(main.onCommand("redo_edit") != null);
+}
+
+test "every native shortcut maps through onCommand" {
+    for (main.app_shortcuts) |shortcut| {
+        try testing.expect(main.onCommand(shortcut.id) != null);
+    }
+}
+
+test "every advertised command shortcut has a registered binding" {
+    for (model_mod.commands) |command| {
+        if (command.hint.len == 0) continue;
+        try testing.expect(hasShortcutHint(command.hint));
+    }
+    const legacy_registry = @import("core/command_registry.zig");
+    for (legacy_registry.builtin) |command| {
+        if (command.hint.len == 0) continue;
+        try testing.expect(hasShortcutHint(command.hint));
+    }
 }
 
 test "close persists hot exit and matching workspace restores dirty session" {

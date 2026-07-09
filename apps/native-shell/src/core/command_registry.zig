@@ -1,4 +1,6 @@
-//! Command registry — palette-facing commands.
+//! Legacy feature-metadata command subset.
+//! Runtime palette commands remain in model/app_model.zig until they can be
+//! migrated together with update dispatch and shortcut registration.
 pub const Command = struct {
     id: []const u8,
     title: []const u8,

@@ -67,6 +67,11 @@ Commit.
 | `src/lsp/` | Bounded JSON-RPC/session/diagnostic scaffold; no process transport |
 | `src/terminal/` | Pipe runner plus bounded PTY protocol; PTY transport unavailable |
 
+`src/core/command_registry.zig` is a legacy feature-metadata subset, not the
+runtime command source of truth. Runtime palette commands remain in
+`model/app_model.zig` until command dispatch, shortcuts, and feature metadata
+can move together without changing behavior.
+
 ## Feature modules
 
 200 stubs under `src/features/` with `feature.json`, README, model, messages, perf budget.

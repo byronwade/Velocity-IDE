@@ -133,7 +133,6 @@ pub const Msg = union(enum) {
     edit_document: canvas.TextInputEvent,
     save_file,
     overwrite_file,
-    update_open_path: canvas.TextInputEvent,
     submit_open_path,
     update_terminal_command: canvas.TextInputEvent,
     run_terminal_command,
@@ -167,7 +166,6 @@ pub const Msg = union(enum) {
     open_quick_item: u32,
     close_quick_open,
     save_prefs,
-    update_goto_line: canvas.TextInputEvent,
     goto_line,
     close_active_tab,
     save_all,
@@ -281,61 +279,25 @@ pub const Msg = union(enum) {
     pub const view_unbound = .{
         "chrome_changed",
         "set_appearance",
-        "clear_toast",
         "toast_timer",
-        "dismiss_update_banner",
-        "check_for_updates",
         "minimize_window",
         "close_window",
-        "toggle_notifications_panel",
         "open_outline",
-        "go_to_definition",
-        "select_bottom_tab",
-        "toggle_bottom_panel",
-        "clear_output",
         "open_symbol_palette",
-        "close_symbol_palette",
-        "update_symbol_query",
-        "open_symbol_item",
-        "select_breadcrumb",
-        "select_outline_symbol",
         "open_def_hit",
         "open_tab",
         "close_tab",
-        "open_plugin_registry",
         "open_settings",
-        "open_feature_matrix",
-        "open_process_governor",
-        "kill_all_workspace_processes",
-        "instant_safe_mode",
-        "save_file",
-        "overwrite_file",
         "submit_open_path",
-        "run_terminal_command",
-        "stop_terminal_task",
-        "clear_terminal",
-        "run_search",
-        "refresh_git",
-        "clear_find",
-        "reopen_last_workspace",
-        "create_new_file",
         "delete_selected_file",
         "rename_selected_file",
         "reveal_in_explorer",
-        "run_find",
-        "find_next",
-        "find_prev",
-        "run_quick_open",
         "close_quick_open",
-        "save_prefs",
         "goto_line",
-        "close_active_tab",
         "save_all",
         "close_other_tabs",
         "close_all_tabs",
         "pin_active_tab",
-        "toggle_focus_mode",
-        "toggle_shortcuts_help",
         "transform_upper",
         "transform_lower",
         "transform_sort_lines",
@@ -344,15 +306,12 @@ pub const Msg = union(enum) {
         "collapse_blank_lines",
         "copy_all_tab_paths",
         "new_untitled",
-        "toggle_trim_trailing",
-        "toggle_final_newline",
         "delete_last_line",
         "join_lines",
         "move_line_up",
         "move_line_down",
         "undo_edit",
         "redo_edit",
-        "revert_file",
         "copy_absolute_path",
         "next_tab",
         "prev_tab",
@@ -360,7 +319,6 @@ pub const Msg = union(enum) {
         "insert_blank_line",
         "copy_filename",
         "show_word_count",
-        "cycle_indent_size",
         "convert_tabs_to_spaces",
         "convert_spaces_to_tabs",
         "transform_sort_unique",
@@ -368,47 +326,30 @@ pub const Msg = union(enum) {
         "convert_to_crlf",
         "toggle_find_whole_word",
         "duplicate_selected_file",
-        "toggle_search_case",
-        "toggle_sidebar",
         "insert_timestamp",
-        "replace_once",
-        "replace_all",
         "copy_active_path",
         "refresh_recent",
-        "toggle_auto_save",
-        "toggle_find_case",
         "duplicate_line",
         "dismiss_overlay",
-        "terminal_history_older",
-        "terminal_history_newer",
         "toggle_line_comment",
         "indent_document",
         "outdent_document",
         "reopen_closed_tab",
-        "scan_problems",
-        "parse_terminal_diagnostics",
         "preview_git_diff",
-        "stage_all",
-        "unstage_all",
         "discard_changes",
-        "commit_changes",
         "trim_blank_lines",
-        "refresh_explorer",
         "refresh_disk_sync",
         "disk_poll_timer",
         "close_saved_tabs",
-        "compare_with_saved",
         "copy_git_branch",
         "clear_recent_projects",
         "insert_uuid",
         "format_document",
         "hard_wrap",
         "copy_document",
-        "go_to_symbol",
         "create_folder",
         "show_file_size",
-        "toggle_word_wrap",
-        "update_settings_query",
+        "close_command_palette",
         "terminal_line",
         "terminal_exit",
     };
@@ -483,7 +424,6 @@ pub const Model = struct {
     terminal_process_count: u32 = 0,
     lsp_process_count: u32 = 0,
     plugin_process_count: u32 = 0,
-    terminal_scrollback_lines: u32 = 2000,
     mock_label: []const u8 = "mock",
     workspace_from_disk: bool = false,
     workspace_node_count: u32 = 0,
@@ -622,7 +562,6 @@ pub const Model = struct {
     project_branch: []const u8 = "main",
     project_path: []const u8 = "~/src/acme-dashboard",
     status_language: []const u8 = "TypeScript",
-    status_plugins: []const u8 = "Plugins: locked",
     status_agent: []const u8 = "Agent: idle",
     status_memory: []const u8 = "Memory: -",
     status_startup: []const u8 = "Startup: -",
@@ -640,20 +579,13 @@ pub const Model = struct {
     activity_search: Activity = .search,
     activity_scm: Activity = .scm,
     activity_agents: Activity = .agents,
-    activity_terminal: Activity = .terminal,
-    activity_plugins: Activity = .plugins,
     activity_settings: Activity = .settings,
-    activity_debug: Activity = .debug,
-    activity_testing: Activity = .testing,
-    activity_features: Activity = .features,
-    activity_processes: Activity = .processes,
     activity_problems: Activity = .problems,
     activity_outline: Activity = .outline,
     bottom_tab_terminal: BottomPanelTab = .terminal,
     bottom_tab_output: BottomPanelTab = .output,
     bottom_tab_problems: BottomPanelTab = .problems,
     project_acme: []const u8 = "acme-dashboard",
-    project_scratch: []const u8 = "scratch",
 
     // Static mock collections exposed for markup `for each=...`
     file_nodes: []const FileNode = &file_tree,
@@ -675,7 +607,24 @@ pub const Model = struct {
         "appearance",
         "safe_mode",
         "mock_label",
+        "editor_focus_label",
+        "runtime_mode_label",
+        "features_registered",
+        "features_loaded",
+        "process_leaked",
+        "lsp_process_count",
+        "plugin_process_count",
+        "git_branch",
+        "editor_mode_label",
+        "project_path",
+        "status_agent",
+        "perf_app_start_ms",
         "perf_first_window_ms",
+        "perf_first_paint_ms",
+        "perf_palette_ms",
+        "perf_terminal_ms",
+        "perf_rss_mb",
+        "perf_plugins_loaded",
         "isIde",
         "isPerf",
         "activeTabTitle",
@@ -780,8 +729,6 @@ pub const Model = struct {
         "update_banner_visible",
         "update_checked",
         "settings_query",
-        "app_version_label",
-        "chrome_trailing",
         "window_fullscreen",
         "chrome_seen_insets",
         "recent_dynamic",
@@ -809,6 +756,7 @@ pub const Model = struct {
         "symbol_query",
         "def_bufs",
         "def_status",
+        "def_hits",
         "breadcrumb_seg_storage",
         "breadcrumb_label_pool",
         "breadcrumb_path_pool",
@@ -876,28 +824,8 @@ pub const Model = struct {
         return model.bottom_panel_open and model.bottom_panel_tab == .terminal;
     }
 
-    pub fn pluginsSelected(model: *const Model) bool {
-        return model.selected_activity == .plugins;
-    }
-
     pub fn settingsSelected(model: *const Model) bool {
         return model.selected_activity == .settings;
-    }
-
-    pub fn debugSelected(model: *const Model) bool {
-        return model.selected_activity == .debug;
-    }
-
-    pub fn testingSelected(model: *const Model) bool {
-        return model.selected_activity == .testing;
-    }
-
-    pub fn featuresSelected(model: *const Model) bool {
-        return model.selected_activity == .features;
-    }
-
-    pub fn processesSelected(model: *const Model) bool {
-        return model.selected_activity == .processes;
     }
 
     pub fn problemsSelected(model: *const Model) bool {
@@ -940,10 +868,6 @@ pub const Model = struct {
         return model.outline_status;
     }
 
-    pub fn defStatus(model: *const Model) []const u8 {
-        return model.def_status;
-    }
-
     pub fn symbolQueryText(model: *const Model) []const u8 {
         return model.symbol_query.text();
     }
@@ -972,12 +896,6 @@ pub const Model = struct {
         return model.current_view == .testing;
     }
 
-    pub fn isProblems(model: *const Model) bool {
-        _ = model;
-        // Problems live in the bottom panel; keep getter for markup compatibility.
-        return false;
-    }
-
     pub fn showSidebarExplorer(model: *const Model) bool {
         return model.showLeftPanel() and model.selected_activity == .explorer;
     }
@@ -988,10 +906,6 @@ pub const Model = struct {
 
     pub fn showPlaceholderPanel(model: *const Model) bool {
         return model.current_view == .debug or model.current_view == .testing or model.current_view == .features or model.current_view == .processes;
-    }
-
-    pub fn hasLastWorkspace(model: *const Model) bool {
-        return model.prefs.last_path_len > 0;
     }
 
     pub fn gitDiffText(model: *const Model) []const u8 {
@@ -1058,10 +972,6 @@ pub const Model = struct {
         return model.document.text();
     }
 
-    pub fn openPathText(model: *const Model) []const u8 {
-        return model.open_path.text();
-    }
-
     pub fn terminalCommandText(model: *const Model) []const u8 {
         return model.terminal_command.text();
     }
@@ -1096,10 +1006,6 @@ pub const Model = struct {
 
     pub fn commitMessageText(model: *const Model) []const u8 {
         return model.git_commit_message.text();
-    }
-
-    pub fn workspaceFilesLabel(model: *const Model) []const u8 {
-        return model.workspace_files_label;
     }
 
     pub fn documentStats(model: *const Model) []const u8 {
@@ -1138,6 +1044,10 @@ pub const Model = struct {
         return settingsSectionVisible(model, "workspace sidebar terminal agent panel auto save");
     }
 
+    pub fn showSettingsAccessibility(model: *const Model) bool {
+        return settingsSectionVisible(model, "accessibility high contrast reduce motion keyboard shortcuts notifications");
+    }
+
     pub fn showSettingsFeatures(model: *const Model) bool {
         return settingsSectionVisible(model, "features process governor performance matrix");
     }
@@ -1146,62 +1056,57 @@ pub const Model = struct {
         return settingsSectionVisible(model, "about version update telemetry notifications");
     }
 
-    pub fn notificationsOpen(model: *const Model) bool {
-        return model.notifications_panel_open;
+    pub fn showSettingsNoResults(model: *const Model) bool {
+        return !model.showSettingsAppearance() and
+            !model.showSettingsEditor() and
+            !model.showSettingsWorkspace() and
+            !model.showSettingsAccessibility() and
+            !model.showSettingsFeatures() and
+            !model.showSettingsAbout();
     }
 
-    pub fn notificationItems(model: *const Model) []const NotificationItem {
-        return model.notifications;
+    pub fn systemHighContrastLabel(model: *const Model) []const u8 {
+        return if (model.appearance.high_contrast) "System high contrast: enabled" else "System high contrast: disabled";
+    }
+
+    pub fn systemReduceMotionLabel(model: *const Model) []const u8 {
+        return if (model.appearance.reduce_motion) "System reduce motion: enabled" else "System reduce motion: disabled";
+    }
+
+    pub fn notificationsOpen(model: *const Model) bool {
+        return model.notifications_panel_open;
     }
 
     pub fn windowStatusLabel(model: *const Model) []const u8 {
         return if (model.window_fullscreen) "Fullscreen" else "Windowed";
     }
 
-    pub fn breadcrumbText(model: *const Model) []const u8 {
-        return model.breadcrumb;
-    }
-
     pub fn autoSaveLabel(model: *const Model) []const u8 {
-        return if (model.auto_save) "Auto Save: on" else "Auto Save: off";
+        return if (model.auto_save) "Automatic file saving: enabled" else "Automatic file saving: disabled";
     }
 
     pub fn trimTrailingLabel(model: *const Model) []const u8 {
-        return if (model.trim_trailing_ws) "Trim WS: on" else "Trim WS: off";
+        return if (model.trim_trailing_ws) "Trim trailing whitespace: enabled" else "Trim trailing whitespace: disabled";
     }
 
     pub fn finalNewlineLabel(model: *const Model) []const u8 {
-        return if (model.insert_final_newline) "Final NL: on" else "Final NL: off";
+        return if (model.insert_final_newline) "Insert final newline: enabled" else "Insert final newline: disabled";
     }
 
     pub fn indentSizeLabel(model: *const Model) []const u8 {
-        return if (model.indent_size == 4) "Indent: 4" else "Indent: 2";
+        return if (model.indent_size == 4) "Editor indentation: 4 spaces" else "Editor indentation: 2 spaces";
     }
 
     pub fn focusModeLabel(model: *const Model) []const u8 {
-        return if (model.focus_mode) "Focus: on" else "Focus: off";
-    }
-
-    pub fn pinLabel(model: *const Model) []const u8 {
-        return if (model.pinned_tab_id != 0 and model.pinned_tab_id == model.active_tab_id) "Unpin" else "Pin";
+        return if (model.focus_mode) "Focus mode: enabled" else "Focus mode: disabled";
     }
 
     pub fn showAgentChrome(model: *const Model) bool {
         return model.show_agent_panel and !model.focus_mode and model.showIdeChrome();
     }
 
-    pub fn showTerminalChrome(model: *const Model) bool {
-        _ = model;
-        // Terminal lives in the bottom panel now.
-        return false;
-    }
-
     pub fn findCaseLabel(model: *const Model) []const u8 {
-        return if (model.find_case_sensitive) "Aa: on" else "Aa: off";
-    }
-
-    pub fn findWholeWordLabel(model: *const Model) []const u8 {
-        return if (model.find_whole_word) "Word: on" else "Word: off";
+        return if (model.find_case_sensitive) "Case-sensitive find: enabled" else "Case-sensitive find: disabled";
     }
 
     pub fn searchCaseLabel(model: *const Model) []const u8 {
@@ -1209,27 +1114,23 @@ pub const Model = struct {
     }
 
     pub fn sidebarLabel(model: *const Model) []const u8 {
-        return if (model.show_sidebar) "Sidebar: shown" else "Sidebar: hidden";
+        return if (model.show_sidebar) "Workspace sidebar: shown" else "Workspace sidebar: hidden";
     }
 
     pub fn wordWrapLabel(model: *const Model) []const u8 {
-        return if (model.word_wrap) "Wrap: on" else "Wrap: off";
+        return if (model.word_wrap) "Editor word wrap: enabled" else "Editor word wrap: disabled";
     }
 
     pub fn terminalPanelLabel(model: *const Model) []const u8 {
-        return if (model.show_terminal) "Terminal: shown" else "Terminal: hidden";
+        return if (model.bottom_panel_open and model.bottom_panel_tab == .terminal) "Integrated terminal panel: shown" else "Integrated terminal panel: hidden";
     }
 
     pub fn agentPanelLabel(model: *const Model) []const u8 {
-        return if (model.show_agent_panel) "Agent: shown" else "Agent: hidden";
+        return if (model.show_agent_panel) "AI agent panel: shown" else "AI agent panel: hidden";
     }
 
     pub fn quickQueryText(model: *const Model) []const u8 {
         return model.quick_query.text();
-    }
-
-    pub fn gotoLineText(model: *const Model) []const u8 {
-        return model.goto_line_input.text();
     }
 
     pub fn searchStatus(model: *const Model) []const u8 {
@@ -1248,12 +1149,6 @@ pub const Model = struct {
     pub fn terminalStatus(model: *const Model) []const u8 {
         if (model.terminal) |t| return t.status;
         return "idle";
-    }
-
-    pub fn workspaceStatus(model: *const Model) []const u8 {
-        if (model.workspace_scan_error.len > 0) return model.workspace_scan_error;
-        if (model.workspace_from_disk) return "disk";
-        return "mock";
     }
 
     pub fn processGovernorSummary(model: *const Model) []const u8 {
@@ -1735,8 +1630,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.command_query.clear();
             model.command_items = &commands;
             if (std.mem.eql(u8, id, "toggle_terminal")) {
-                model.show_terminal = !model.show_terminal;
-                persistPrefs(model);
+                toggleTerminalPanel(model);
             } else if (std.mem.eql(u8, id, "toggle_agent")) {
                 model.show_agent_panel = !model.show_agent_panel;
                 persistPrefs(model);
@@ -1748,8 +1642,6 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 model.selected_activity = .settings;
             } else if (std.mem.eql(u8, id, "run_perf")) {
                 applyPerfPlaceholder(model);
-                model.show_perf_hud = true;
-                model.current_view = .perf;
             } else if (std.mem.eql(u8, id, "switch_theme")) {
                 cycleTheme(model);
                 persistPrefs(model);
@@ -2054,13 +1946,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 },
                 .terminal => {
                     model.current_view = .ide;
-                    if (model.bottom_panel_open and model.bottom_panel_tab == .terminal) {
-                        model.bottom_panel_open = false;
-                        model.show_terminal = false;
-                    } else {
-                        openBottomPanel(model, .terminal);
-                    }
-                    persistPrefs(model);
+                    toggleTerminalPanel(model);
                 },
                 .agents => {
                     model.current_view = .ide;
@@ -2074,15 +1960,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 },
             }
         },
-        .toggle_terminal => {
-            if (model.bottom_panel_open and model.bottom_panel_tab == .terminal) {
-                model.bottom_panel_open = false;
-                model.show_terminal = false;
-            } else {
-                openBottomPanel(model, .terminal);
-            }
-            persistPrefs(model);
-        },
+        .toggle_terminal => toggleTerminalPanel(model),
         .toggle_agent_panel => {
             model.show_agent_panel = !model.show_agent_panel;
             persistPrefs(model);
@@ -2222,8 +2100,6 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         },
         .run_perf_check_placeholder => {
             applyPerfPlaceholder(model);
-            model.show_perf_hud = true;
-            model.current_view = .perf;
         },
         .open_feature_matrix => {
             model.current_view = .features;
@@ -2267,7 +2143,6 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .save_file => saveActiveDocument(model),
         .overwrite_file => overwriteActiveDocument(model),
         .save_all => saveAllDirtyTabs(model),
-        .update_open_path => |edit| model.open_path.apply(edit),
         .submit_open_path => {
             const path = model.open_path.text();
             if (path.len == 0) {
@@ -2441,7 +2316,6 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.toast = "";
         },
         .save_prefs => persistPrefs(model),
-        .update_goto_line => |edit| model.goto_line_input.apply(edit),
         .goto_line => runGotoLine(model),
         .terminal_line => |line| {
             if (!model.terminal_async or line.key != model.terminal_effect_key) return;
@@ -3577,6 +3451,16 @@ fn selectBreadcrumbSeg(model: *Model, seg_id: u32) void {
             model.toast = "Filtered explorer";
             return;
         }
+    }
+}
+
+fn toggleTerminalPanel(model: *Model) void {
+    if (model.bottom_panel_open and model.bottom_panel_tab == .terminal) {
+        model.bottom_panel_open = false;
+        model.show_terminal = false;
+        persistPrefs(model);
+    } else {
+        openBottomPanel(model, .terminal);
     }
 }
 
@@ -5849,6 +5733,8 @@ fn applyPerfPlaceholder(model: *Model) void {
     model.status_memory = "Memory: 48 MB (mock)";
     model.status_startup = "Startup: 312 ms (mock)";
     model.status_agent = "Agent: idle";
+    model.show_perf_hud = true;
+    model.current_view = .perf;
 }
 
 pub fn statusFor(task: AgentTask) []const u8 {

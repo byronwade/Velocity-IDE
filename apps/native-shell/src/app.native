@@ -421,29 +421,38 @@
                   <if test="{showSettingsAppearance}">
                     <column gap="6" padding="10" background="surface_subtle">
                       <text>Appearance</text>
-                      <button variant="secondary" on-press="switch_theme">Theme: {themeLabel}</button>
+                      <button variant="secondary" on-press="switch_theme" label="Change color theme">Color theme: {themeLabel}</button>
                       <text size="sm" foreground="text_muted">Window: {windowStatusLabel}</text>
                     </column>
                   </if>
                   <if test="{showSettingsEditor}">
                     <column gap="6" padding="10" background="surface_subtle">
                       <text>Editor</text>
-                      <button variant="ghost" on-press="toggle_find_case">Find {findCaseLabel}</button>
-                      <button variant="ghost" on-press="toggle_trim_trailing">{trimTrailingLabel}</button>
-                      <button variant="ghost" on-press="toggle_final_newline">{finalNewlineLabel}</button>
-                      <button variant="ghost" on-press="cycle_indent_size">{indentSizeLabel}</button>
-                      <button variant="ghost" on-press="toggle_word_wrap">{wordWrapLabel}</button>
+                      <button variant="ghost" on-press="toggle_find_case" label="Toggle case-sensitive find">{findCaseLabel}</button>
+                      <button variant="ghost" on-press="toggle_trim_trailing" label="Toggle trimming trailing whitespace">{trimTrailingLabel}</button>
+                      <button variant="ghost" on-press="toggle_final_newline" label="Toggle final newline insertion">{finalNewlineLabel}</button>
+                      <button variant="ghost" on-press="cycle_indent_size" label="Change editor indentation size">{indentSizeLabel}</button>
+                      <button variant="ghost" on-press="toggle_word_wrap" label="Toggle editor word wrap">{wordWrapLabel}</button>
                     </column>
                   </if>
                   <if test="{showSettingsWorkspace}">
                     <column gap="6" padding="10" background="surface_subtle">
                       <text>Workspace</text>
-                      <button variant="ghost" on-press="toggle_terminal">{terminalPanelLabel}</button>
-                      <button variant="ghost" on-press="toggle_agent_panel">{agentPanelLabel}</button>
-                      <button variant="ghost" on-press="toggle_auto_save">{autoSaveLabel}</button>
-                      <button variant="ghost" on-press="toggle_sidebar">{sidebarLabel}</button>
-                      <button variant="ghost" on-press="toggle_focus_mode">{focusModeLabel}</button>
+                      <button variant="ghost" on-press="toggle_terminal" label="Toggle integrated terminal panel">{terminalPanelLabel}</button>
+                      <button variant="ghost" on-press="toggle_agent_panel" label="Toggle AI agent panel">{agentPanelLabel}</button>
+                      <button variant="ghost" on-press="toggle_auto_save" label="Toggle automatic file saving">{autoSaveLabel}</button>
+                      <button variant="ghost" on-press="toggle_sidebar" label="Toggle workspace sidebar">{sidebarLabel}</button>
+                      <button variant="ghost" on-press="toggle_focus_mode" label="Toggle focus mode">{focusModeLabel}</button>
                       <button variant="ghost" on-press="save_prefs">Save Preferences</button>
+                    </column>
+                  </if>
+                  <if test="{showSettingsAccessibility}">
+                    <column gap="6" padding="10" background="surface_subtle">
+                      <text>Accessibility</text>
+                      <text size="sm" foreground="text_muted">{systemHighContrastLabel}</text>
+                      <text size="sm" foreground="text_muted">{systemReduceMotionLabel}</text>
+                      <button variant="ghost" on-press="toggle_shortcuts_help" label="Open keyboard shortcuts help">Keyboard Shortcuts</button>
+                      <button variant="ghost" on-press="toggle_notifications_panel" label="Open notification history">Notification History</button>
                     </column>
                   </if>
                   <if test="{showSettingsFeatures}">
@@ -463,6 +472,12 @@
                       <button variant="secondary" on-press="check_for_updates">Check for Updates</button>
                       <button variant="ghost" on-press="toggle_notifications_panel">Notifications</button>
                       <button variant="ghost" on-press="go_launch">Back to Launch</button>
+                    </column>
+                  </if>
+                  <if test="{showSettingsNoResults}">
+                    <column gap="4" padding="16" cross="center" background="surface_subtle" label="No settings found">
+                      <text>No settings found</text>
+                      <text size="sm" foreground="text_muted">Try a different search term.</text>
                     </column>
                   </if>
                 </column>
@@ -580,7 +595,8 @@
         <text size="sm" foreground="text_muted">Cmd+K palette | Cmd+O open folder | Cmd+, settings | Cmd+P quick open</text>
         <text size="sm" foreground="text_muted">Cmd+F find | Cmd+Shift+F workspace search | Cmd+G go to line | Cmd+J bottom panel</text>
         <text size="sm" foreground="text_muted">Cmd+S save | Cmd+Shift+S save all | Cmd+Shift+B run task | Cmd+W close</text>
-        <text size="sm" foreground="text_muted">Cmd+B sidebar | Ctrl+` terminal | Cmd+Z undo | Cmd+Shift+Z redo</text>
+        <text size="sm" foreground="text_muted">Cmd+B sidebar | Ctrl+` terminal | Cmd+. agent | Alt+Z word wrap</text>
+        <text size="sm" foreground="text_muted">Cmd+Z undo | Cmd+Shift+Z redo</text>
         <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>
       </column>
     </column>

@@ -71,6 +71,10 @@ pub const app_shortcuts = [_]native_sdk.Shortcut{
     .{ .id = "new_untitled", .key = "n", .modifiers = .{ .primary = true } },
     .{ .id = "close_active_tab", .key = "w", .modifiers = .{ .primary = true } },
     .{ .id = "format_document", .key = "f", .modifiers = .{ .shift = true, .option = true } },
+    .{ .id = "move_line_up", .key = "up", .modifiers = .{ .option = true } },
+    .{ .id = "move_line_down", .key = "down", .modifiers = .{ .option = true } },
+    .{ .id = "indent_document", .key = "]", .modifiers = .{ .primary = true } },
+    .{ .id = "outdent_document", .key = "[", .modifiers = .{ .primary = true } },
     .{ .id = "go_to_symbol", .key = "o", .modifiers = .{ .primary = true, .shift = true } },
     .{ .id = "go_to_definition", .key = "d", .modifiers = .{ .primary = true, .shift = true } },
     .{ .id = "open_folder", .key = "o", .modifiers = .{ .primary = true } },
@@ -79,6 +83,8 @@ pub const app_shortcuts = [_]native_sdk.Shortcut{
     .{ .id = "workspace_search", .key = "f", .modifiers = .{ .primary = true, .shift = true } },
     .{ .id = "toggle_bottom_panel", .key = "j", .modifiers = .{ .primary = true } },
     .{ .id = "run_selected_task", .key = "b", .modifiers = .{ .primary = true, .shift = true } },
+    .{ .id = "toggle_agent", .key = ".", .modifiers = .{ .primary = true } },
+    .{ .id = "toggle_word_wrap", .key = "z", .modifiers = .{ .option = true } },
     .{ .id = "escape", .key = "escape" },
     .{ .id = "toggle_terminal", .key = "`", .modifiers = .{ .control = true } },
     .{ .id = "save_file", .key = "s", .modifiers = .{ .primary = true } },
@@ -101,6 +107,10 @@ pub fn onCommand(name: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "new_untitled")) return .new_untitled;
     if (std.mem.eql(u8, name, "close_active_tab")) return .close_active_tab;
     if (std.mem.eql(u8, name, "format_document")) return .format_document;
+    if (std.mem.eql(u8, name, "move_line_up")) return .move_line_up;
+    if (std.mem.eql(u8, name, "move_line_down")) return .move_line_down;
+    if (std.mem.eql(u8, name, "indent_document")) return .indent_document;
+    if (std.mem.eql(u8, name, "outdent_document")) return .outdent_document;
     if (std.mem.eql(u8, name, "go_to_symbol")) return .go_to_symbol;
     if (std.mem.eql(u8, name, "go_to_definition")) return .go_to_definition;
     if (std.mem.eql(u8, name, "open_folder")) return .{ .open_project = "acme-dashboard" };
@@ -109,6 +119,8 @@ pub fn onCommand(name: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "workspace_search")) return .{ .select_activity = .search };
     if (std.mem.eql(u8, name, "toggle_bottom_panel")) return .toggle_bottom_panel;
     if (std.mem.eql(u8, name, "run_selected_task")) return .run_selected_task;
+    if (std.mem.eql(u8, name, "toggle_agent")) return .toggle_agent_panel;
+    if (std.mem.eql(u8, name, "toggle_word_wrap")) return .toggle_word_wrap;
     if (std.mem.eql(u8, name, "escape")) return .dismiss_overlay;
     if (std.mem.eql(u8, name, "toggle_terminal")) return .toggle_terminal;
     if (std.mem.eql(u8, name, "save_file")) return .save_file;
