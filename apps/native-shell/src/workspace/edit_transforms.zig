@@ -900,6 +900,105 @@ pub fn compareBuffers(current: []const u8, saved: []const u8, out: []u8) ?usize 
     return written.len;
 }
 
+/// Hard-wrap lines longer than `width` at the last space before the limit (or hard-break).
+pub fn hardWrapAt(text: []const u8, width: usize, out: []u8) ?usize {
+    if (width == 0) return null;
+    var dst: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= text.len) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            var line = text[start..i];
+            // Strip trailing CR for wrapping math.
+            if (line.len > 0 and line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
+            while (line.len > width) {
+                var break_at = width;
+                var j = width;
+                while (j > 0) : (j -= 1) {
+                    if (line[j - 1] == ' ' or line[j - 1] == '\t') {
+                        break_at = j - 1;
+                        break;
+                    }
+                }
+                if (break_at == 0) break_at = width;
+                const chunk = line[0..break_at];
+                if (dst + chunk.len + 1 > out.len) return null;
+                @memcpy(out[dst..][0..chunk.len], chunk);
+                dst += chunk.len;
+                out[dst] = '\n';
+                dst += 1;
+                // Skip spaces after break.
+                var next = break_at;
+                while (next < line.len and (line[next] == ' ' or line[next] == '\t')) next += 1;
+                if (next >= line.len) {
+                    line = line[line.len..];
+                    break;
+                }
+                // If we hard-broke mid-word, continue from break_at.
+                if (break_at == width and (line[break_at - 1] != ' ' and line[break_at - 1] != '\t')) {
+                    line = line[width..];
+                } else {
+                    line = line[next..];
+                }
+            }
+            if (dst + line.len > out.len) return null;
+            @memcpy(out[dst..][0..line.len], line);
+            dst += line.len;
+            if (i < text.len) {
+                if (dst + 1 > out.len) return null;
+                out[dst] = '\n';
+                dst += 1;
+            }
+            start = i + 1;
+        }
+    }
+    return dst;
+}
+
+/// Format = trim trailing whitespace + ensure final newline.
+pub fn formatDocument(text: []const u8, out: []u8) ?usize {
+    var mid: [max_out]u8 = undefined;
+    const trimmed = trimTrailingWhitespace(text, mid[0..]) orelse return null;
+    return ensureFinalNewline(mid[0..trimmed], out);
+}
+
+/// Find first 1-based line whose trimmed start contains `query` (case-insensitive substring).
+pub fn findSymbolLine(text: []const u8, query: []const u8) ?u32 {
+    if (query.len == 0) return null;
+    var line_no: u32 = 1;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= text.len) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            const line = text[start..i];
+            const trimmed = std.mem.trimStart(u8, line, " \t");
+            if (indexOfIgnoreCase(trimmed, query) != null) return line_no;
+            line_no += 1;
+            start = i + 1;
+        }
+    }
+    return null;
+}
+
+fn indexOfIgnoreCase(hay: []const u8, needle: []const u8) ?usize {
+    if (needle.len == 0 or needle.len > hay.len) return null;
+    var i: usize = 0;
+    while (i + needle.len <= hay.len) : (i += 1) {
+        var ok = true;
+        for (needle, 0..) |nc, j| {
+            const hc = hay[i + j];
+            const a = if (nc >= 'A' and nc <= 'Z') nc + 32 else nc;
+            const b = if (hc >= 'A' and hc <= 'Z') hc + 32 else hc;
+            if (a != b) {
+                ok = false;
+                break;
+            }
+        }
+        if (ok) return i;
+    }
+    return null;
+}
+
 test "case and sort transforms" {
     var out: [128]u8 = undefined;
     const u = toUpperCase("AbC", &out).?;
@@ -977,4 +1076,9 @@ test "eol convert and duplicate path" {
     try std.testing.expectEqualStrings("Matches disk", cmp[0..same]);
     const diff = compareBuffers("a\nb", "x", &cmp).?;
     try std.testing.expect(std.mem.indexOf(u8, cmp[0..diff], "Differs") != null);
+    const wrapped = hardWrapAt("hello world again", 8, &out).?;
+    try std.testing.expect(std.mem.indexOf(u8, out[0..wrapped], "\n") != null);
+    const formatted = formatDocument("hi  \n", &out).?;
+    try std.testing.expectEqualStrings("hi\n", out[0..formatted]);
+    try std.testing.expect(findSymbolLine("foo\n  export function bar()\n", "bar") == 2);
 }

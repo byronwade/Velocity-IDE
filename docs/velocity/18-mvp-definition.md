@@ -80,6 +80,10 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Copy git branch | Copy current branch name into toast. |
 | Clear recent projects | Soft-confirm clear of prefs recent list. |
 | Insert UUID | Append a deterministic UUID-shaped id to the document. |
+| Format document | Trim trailing whitespace + ensure final newline. |
+| Hard wrap | Wrap long lines at column 80. |
+| Copy document | Copy active buffer into toast (truncated if huge). |
+| Go to symbol | Jump toast to first line matching find query (case-insensitive). |
 | Trim blank lines | Strip leading/trailing blank lines from the document. |
 | Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |

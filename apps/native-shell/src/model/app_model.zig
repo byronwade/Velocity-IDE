@@ -205,6 +205,10 @@ pub const Msg = union(enum) {
     copy_git_branch,
     clear_recent_projects,
     insert_uuid,
+    format_document,
+    hard_wrap,
+    copy_document,
+    go_to_symbol,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -308,6 +312,10 @@ pub const Msg = union(enum) {
         "copy_git_branch",
         "clear_recent_projects",
         "insert_uuid",
+        "format_document",
+        "hard_wrap",
+        "copy_document",
+        "go_to_symbol",
         "terminal_line",
         "terminal_exit",
     };
@@ -1029,6 +1037,10 @@ pub const commands = [_]CommandItem{
     .{ .id = "copy_git_branch", .title = "Copy Git Branch", .hint = "" },
     .{ .id = "clear_recent_projects", .title = "Clear Recent Projects", .hint = "" },
     .{ .id = "insert_uuid", .title = "Insert UUID", .hint = "" },
+    .{ .id = "format_document", .title = "Format Document", .hint = "Shift+Alt+F" },
+    .{ .id = "hard_wrap", .title = "Hard Wrap at 80", .hint = "" },
+    .{ .id = "copy_document", .title = "Copy Document", .hint = "" },
+    .{ .id = "go_to_symbol", .title = "Go to Symbol in File", .hint = "Cmd+Shift+O" },
     .{ .id = "reopen_last_workspace", .title = "Reopen Last Workspace", .hint = "" },
     .{ .id = "clear_find", .title = "Clear Find", .hint = "" },
     .{ .id = "duplicate_line", .title = "Duplicate Last Line", .hint = "" },
@@ -1264,6 +1276,14 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 clearRecentProjects(model);
             } else if (std.mem.eql(u8, id, "insert_uuid")) {
                 insertUuid(model);
+            } else if (std.mem.eql(u8, id, "format_document")) {
+                formatDocument(model);
+            } else if (std.mem.eql(u8, id, "hard_wrap")) {
+                hardWrapDocument(model);
+            } else if (std.mem.eql(u8, id, "copy_document")) {
+                copyDocument(model);
+            } else if (std.mem.eql(u8, id, "go_to_symbol")) {
+                goToSymbol(model);
             } else if (std.mem.eql(u8, id, "reopen_last_workspace")) {
                 reopenLastWorkspace(model);
             } else if (std.mem.eql(u8, id, "clear_find")) {
@@ -1528,6 +1548,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .copy_git_branch => copyGitBranch(model),
         .clear_recent_projects => clearRecentProjects(model),
         .insert_uuid => insertUuid(model),
+        .format_document => formatDocument(model),
+        .hard_wrap => hardWrapDocument(model),
+        .copy_document => copyDocument(model),
+        .go_to_symbol => goToSymbol(model),
         .open_git_entry => |id| openGitEntry(model, id),
         .clear_find => clearFind(model),
         .reopen_last_workspace => reopenLastWorkspace(model),
@@ -3423,6 +3447,64 @@ fn insertUuid(model: *Model) void {
     @memcpy(out[0..text.len], text);
     @memcpy(out[text.len..][0..n], id_buf[0..n]);
     applyDocumentTransform(model, out[0 .. text.len + n], "Inserted UUID");
+}
+
+fn formatDocument(model: *Model) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = edit_transforms.formatDocument(model.document.text(), &out) orelse {
+        model.toast = "Format failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..n], "Formatted document");
+}
+
+fn hardWrapDocument(model: *Model) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = edit_transforms.hardWrapAt(model.document.text(), 80, &out) orelse {
+        model.toast = "Hard wrap failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..n], "Hard wrapped at 80");
+}
+
+fn copyDocument(model: *Model) void {
+    const text = model.document.text();
+    if (text.len == 0) {
+        model.toast = "Empty document";
+        model.path_toast = "";
+        return;
+    }
+    const n = @min(text.len, model.path_toast_buf.len);
+    @memcpy(model.path_toast_buf[0..n], text[0..n]);
+    model.path_toast = model.path_toast_buf[0..n];
+    if (text.len > model.path_toast_buf.len) {
+        model.toast = "Copied (truncated)";
+    } else {
+        model.toast = "Copied document";
+    }
+}
+
+fn goToSymbol(model: *Model) void {
+    const query = model.find_query.text();
+    if (query.len == 0) {
+        model.toast = "Enter find query for symbol";
+        return;
+    }
+    const line = edit_transforms.findSymbolLine(model.document.text(), query) orelse {
+        model.toast = "Symbol not found";
+        return;
+    };
+    var total: u32 = if (model.document.text().len == 0) 0 else 1;
+    for (model.document.text()) |c| {
+        if (c == '\n') total += 1;
+    }
+    if (model.document.text().len == 0) total = 0;
+    const label = std.fmt.bufPrint(&model.goto_line_buf, "Symbol @ {d}/{d}", .{ line, total }) catch "symbol";
+    model.goto_line_label = label;
+    model.toast = model.goto_line_label;
+    var num: [12]u8 = undefined;
+    const nn = std.fmt.bufPrint(&num, "{d}", .{line}) catch return;
+    model.goto_line_input.set(nn);
 }
 
 fn copyAllTabPaths(model: *Model) void {

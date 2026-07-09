@@ -851,3 +851,24 @@ test "compare with saved copy branch clear recent insert uuid" {
     try testing.expect(model.document.text().len == 36);
     try testing.expectEqualStrings("Inserted UUID", model.toast);
 }
+
+test "format hard wrap copy document go to symbol" {
+    var model = main.initialModel();
+    model.document.set("hello  \nfoo\n");
+    main.update(&model, .format_document);
+    try testing.expectEqualStrings("hello\nfoo\n", model.document.text());
+    try testing.expectEqualStrings("Formatted document", model.toast);
+    // 90+ chars so hard wrap at 80 inserts a break.
+    model.document.set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz");
+    main.update(&model, .hard_wrap);
+    try testing.expect(std.mem.indexOf(u8, model.document.text(), "\n") != null);
+    try testing.expectEqualStrings("Hard wrapped at 80", model.toast);
+    model.document.set("abc");
+    main.update(&model, .copy_document);
+    try testing.expectEqualStrings("Copied document", model.toast);
+    try testing.expectEqualStrings("abc", model.path_toast);
+    model.document.set("alpha\n  export function Widget()\nbeta\n");
+    model.find_query.set("widget");
+    main.update(&model, .go_to_symbol);
+    try testing.expect(std.mem.indexOf(u8, model.toast, "Symbol @ 2") != null);
+}

@@ -144,6 +144,10 @@
               <button size="sm" variant="ghost" on-press="convert_to_crlf">CRLF</button>
               <button size="sm" variant="ghost" on-press="insert_timestamp">Time</button>
               <button size="sm" variant="ghost" on-press="insert_uuid">UUID</button>
+              <button size="sm" variant="ghost" on-press="format_document">Fmt</button>
+              <button size="sm" variant="ghost" on-press="hard_wrap">Wrap80</button>
+              <button size="sm" variant="ghost" on-press="copy_document">CopyDoc</button>
+              <button size="sm" variant="ghost" on-press="go_to_symbol">Sym</button>
               <button size="sm" variant="ghost" on-press="undo_edit">Undo</button>
               <text-field text="{gotoLineText}" placeholder="Line" on-input="update_goto_line" on-submit="goto_line" width="72" label="Go to line" />
               <button size="sm" variant="ghost" on-press="goto_line">Go</button>
