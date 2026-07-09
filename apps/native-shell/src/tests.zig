@@ -209,3 +209,19 @@ test "git status refresh on scm activity" {
     // Fixture is not a real git repo (nested .git not committed); expect graceful summary.
     try testing.expect(model.git_summary.len > 0);
 }
+
+test "create new file in workspace" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.new_file_path.set("src/mvp_created.ts");
+    main.update(&model, .create_new_file);
+    try testing.expectEqualStrings("File created", model.toast);
+    var found = false;
+    for (model.file_nodes) |n| {
+        if (std.mem.eql(u8, n.path, "src/mvp_created.ts")) found = true;
+    }
+    try testing.expect(found);
+    // Cleanup
+    const io = model.io orelse std.testing.io;
+    std.Io.Dir.cwd().deleteFile(io, "fixtures/acme-dashboard/src/mvp_created.ts") catch {};
+}

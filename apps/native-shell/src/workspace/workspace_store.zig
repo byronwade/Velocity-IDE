@@ -107,6 +107,24 @@ pub const WorkspaceBuffers = struct {
         self.setEditorText(text);
     }
 
+    /// Create a new relative file (empty or with seed text), rescan, and open it.
+    pub fn createFile(self: *WorkspaceBuffers, io: std.Io, rel_path: []const u8, seed: []const u8) !u32 {
+        if (rel_path.len == 0) return error.NotFound;
+        if (std.mem.indexOfScalar(u8, rel_path, 0) != null) return error.NotFound;
+        try scanner.writeTextFile(io, self.rootPath(), rel_path, seed);
+        // Rescan so the tree includes the new file.
+        const root = self.rootPath();
+        var root_copy: [max_root_path_len]u8 = undefined;
+        if (root.len > root_copy.len) return error.PathTooLong;
+        @memcpy(root_copy[0..root.len], root);
+        _ = try self.openPath(io, root_copy[0..root.len]);
+        if (self.findNodeByPath(rel_path)) |node| {
+            try self.openFileById(io, node.id);
+            return node.id;
+        }
+        return error.NotFound;
+    }
+
     pub fn clear(self: *WorkspaceBuffers) void {
         self.* = .{};
     }

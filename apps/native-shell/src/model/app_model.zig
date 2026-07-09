@@ -19,6 +19,7 @@ pub const max_document = workspace_store.max_editor_bytes;
 pub const max_open_path = 240;
 pub const max_terminal_command = terminal_session.max_command;
 pub const max_search_query = workspace_search.max_query;
+pub const max_new_file_path = 160;
 pub const SearchHit = workspace_search.SearchHit;
 pub const GitEntry = git_status.GitEntry;
 
@@ -93,6 +94,8 @@ pub const Msg = union(enum) {
     run_search,
     open_search_hit: u32,
     refresh_git,
+    update_new_file_path: canvas.TextInputEvent,
+    create_new_file,
     chrome_changed: native_sdk.WindowChrome,
     set_appearance: native_sdk.Appearance,
 
@@ -113,6 +116,7 @@ pub const Msg = union(enum) {
         "clear_terminal",
         "run_search",
         "refresh_git",
+        "create_new_file",
     };
 };
 
@@ -155,6 +159,7 @@ pub const Model = struct {
     git_entries: []const GitEntry = &.{},
     git_summary: []const u8 = "not loaded",
     git_branch: []const u8 = "unknown",
+    new_file_path: canvas.TextBuffer(max_new_file_path) = .{},
     governor: process_governor.Governor = .{},
     toast: []const u8 = "",
     editor_mode_label: []const u8 = "read-only mock",
@@ -234,6 +239,7 @@ pub const Model = struct {
         "search_bufs",
         "git_bufs",
         "search_query",
+        "new_file_path",
         "governor",
         "editorBody",
     };
@@ -405,6 +411,10 @@ pub const Model = struct {
         return model.search_query.text();
     }
 
+    pub fn newFilePathText(model: *const Model) []const u8 {
+        return model.new_file_path.text();
+    }
+
     pub fn searchStatus(model: *const Model) []const u8 {
         if (model.search_bufs) |s| return s.status;
         return "idle";
@@ -505,6 +515,7 @@ pub const plugin_registry = [_]PluginEntry{
 pub const commands = [_]CommandItem{
     .{ .id = "open_folder", .title = "Open Folder", .hint = "Cmd+O" },
     .{ .id = "save_file", .title = "Save File", .hint = "Cmd+S" },
+    .{ .id = "create_new_file", .title = "New File", .hint = "" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
     .{ .id = "run_terminal", .title = "Run Terminal Command", .hint = "" },
     .{ .id = "run_search", .title = "Search Workspace", .hint = "" },
@@ -577,6 +588,8 @@ pub fn update(model: *Model, msg: Msg) void {
                 openFixtureWorkspace(model, "acme-dashboard");
             } else if (std.mem.eql(u8, id, "save_file")) {
                 saveActiveDocument(model);
+            } else if (std.mem.eql(u8, id, "create_new_file")) {
+                createNewFile(model);
             } else if (std.mem.eql(u8, id, "run_terminal")) {
                 runTerminalFromModel(model);
             } else if (std.mem.eql(u8, id, "run_search")) {
@@ -760,6 +773,8 @@ pub fn update(model: *Model, msg: Msg) void {
         .run_search => runWorkspaceSearch(model),
         .open_search_hit => |id| openSearchHit(model, id),
         .refresh_git => refreshGitStatus(model),
+        .update_new_file_path => |edit| model.new_file_path.apply(edit),
+        .create_new_file => createNewFile(model),
         .chrome_changed => |chrome| {
             model.chrome_leading = chrome.insets.left;
             model.header_height = @max(header_natural_height, chrome.insets.top);
@@ -956,6 +971,37 @@ fn openSearchHit(model: *Model, hit_id: u32) void {
         }
     }
     model.toast = "Hit not found";
+}
+
+fn createNewFile(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const rel = model.new_file_path.text();
+    if (rel.len == 0) {
+        model.toast = "Enter a relative path";
+        return;
+    }
+    const id = ws.createFile(modelIo(model), rel, "") catch {
+        model.toast = "Create file failed";
+        return;
+    };
+    model.file_nodes = ws.fileNodesSlice();
+    model.open_tabs = ws.tabsSlice();
+    model.workspace_node_count = ws.file_node_count;
+    model.selected_file_id = id;
+    model.active_tab_id = id;
+    model.status_language = workspace_store.scannerLanguage(rel);
+    syncDocumentFromWorkspace(model);
+    model.current_view = .ide;
+    model.selected_activity = .explorer;
+    model.toast = "File created";
+    model.new_file_path.clear();
 }
 
 fn refreshGitStatus(model: *Model) void {

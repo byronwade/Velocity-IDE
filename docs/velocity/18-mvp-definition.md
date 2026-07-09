@@ -10,6 +10,7 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | File tree | Bounded scan; skip `node_modules` / `.git` / vendor. |
 | Edit file | Native `<textarea>` bound to document buffer (dirty tracking). |
 | Save file | Write active document back to disk (Cmd/Ctrl+S / command palette). |
+| New file | Create relative path in workspace from explorer. |
 | Search | Bounded in-process text search over scanned files (no ripgrep). |
 | SCM | `git status --porcelain` + branch via governor (lazy on SCM panel). |
 | Command palette | Open Folder, Save, Search, Git refresh, Terminal, theme, safe mode. |

@@ -77,6 +77,10 @@
             </row>
             <text size="sm" foreground="text_muted" wrap="false">{project_path}</text>
             <text size="sm" foreground="text_muted" wrap="false">nodes={workspace_node_count}</text>
+            <row gap="4" cross="center">
+              <text-field text="{newFilePathText}" placeholder="src/new.ts" on-input="update_new_file_path" on-submit="create_new_file" grow="1" label="New file path" />
+              <button size="sm" variant="secondary" on-press="create_new_file">New</button>
+            </row>
             <separator />
             <scroll grow="1" label="File explorer">
               <column gap="1">
