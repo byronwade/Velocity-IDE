@@ -13,6 +13,7 @@ const geometry = native_sdk.geometry;
 
 const model_mod = @import("model/app_model.zig");
 const theme = @import("theme/tokens.zig");
+const keybinding_registry = @import("core/keybinding_registry.zig");
 
 pub const Model = model_mod.Model;
 pub const Msg = model_mod.Msg;
@@ -54,46 +55,19 @@ const shell_windows = [_]native_sdk.ShellWindow{.{
 }};
 const shell_scene: native_sdk.ShellConfig = .{ .windows = &shell_windows };
 
-pub const app_shortcuts = [_]native_sdk.Shortcut{
-    .{ .id = "command_palette", .key = "k", .modifiers = .{ .primary = true } },
-    .{ .id = "quick_open", .key = "p", .modifiers = .{ .primary = true } },
-    .{ .id = "find_in_file", .key = "f", .modifiers = .{ .primary = true } },
-    .{ .id = "goto_line", .key = "g", .modifiers = .{ .primary = true } },
-    .{ .id = "toggle_comment", .key = "/", .modifiers = .{ .primary = true } },
-    .{ .id = "reopen_closed_tab", .key = "t", .modifiers = .{ .primary = true, .shift = true } },
-    .{ .id = "shortcuts_help", .key = "/", .modifiers = .{ .primary = true, .shift = true } },
-    .{ .id = "undo_edit", .key = "z", .modifiers = .{ .primary = true } },
-    .{ .id = "redo_edit", .key = "z", .modifiers = .{ .primary = true, .shift = true } },
-    .{ .id = "delete_last_line", .key = "k", .modifiers = .{ .primary = true, .shift = true } },
-    .{ .id = "next_tab", .key = "tab", .modifiers = .{ .control = true } },
-    .{ .id = "prev_tab", .key = "tab", .modifiers = .{ .control = true, .shift = true } },
-    .{ .id = "toggle_sidebar", .key = "b", .modifiers = .{ .primary = true } },
-    .{ .id = "new_untitled", .key = "n", .modifiers = .{ .primary = true } },
-    .{ .id = "close_active_tab", .key = "w", .modifiers = .{ .primary = true } },
-    .{ .id = "format_document", .key = "f", .modifiers = .{ .shift = true, .option = true } },
-    .{ .id = "go_to_symbol", .key = "o", .modifiers = .{ .primary = true, .shift = true } },
-    .{ .id = "go_to_definition", .key = "d", .modifiers = .{ .primary = true, .shift = true } },
-    .{ .id = "open_folder", .key = "o", .modifiers = .{ .primary = true } },
-    .{ .id = "open_settings", .key = ",", .modifiers = .{ .primary = true } },
-    .{ .id = "save_all", .key = "s", .modifiers = .{ .primary = true, .shift = true } },
-    .{ .id = "workspace_search", .key = "f", .modifiers = .{ .primary = true, .shift = true } },
-    .{ .id = "toggle_bottom_panel", .key = "j", .modifiers = .{ .primary = true } },
-    .{ .id = "run_selected_task", .key = "b", .modifiers = .{ .primary = true, .shift = true } },
-    .{ .id = "toggle_agent", .key = "a", .modifiers = .{ .primary = true, .shift = true } },
-    .{ .id = "toggle_word_wrap", .key = "z", .modifiers = .{ .option = true } },
-    .{ .id = "escape", .key = "escape" },
-    .{ .id = "toggle_terminal", .key = "`", .modifiers = .{ .control = true } },
-    .{ .id = "save_file", .key = "s", .modifiers = .{ .primary = true } },
-};
+pub const app_shortcuts = keybinding_registry.project(native_sdk.Shortcut);
 
-pub fn onCommand(name: []const u8) ?Msg {
+pub fn onCommand(shortcut_id: []const u8) ?Msg {
+    // This alias intentionally opens Search without running the current query.
+    if (std.mem.eql(u8, shortcut_id, "workspace_search")) return .{ .select_activity = .search };
+    const name = keybinding_registry.canonicalCommandId(shortcut_id) orelse shortcut_id;
     if (std.mem.eql(u8, name, "command_palette")) return .open_command_palette;
     if (std.mem.eql(u8, name, "quick_open")) return .run_quick_open;
     if (std.mem.eql(u8, name, "find_in_file")) return .run_find;
     if (std.mem.eql(u8, name, "goto_line")) return .goto_line;
-    if (std.mem.eql(u8, name, "toggle_comment")) return .toggle_line_comment;
+    if (std.mem.eql(u8, name, "toggle_line_comment")) return .toggle_line_comment;
     if (std.mem.eql(u8, name, "reopen_closed_tab")) return .reopen_closed_tab;
-    if (std.mem.eql(u8, name, "shortcuts_help")) return .toggle_shortcuts_help;
+    if (std.mem.eql(u8, name, "toggle_shortcuts_help")) return .toggle_shortcuts_help;
     if (std.mem.eql(u8, name, "undo_edit")) return .undo_edit;
     if (std.mem.eql(u8, name, "redo_edit")) return .redo_edit;
     if (std.mem.eql(u8, name, "delete_last_line")) return .delete_last_line;
@@ -112,7 +86,6 @@ pub fn onCommand(name: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "open_folder")) return .{ .open_project = "acme-dashboard" };
     if (std.mem.eql(u8, name, "open_settings")) return .open_settings;
     if (std.mem.eql(u8, name, "save_all")) return .save_all;
-    if (std.mem.eql(u8, name, "workspace_search")) return .{ .select_activity = .search };
     if (std.mem.eql(u8, name, "toggle_bottom_panel")) return .toggle_bottom_panel;
     if (std.mem.eql(u8, name, "run_selected_task")) return .run_selected_task;
     if (std.mem.eql(u8, name, "toggle_agent")) return .toggle_agent_panel;

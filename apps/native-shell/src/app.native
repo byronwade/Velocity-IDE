@@ -574,6 +574,7 @@
           <for each="command_items" as="cmd">
             <list-item on-press="run_command:{cmd.id}" padding="8" gap="8" cross="center" label="{cmd.title}">
               <text grow="1" wrap="false">{cmd.title}</text>
+              <text size="sm" foreground="text_muted">{cmd.availability_label}</text>
               <text size="sm" foreground="text_muted">{cmd.hint}</text>
             </list-item>
           </for>
@@ -627,11 +628,16 @@
     <column grow="1" main="start" cross="center" padding="24" background="scrim">
       <column width="480" gap="8" padding="12" background="surface">
         <text>Keyboard Shortcuts</text>
-        <text size="sm" foreground="text_muted">Cmd+K palette | Cmd+O open folder | Cmd+, settings | Cmd+P quick open</text>
-        <text size="sm" foreground="text_muted">Cmd+F find | Cmd+Shift+F workspace search | Cmd+G go to line | Cmd+J bottom panel</text>
-        <text size="sm" foreground="text_muted">Cmd+S save | Cmd+Shift+S save all | Cmd+Shift+B run task | Cmd+W close</text>
-        <text size="sm" foreground="text_muted">Cmd+B sidebar | Ctrl+` terminal | Cmd+Shift+A agent | Alt+Z word wrap</text>
-        <text size="sm" foreground="text_muted">Cmd+Z undo | Cmd+Shift+Z redo</text>
+        <scroll height="320" label="Registered keyboard shortcuts">
+          <column gap="4">
+            <for each="shortcut_help_items" key="id" as="shortcut">
+              <row gap="8" padding="4" cross="center">
+                <text grow="1" size="sm">{shortcut.label}</text>
+                <text size="sm" foreground="text_muted">{shortcut.hint}</text>
+              </row>
+            </for>
+          </column>
+        </scroll>
         <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>
       </column>
     </column>

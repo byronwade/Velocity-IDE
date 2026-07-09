@@ -4,6 +4,9 @@ const main = @import("main.zig");
 const model_mod = @import("model/app_model.zig");
 const scanner_mod = @import("workspace/scanner.zig");
 const hot_exit_store = @import("workspace/hot_exit_store.zig");
+const command_registry = @import("core/command_registry.zig");
+const keybinding_registry = @import("core/keybinding_registry.zig");
+const feature_registry = @import("core/feature_registry.zig");
 
 const canvas = native_sdk.canvas;
 const testing = std.testing;
@@ -1930,20 +1933,112 @@ test "high value native shortcuts are wired without replacing redo" {
 }
 
 test "every native shortcut maps through onCommand" {
-    for (main.app_shortcuts) |shortcut| {
+    for (main.app_shortcuts, keybinding_registry.defaults) |shortcut, binding| {
+        try testing.expectEqualStrings(binding.shortcut_id, shortcut.id);
+        try testing.expectEqualStrings(binding.key, shortcut.key);
+        try testing.expect(keybinding_registry.isSupportedKey(shortcut.key));
         try testing.expect(main.onCommand(shortcut.id) != null);
     }
 }
 
-test "every advertised command shortcut has a registered binding" {
+test "command registry has unique IDs and explicit safe dispatch coverage" {
+    for (command_registry.catalog, 0..) |command, index| {
+        for (command_registry.catalog[index + 1 ..]) |other| {
+            try testing.expect(!std.mem.eql(u8, command.id, other.id));
+        }
+        switch (command.dispatch) {
+            .model => try testing.expect(command.availability != .unavailable),
+            .availability_exempt => try testing.expect(
+                command.availability == .hidden or command.availability == .unavailable,
+            ),
+        }
+    }
+}
+
+test "palette projection hides no-op and labels limited mock commands" {
+    try testing.expectEqual(command_registry.palette.len, model_mod.commands.len);
     for (model_mod.commands) |command| {
+        try testing.expect(!std.mem.eql(u8, command.id, "new_agent_task"));
+        if (std.mem.eql(u8, command.id, "open_plugins") or
+            std.mem.eql(u8, command.id, "run_perf") or
+            std.mem.eql(u8, command.id, "check_for_updates"))
+        {
+            try testing.expectEqual(command_registry.Availability.limited, command.availability);
+            try testing.expect(std.mem.indexOf(u8, command.title, "(Limited)") != null);
+            try testing.expectEqualStrings("Limited", command.availability_label);
+        }
+    }
+}
+
+test "every advertised command shortcut matches its canonical binding" {
+    for (command_registry.catalog) |command| {
         if (command.hint.len == 0) continue;
+        var matched = false;
+        for (keybinding_registry.defaults) |binding| {
+            if (std.mem.eql(u8, command.id, binding.canonical_command_id) and
+                std.mem.eql(u8, command.hint, binding.hint))
+            {
+                matched = true;
+                break;
+            }
+        }
+        try testing.expect(matched);
         try testing.expect(hasShortcutHint(command.hint));
     }
-    const legacy_registry = @import("core/command_registry.zig");
-    for (legacy_registry.builtin) |command| {
-        if (command.hint.len == 0) continue;
-        try testing.expect(hasShortcutHint(command.hint));
+}
+
+test "bindings are unique, non-orphaned, and aliases are explicit" {
+    for (keybinding_registry.defaults, 0..) |binding, index| {
+        for (keybinding_registry.defaults[index + 1 ..]) |other| {
+            try testing.expect(!std.mem.eql(u8, binding.shortcut_id, other.shortcut_id));
+            const same_chord = std.mem.eql(u8, binding.key, other.key) and
+                std.meta.eql(binding.modifiers, other.modifiers);
+            try testing.expect(!same_chord);
+        }
+        if (binding.target == .palette) {
+            var found = false;
+            for (command_registry.catalog) |command| {
+                if (std.mem.eql(u8, binding.canonical_command_id, command.id)) {
+                    found = true;
+                    break;
+                }
+            }
+            try testing.expect(found);
+        }
+        const canonical = keybinding_registry.canonicalCommandId(binding.shortcut_id);
+        try testing.expect(canonical != null);
+        try testing.expectEqualStrings(binding.canonical_command_id, canonical.?);
+    }
+    try testing.expectEqualStrings(
+        "run_search",
+        keybinding_registry.canonicalCommandId("workspace_search").?,
+    );
+    const workspace_msg = main.onCommand("workspace_search").?;
+    try testing.expect(workspace_msg == .select_activity);
+    try testing.expectEqual(model_mod.Activity.search, workspace_msg.select_activity);
+}
+
+test "known command feature IDs exist in feature registry" {
+    for (command_registry.catalog) |command| {
+        const feature_id = command.feature_id orelse continue;
+        var found = false;
+        for (feature_registry.catalog) |feature| {
+            if (std.mem.eql(u8, feature_id, feature.id)) {
+                found = true;
+                break;
+            }
+        }
+        try testing.expect(found);
+    }
+}
+
+test "shortcut help is projected from registry" {
+    const model = main.initialModel();
+    try testing.expectEqual(keybinding_registry.help_items.len, model.shortcut_help_items.len);
+    for (model.shortcut_help_items, keybinding_registry.help_items) |actual, expected| {
+        try testing.expectEqualStrings(expected.id, actual.id);
+        try testing.expectEqualStrings(expected.label, actual.label);
+        try testing.expectEqualStrings(expected.hint, actual.hint);
     }
 }
 

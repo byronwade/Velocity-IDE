@@ -29,6 +29,9 @@ native dev
 native build
 ```
 
+Use `native check --strict` after model or markup changes. The test suite also
+refreshes the model contract and checks command/shortcut registry integrity.
+
 External file changes are checked with bounded polling during editing and safe
 save operations. Use **Refresh Files from Disk** from the command palette for an
 immediate full check. A recurring timer is intentionally not wired until the
@@ -81,10 +84,16 @@ is double-confirmed and recursive tree deletion is always refused.
 | `src/lsp/` | Bounded JSON-RPC/session/diagnostic scaffold; no process transport |
 | `src/terminal/` | Pipe runner plus bounded PTY protocol; PTY transport unavailable |
 
-`src/core/command_registry.zig` is a legacy feature-metadata subset, not the
-runtime command source of truth. Runtime palette commands remain in
-`model/app_model.zig` until command dispatch, shortcuts, and feature metadata
-can move together without changing behavior.
+`src/core/command_registry.zig` is the source of truth for palette metadata,
+availability, optional feature ownership, and dispatch coverage declarations.
+`model/app_model.zig` consumes its dependency-neutral palette projection.
+`src/core/keybinding_registry.zig` owns the Native SDK-compatible shortcut
+records, canonical command aliases, supported-key constraints, and generated
+shortcut-help items; `main.zig` only projects those records into SDK types.
+Registry guards reject duplicate IDs/chords, orphan bindings, unsupported keys,
+stale shortcut hints, and unknown declared feature IDs. Mock performance,
+update, and plugin surfaces are labeled **Limited**; the no-op New Agent Task
+command is hidden until it has an operational implementation.
 
 ## Feature modules
 
