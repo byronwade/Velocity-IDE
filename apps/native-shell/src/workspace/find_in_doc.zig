@@ -20,6 +20,7 @@ pub const FindBuffers = struct {
     preview_lens: [max_matches]usize = [_]usize{0} ** max_matches,
     active_index: u32 = 0,
     status: []const u8 = "idle",
+    case_sensitive: bool = false,
 
     pub fn matchesSlice(self: *FindBuffers) []const DocMatch {
         return self.matches[0..self.match_count];
@@ -32,7 +33,12 @@ pub const FindBuffers = struct {
     }
 
     pub fn find(self: *FindBuffers, text: []const u8, query: []const u8) void {
+        self.findWithOptions(text, query, self.case_sensitive);
+    }
+
+    pub fn findWithOptions(self: *FindBuffers, text: []const u8, query: []const u8, case_sensitive: bool) void {
         self.clear();
+        self.case_sensitive = case_sensitive;
         if (query.len == 0) {
             self.status = "empty query";
             return;
@@ -45,7 +51,11 @@ pub const FindBuffers = struct {
                 const line = text[start..i];
                 var search_from: usize = 0;
                 while (search_from < line.len and self.match_count < max_matches) {
-                    if (std.ascii.indexOfIgnoreCase(line[search_from..], query)) |rel| {
+                    const rel_opt: ?usize = if (case_sensitive)
+                        std.mem.indexOf(u8, line[search_from..], query)
+                    else
+                        std.ascii.indexOfIgnoreCase(line[search_from..], query);
+                    if (rel_opt) |rel| {
                         const col = search_from + rel;
                         self.pushMatch(line_no, @intCast(col + 1), line);
                         search_from = col + query.len;
@@ -97,4 +107,13 @@ test "find locates multiple matches" {
     try std.testing.expect(f.match_count == 2);
     try std.testing.expect(f.matches[0].line == 1);
     try std.testing.expect(f.matches[1].line == 2);
+}
+
+test "find case sensitive vs ignore" {
+    var f: FindBuffers = .{};
+    f.findWithOptions("Foo foo FOO", "foo", false);
+    try std.testing.expect(f.match_count == 3);
+    f.findWithOptions("Foo foo FOO", "foo", true);
+    try std.testing.expect(f.match_count == 1);
+    try std.testing.expect(f.matches[0].column == 5);
 }

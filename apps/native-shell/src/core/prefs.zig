@@ -12,6 +12,8 @@ pub const Prefs = struct {
     last_path: []const u8 = "",
     show_terminal: bool = true,
     show_agent: bool = true,
+    auto_save: bool = false,
+    find_case_sensitive: bool = false,
     recent_count: u32 = 0,
     recent_paths: [max_recent][max_path]u8 = undefined,
     recent_lens: [max_recent]usize = [_]usize{0} ** max_recent,
@@ -102,6 +104,8 @@ pub const Prefs = struct {
             if (std.mem.eql(u8, key, "last_path")) self.setLastPath(val);
             if (std.mem.eql(u8, key, "show_terminal")) self.show_terminal = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "show_agent")) self.show_agent = std.mem.eql(u8, val, "1");
+            if (std.mem.eql(u8, key, "auto_save")) self.auto_save = std.mem.eql(u8, val, "1");
+            if (std.mem.eql(u8, key, "find_case_sensitive")) self.find_case_sensitive = std.mem.eql(u8, val, "1");
             if (std.mem.startsWith(u8, key, "recent")) self.pushRecent(val);
         }
     }
@@ -125,6 +129,10 @@ pub const Prefs = struct {
         append(&out, &len, if (self.show_terminal) "1" else "0");
         append(&out, &len, "\nshow_agent=");
         append(&out, &len, if (self.show_agent) "1" else "0");
+        append(&out, &len, "\nauto_save=");
+        append(&out, &len, if (self.auto_save) "1" else "0");
+        append(&out, &len, "\nfind_case_sensitive=");
+        append(&out, &len, if (self.find_case_sensitive) "1" else "0");
         append(&out, &len, "\n");
         var i: u32 = 0;
         while (i < self.recent_count) : (i += 1) {
@@ -142,11 +150,15 @@ test "prefs roundtrip theme and recent" {
     p.setTheme("light");
     p.setLastPath("fixtures/acme-dashboard");
     p.show_terminal = false;
+    p.auto_save = true;
+    p.find_case_sensitive = true;
     p.save(std.testing.io);
     var p2: Prefs = .{};
     p2.load(std.testing.io);
     try std.testing.expectEqualStrings("light", p2.themeSlice());
     try std.testing.expectEqualStrings("fixtures/acme-dashboard", p2.lastPathSlice());
     try std.testing.expect(!p2.show_terminal);
+    try std.testing.expect(p2.auto_save);
+    try std.testing.expect(p2.find_case_sensitive);
     std.Io.Dir.cwd().deleteTree(std.testing.io, ".velocity") catch {};
 }

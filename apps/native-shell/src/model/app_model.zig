@@ -125,6 +125,8 @@ pub const Msg = union(enum) {
     replace_all,
     copy_active_path,
     refresh_recent,
+    toggle_auto_save,
+    toggle_find_case,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -162,6 +164,8 @@ pub const Msg = union(enum) {
         "replace_all",
         "copy_active_path",
         "refresh_recent",
+        "toggle_auto_save",
+        "toggle_find_case",
         "terminal_line",
         "terminal_exit",
     };
@@ -215,6 +219,10 @@ pub const Model = struct {
     find_status: []const u8 = "idle",
     find_active_label: []const u8 = "",
     find_label_buf: [48]u8 = undefined,
+    find_case_sensitive: bool = false,
+    auto_save: bool = false,
+    breadcrumb: []const u8 = "",
+    breadcrumb_buf: [260]u8 = undefined,
     quick_query: canvas.TextBuffer(max_quick_query) = .{},
     quick_bufs: ?*quick_open.QuickOpenBuffers = null,
     quick_items: []const QuickItem = &.{},
@@ -302,6 +310,7 @@ pub const Model = struct {
         "isIde",
         "isPerf",
         "activeTabTitle",
+        "activeTabPath",
         "features_enabled",
         "showPlaceholderPanel",
         "workspace",
@@ -322,6 +331,10 @@ pub const Model = struct {
         "find_label_buf",
         "find_status",
         "find_matches",
+        "find_case_sensitive",
+        "auto_save",
+        "breadcrumb",
+        "breadcrumb_buf",
         "quick_query",
         "quick_bufs",
         "goto_line_input",
@@ -534,6 +547,26 @@ pub const Model = struct {
         return model.path_toast;
     }
 
+    pub fn breadcrumbText(model: *const Model) []const u8 {
+        return model.breadcrumb;
+    }
+
+    pub fn autoSaveLabel(model: *const Model) []const u8 {
+        return if (model.auto_save) "Auto Save: on" else "Auto Save: off";
+    }
+
+    pub fn findCaseLabel(model: *const Model) []const u8 {
+        return if (model.find_case_sensitive) "Aa: on" else "Aa: off";
+    }
+
+    pub fn terminalPanelLabel(model: *const Model) []const u8 {
+        return if (model.show_terminal) "Terminal: shown" else "Terminal: hidden";
+    }
+
+    pub fn agentPanelLabel(model: *const Model) []const u8 {
+        return if (model.show_agent_panel) "Agent: shown" else "Agent: hidden";
+    }
+
     pub fn quickQueryText(model: *const Model) []const u8 {
         return model.quick_query.text();
     }
@@ -650,6 +683,8 @@ pub const commands = [_]CommandItem{
     .{ .id = "replace_once", .title = "Replace Once", .hint = "" },
     .{ .id = "replace_all", .title = "Replace All", .hint = "" },
     .{ .id = "copy_active_path", .title = "Copy Active Path", .hint = "" },
+    .{ .id = "toggle_auto_save", .title = "Toggle Auto Save", .hint = "" },
+    .{ .id = "toggle_find_case", .title = "Toggle Find Case Sensitivity", .hint = "" },
     .{ .id = "goto_line", .title = "Go to Line", .hint = "Cmd+G" },
     .{ .id = "close_active_tab", .title = "Close Active Tab", .hint = "" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
@@ -713,8 +748,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.command_query.clear();
             if (std.mem.eql(u8, id, "toggle_terminal")) {
                 model.show_terminal = !model.show_terminal;
+                persistPrefs(model);
             } else if (std.mem.eql(u8, id, "toggle_agent")) {
                 model.show_agent_panel = !model.show_agent_panel;
+                persistPrefs(model);
             } else if (std.mem.eql(u8, id, "open_plugins")) {
                 model.current_view = .plugins;
                 model.selected_activity = .plugins;
@@ -752,6 +789,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 replaceAllInDocument(model);
             } else if (std.mem.eql(u8, id, "copy_active_path")) {
                 copyActivePath(model);
+            } else if (std.mem.eql(u8, id, "toggle_auto_save")) {
+                toggleAutoSave(model);
+            } else if (std.mem.eql(u8, id, "toggle_find_case")) {
+                toggleFindCase(model);
             } else if (std.mem.eql(u8, id, "goto_line")) {
                 runGotoLine(model);
             } else if (std.mem.eql(u8, id, "close_active_tab")) {
@@ -815,8 +856,14 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 else => model.current_view = .ide,
             }
         },
-        .toggle_terminal => model.show_terminal = !model.show_terminal,
-        .toggle_agent_panel => model.show_agent_panel = !model.show_agent_panel,
+        .toggle_terminal => {
+            model.show_terminal = !model.show_terminal;
+            persistPrefs(model);
+        },
+        .toggle_agent_panel => {
+            model.show_agent_panel = !model.show_agent_panel;
+            persistPrefs(model);
+        },
         .select_file => |id| {
             model.selected_file_id = id;
             model.current_view = .ide;
@@ -925,6 +972,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.document_dirty = true;
             model.toast = "";
             refreshDocStats(model);
+            if (model.auto_save and model.workspace_from_disk) {
+                saveActiveDocument(model);
+            }
         },
         .save_file => saveActiveDocument(model),
         .update_open_path => |edit| model.open_path.apply(edit),
@@ -960,6 +1010,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .replace_all => replaceAllInDocument(model),
         .copy_active_path => copyActivePath(model),
         .refresh_recent => syncRecentFromPrefs(model),
+        .toggle_auto_save => toggleAutoSave(model),
+        .toggle_find_case => toggleFindCase(model),
         .update_quick_query => |edit| {
             model.quick_query.apply(edit);
             filterQuickOpen(model);
@@ -1051,6 +1103,7 @@ fn syncDocumentFromWorkspace(model: *Model) void {
         model.editor_mode_label = "editable";
         model.toast = "";
         refreshDocStats(model);
+        refreshBreadcrumb(model);
     }
 }
 
@@ -1063,6 +1116,18 @@ pub fn refreshDocStats(model: *Model) void {
     if (text.len == 0) lines = 0;
     const label = std.fmt.bufPrint(&model.doc_stats_buf, "{d} lines · {d} bytes", .{ lines, text.len }) catch "stats";
     model.doc_stats = label;
+}
+
+pub fn refreshBreadcrumb(model: *Model) void {
+    const path = Model.activeTabPath(model);
+    if (path.len == 0) {
+        model.breadcrumb = model.project_name;
+        return;
+    }
+    const n = @min(path.len, model.breadcrumb_buf.len);
+    @memcpy(model.breadcrumb_buf[0..n], path[0..n]);
+    // Soften separators for display: keep as-is (path is already relative)
+    model.breadcrumb = model.breadcrumb_buf[0..n];
 }
 
 fn basenameOf(path: []const u8) []const u8 {
@@ -1481,11 +1546,32 @@ fn runFindInDocument(model: *Model) void {
         model.toast = "Find alloc failed";
         return;
     };
-    bufs.find(model.document.text(), model.find_query.text());
+    bufs.findWithOptions(model.document.text(), model.find_query.text(), model.find_case_sensitive);
     model.find_matches = bufs.matchesSlice();
     model.find_status = bufs.status;
     updateFindLabel(model);
-    model.toast = bufs.status;
+    if (bufs.match_count == 0) {
+        model.toast = bufs.status;
+    } else {
+        const msg = std.fmt.bufPrint(&model.action_toast_buf, "{d} matches", .{bufs.match_count}) catch "matches";
+        model.toast = msg;
+    }
+}
+
+fn toggleAutoSave(model: *Model) void {
+    model.auto_save = !model.auto_save;
+    persistPrefs(model);
+    model.toast = if (model.auto_save) "Auto Save on" else "Auto Save off";
+}
+
+fn toggleFindCase(model: *Model) void {
+    model.find_case_sensitive = !model.find_case_sensitive;
+    persistPrefs(model);
+    if (model.find_query.text().len > 0) {
+        runFindInDocument(model);
+    } else {
+        model.toast = if (model.find_case_sensitive) "Find: case sensitive" else "Find: ignore case";
+    }
 }
 
 fn findNavigate(model: *Model, forward: bool) void {
@@ -1621,6 +1707,8 @@ fn applyPrefsToModel(model: *Model) void {
     if (std.mem.eql(u8, model.prefs.themeSlice(), "dark")) model.theme_preference = .dark;
     model.show_terminal = model.prefs.show_terminal;
     model.show_agent_panel = model.prefs.show_agent;
+    model.auto_save = model.prefs.auto_save;
+    model.find_case_sensitive = model.prefs.find_case_sensitive;
     if (model.prefs.last_path_len > 0 and model.open_path.text().len == 0) {
         model.open_path.set(model.prefs.lastPathSlice());
     }
@@ -1631,6 +1719,7 @@ fn applyPrefsToModel(model: *Model) void {
 pub fn ensurePrefsOnBoot(model: *Model) void {
     applyPrefsToModel(model);
     refreshDocStats(model);
+    refreshBreadcrumb(model);
 }
 
 fn persistPrefs(model: *Model) void {
@@ -1642,6 +1731,8 @@ fn persistPrefs(model: *Model) void {
     });
     model.prefs.show_terminal = model.show_terminal;
     model.prefs.show_agent = model.show_agent_panel;
+    model.prefs.auto_save = model.auto_save;
+    model.prefs.find_case_sensitive = model.find_case_sensitive;
     model.prefs.save(modelIo(model));
 }
 

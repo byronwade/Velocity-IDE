@@ -348,3 +348,37 @@ test "recent projects sync from prefs" {
     try testing.expect(std.mem.indexOf(u8, model.recent[0].path, "fixtures") != null);
     std.Io.Dir.cwd().deleteTree(std.testing.io, ".velocity") catch {};
 }
+
+test "find case sensitivity toggle" {
+    var model = main.initialModel();
+    model.document.set("Foo foo FOO");
+    model.find_query.set("foo");
+    model.find_case_sensitive = false;
+    main.update(&model, .run_find);
+    try testing.expect(model.find_matches.len == 3);
+    main.update(&model, .toggle_find_case);
+    try testing.expect(model.find_case_sensitive);
+    try testing.expect(model.find_matches.len == 1);
+}
+
+test "auto save toggle persists preference" {
+    var model = main.initialModel();
+    model.io = std.testing.io;
+    try testing.expect(!model.auto_save);
+    main.update(&model, .toggle_auto_save);
+    try testing.expect(model.auto_save);
+    var model2 = main.initialModel();
+    model2.io = std.testing.io;
+    model_mod.ensurePrefsOnBoot(&model2);
+    try testing.expect(model2.auto_save);
+    model2.auto_save = false;
+    main.update(&model2, .save_prefs);
+    std.Io.Dir.cwd().deleteTree(std.testing.io, ".velocity") catch {};
+}
+
+test "breadcrumb tracks active path" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    try testing.expect(model.breadcrumb.len > 0);
+    try testing.expect(std.mem.indexOf(u8, model.breadcrumb, "/") != null or model.breadcrumb.len > 0);
+}

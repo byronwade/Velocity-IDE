@@ -15,8 +15,9 @@ This repository contains:
 | New / Rename / Delete | Explorer file ops + rescan |
 | Find + Quick Open | In-doc find; Cmd+P file filter |
 | Replace + Copy path | Replace once/all; copy active path to toast |
-| Prefs + Recent | Theme / last path / panels / recent under `.velocity/prefs.txt` |
+| Prefs + Recent | Theme / last path / panels / recent / auto-save / find-case |
 | Document stats | Status bar line + byte counts |
+| Breadcrumb | Active relative path in editor header |
 | Search (MVP) | Bounded in-process workspace text search |
 | SCM (MVP) | Lazy `git status` / branch via governor |
 | Terminal (MVP) | Async `fx.spawn` pipe runner (sync fallback in tests) |

@@ -118,7 +118,7 @@
               <!-- Editor island (native textarea MVP; Monaco later) -->
               <column grow="1" gap="8" padding="12">
                 <row gap="8" cross="center">
-                  <text size="sm" foreground="text_muted" wrap="false" grow="1">{activeTabPath} / {status_language}</text>
+                  <text size="sm" foreground="text_muted" wrap="false" grow="1">{breadcrumbText}</text>
                   <badge variant="secondary">{dirtyLabel}</badge>
                   <badge variant="secondary">{editor_mode_label}</badge>
                   <button size="sm" variant="ghost" on-press="run_quick_open">Go to</button>
@@ -127,6 +127,7 @@
                 <row gap="4" cross="center">
                   <text-field text="{findQueryText}" placeholder="Find in file..." on-input="update_find_query" on-submit="run_find" grow="1" label="Find in file" />
                   <badge variant="secondary">{find_active_label}</badge>
+                  <button size="sm" variant="ghost" on-press="toggle_find_case">{findCaseLabel}</button>
                   <button size="sm" variant="ghost" on-press="find_prev">Prev</button>
                   <button size="sm" variant="ghost" on-press="find_next">Next</button>
                   <button size="sm" variant="secondary" on-press="run_find">Find</button>
@@ -321,6 +322,10 @@
               <text>Settings</text>
               <text foreground="text_muted">Telemetry off / Surveys off / Plugins locked until trusted</text>
               <button variant="secondary" on-press="switch_theme">Theme: {themeLabel}</button>
+              <button variant="ghost" on-press="toggle_terminal">{terminalPanelLabel}</button>
+              <button variant="ghost" on-press="toggle_agent_panel">{agentPanelLabel}</button>
+              <button variant="ghost" on-press="toggle_auto_save">{autoSaveLabel}</button>
+              <button variant="ghost" on-press="toggle_find_case">Find {findCaseLabel}</button>
               <button variant="ghost" on-press="save_prefs">Save Preferences</button>
               <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
               <button variant="ghost" on-press="open_process_governor">Process Governor</button>

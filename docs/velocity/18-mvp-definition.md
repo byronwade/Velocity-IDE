@@ -19,7 +19,10 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Prefs | Persist theme, last path, panel visibility, recent paths under `.velocity/prefs.txt`. |
 | Recent projects | Launch screen lists prefs recent paths (falls back to mock list). |
 | Document stats | Status bar shows line + byte counts for active document. |
+| Breadcrumb | Editor header shows active relative path. |
 | Copy path | Command / button copies active tab path into toast. |
+| Auto Save | Optional; persists in prefs; writes on each edit when on. |
+| Find case | Toggle case-sensitive find (persisted). |
 | Go to line | Cmd+G jump label for active document line count. |
 | Close tab | Soft confirm when dirty; second close discards. |
 | Search | Bounded in-process text search over scanned files (no ripgrep). |
