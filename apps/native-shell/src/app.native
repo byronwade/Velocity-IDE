@@ -178,21 +178,52 @@
             </if>
           </if>
 
-          <!-- Search placeholder -->
+          <!-- Search -->
           <if test="{isSearch}">
             <column grow="1" gap="10" padding="16">
-              <text>Search</text>
-              <badge variant="secondary">placeholder</badge>
-              <text foreground="text_muted">Workspace search / ripgrep adapter — activates onSearch only. No index before interactive shell.</text>
+              <row gap="8" cross="center">
+                <text grow="1">Search</text>
+                <badge variant="secondary">{searchStatus}</badge>
+              </row>
+              <row gap="6" cross="center">
+                <text-field text="{searchQueryText}" placeholder="Search workspace..." on-input="update_search_query" on-submit="run_search" grow="1" label="Search query" />
+                <button size="sm" variant="primary" on-press="run_search">Search</button>
+              </row>
+              <text size="sm" foreground="text_muted">Bounded in-process scan (no ripgrep). Caps at 64 hits.</text>
+              <scroll grow="1" label="Search results">
+                <column gap="4">
+                  <for each="search_hits" key="id" as="hit">
+                    <list-item on-press="open_search_hit:{hit.id}" padding="8" gap="6" label="{hit.path}">
+                      <column gap="2" grow="1">
+                        <text wrap="false">{hit.path}:{hit.line}</text>
+                        <text size="sm" foreground="text_muted" wrap="true">{hit.preview}</text>
+                      </column>
+                    </list-item>
+                  </for>
+                </column>
+              </scroll>
             </column>
           </if>
 
-          <!-- SCM placeholder -->
+          <!-- SCM -->
           <if test="{isScm}">
             <column grow="1" gap="10" padding="16">
-              <text>Source Control</text>
-              <badge variant="secondary">placeholder</badge>
-              <text foreground="text_muted">Git provider is Dev mode. No git process until SCM is visible or queried.</text>
+              <row gap="8" cross="center">
+                <text grow="1">Source Control</text>
+                <badge variant="secondary">{git_summary}</badge>
+                <button size="sm" variant="secondary" on-press="refresh_git">Refresh</button>
+              </row>
+              <text size="sm" foreground="text_muted">branch={git_branch} / git status --porcelain via Process Governor</text>
+              <scroll grow="1" label="Git changes">
+                <column gap="4">
+                  <for each="git_entries" key="id" as="entry">
+                    <row gap="8" padding="6" cross="center">
+                      <badge variant="secondary">{entry.status}</badge>
+                      <text grow="1" wrap="false">{entry.path}</text>
+                    </row>
+                  </for>
+                </column>
+              </scroll>
             </column>
           </if>
 

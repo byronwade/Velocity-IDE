@@ -12,6 +12,8 @@ This repository contains:
 | Native SDK mock shell | Runs (`native check` / `test` / `build`) |
 | Workspace file I/O (M2) | Fixture + typed path open, bounded scan, text read |
 | Edit + Save (MVP) | Native textarea + disk write (Cmd+S) |
+| Search (MVP) | Bounded in-process workspace text search |
+| SCM (MVP) | Lazy `git status` / branch via governor |
 | Terminal (MVP) | Pipe `sh -c` via Process Governor (not PTY) |
 | Feature modules | 200 stubs under `src/features/` |
 | Feature registry + activation policy | Scaffold |

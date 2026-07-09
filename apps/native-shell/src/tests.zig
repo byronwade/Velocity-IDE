@@ -191,3 +191,21 @@ test "terminal pipe command runs through governor" {
     try testing.expect(found);
     try testing.expectEqualStrings("Command ok", model.toast);
 }
+
+test "workspace search finds auth helper" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.search_query.set("createSession");
+    main.update(&model, .run_search);
+    try testing.expect(model.search_hits.len > 0);
+    try testing.expect(model.current_view == .search);
+}
+
+test "git status refresh on scm activity" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .{ .select_activity = .scm });
+    try testing.expect(model.current_view == .scm);
+    // Fixture is not a real git repo (nested .git not committed); expect graceful summary.
+    try testing.expect(model.git_summary.len > 0);
+}

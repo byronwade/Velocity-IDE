@@ -131,5 +131,7 @@ test {
     _ = @import("processes/process_governor.zig");
     _ = @import("workspace/scanner.zig");
     _ = @import("workspace/workspace_store.zig");
+    _ = @import("workspace/search.zig");
     _ = @import("terminal/terminal_session.zig");
+    _ = @import("scm/git_status.zig");
 }

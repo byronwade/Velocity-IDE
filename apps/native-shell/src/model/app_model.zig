@@ -7,8 +7,10 @@ const native_sdk = @import("native_sdk");
 const canvas = native_sdk.canvas;
 const theme = @import("../theme/tokens.zig");
 const workspace_store = @import("../workspace/workspace_store.zig");
+const workspace_search = @import("../workspace/search.zig");
 const terminal_session = @import("../terminal/terminal_session.zig");
 const process_governor = @import("../processes/process_governor.zig");
+const git_status = @import("../scm/git_status.zig");
 
 pub const header_natural_height: f32 = 44;
 pub const max_command_query = 64;
@@ -16,6 +18,9 @@ pub const max_agent_prompt = 160;
 pub const max_document = workspace_store.max_editor_bytes;
 pub const max_open_path = 240;
 pub const max_terminal_command = terminal_session.max_command;
+pub const max_search_query = workspace_search.max_query;
+pub const SearchHit = workspace_search.SearchHit;
+pub const GitEntry = git_status.GitEntry;
 
 pub const ViewKind = enum { launch, ide, plugins, settings, perf, features, processes, search, scm, debug, testing };
 pub const Activity = enum { explorer, search, scm, agents, terminal, plugins, settings, debug, testing, features, processes };
@@ -84,6 +89,10 @@ pub const Msg = union(enum) {
     update_terminal_command: canvas.TextInputEvent,
     run_terminal_command,
     clear_terminal,
+    update_search_query: canvas.TextInputEvent,
+    run_search,
+    open_search_hit: u32,
+    refresh_git,
     chrome_changed: native_sdk.WindowChrome,
     set_appearance: native_sdk.Appearance,
 
@@ -102,6 +111,8 @@ pub const Msg = union(enum) {
         "submit_open_path",
         "run_terminal_command",
         "clear_terminal",
+        "run_search",
+        "refresh_git",
     };
 };
 
@@ -137,6 +148,13 @@ pub const Model = struct {
     open_path: canvas.TextBuffer(max_open_path) = .{},
     terminal_command: canvas.TextBuffer(max_terminal_command) = .{},
     terminal: ?*terminal_session.TerminalBuffers = null,
+    search_bufs: ?*workspace_search.SearchBuffers = null,
+    git_bufs: ?*git_status.GitBuffers = null,
+    search_query: canvas.TextBuffer(max_search_query) = .{},
+    search_hits: []const SearchHit = &.{},
+    git_entries: []const GitEntry = &.{},
+    git_summary: []const u8 = "not loaded",
+    git_branch: []const u8 = "unknown",
     governor: process_governor.Governor = .{},
     toast: []const u8 = "",
     editor_mode_label: []const u8 = "read-only mock",
@@ -213,6 +231,9 @@ pub const Model = struct {
         "open_path",
         "terminal_command",
         "terminal",
+        "search_bufs",
+        "git_bufs",
+        "search_query",
         "governor",
         "editorBody",
     };
@@ -380,6 +401,15 @@ pub const Model = struct {
         return model.terminal_command.text();
     }
 
+    pub fn searchQueryText(model: *const Model) []const u8 {
+        return model.search_query.text();
+    }
+
+    pub fn searchStatus(model: *const Model) []const u8 {
+        if (model.search_bufs) |s| return s.status;
+        return "idle";
+    }
+
     pub fn dirtyLabel(model: *const Model) []const u8 {
         return if (model.document_dirty) "dirty" else "clean";
     }
@@ -477,6 +507,8 @@ pub const commands = [_]CommandItem{
     .{ .id = "save_file", .title = "Save File", .hint = "Cmd+S" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
     .{ .id = "run_terminal", .title = "Run Terminal Command", .hint = "" },
+    .{ .id = "run_search", .title = "Search Workspace", .hint = "" },
+    .{ .id = "refresh_git", .title = "Refresh Git Status", .hint = "" },
     .{ .id = "toggle_agent", .title = "Toggle Agent Panel", .hint = "Cmd+." },
     .{ .id = "open_plugins", .title = "Open Plugin Registry", .hint = "" },
     .{ .id = "open_settings", .title = "Open Settings", .hint = "Cmd+," },
@@ -547,6 +579,14 @@ pub fn update(model: *Model, msg: Msg) void {
                 saveActiveDocument(model);
             } else if (std.mem.eql(u8, id, "run_terminal")) {
                 runTerminalFromModel(model);
+            } else if (std.mem.eql(u8, id, "run_search")) {
+                model.current_view = .search;
+                model.selected_activity = .search;
+                runWorkspaceSearch(model);
+            } else if (std.mem.eql(u8, id, "refresh_git")) {
+                model.current_view = .scm;
+                model.selected_activity = .scm;
+                refreshGitStatus(model);
             } else if (std.mem.eql(u8, id, "open_feature_matrix")) {
                 model.current_view = .features;
                 model.selected_activity = .features;
@@ -571,8 +611,16 @@ pub fn update(model: *Model, msg: Msg) void {
             switch (activity) {
                 .plugins => model.current_view = .plugins,
                 .settings => model.current_view = .settings,
-                .search => model.current_view = .search,
-                .scm => model.current_view = .scm,
+                .search => {
+                    model.current_view = .search;
+                    if (model.workspace_from_disk and model.search_hits.len == 0 and model.search_query.text().len > 0) {
+                        runWorkspaceSearch(model);
+                    }
+                },
+                .scm => {
+                    model.current_view = .scm;
+                    refreshGitStatus(model);
+                },
                 .debug => model.current_view = .debug,
                 .testing => model.current_view = .testing,
                 .features => model.current_view = .features,
@@ -708,6 +756,10 @@ pub fn update(model: *Model, msg: Msg) void {
             model.term_lines = &.{};
             model.toast = "Terminal cleared";
         },
+        .update_search_query => |edit| model.search_query.apply(edit),
+        .run_search => runWorkspaceSearch(model),
+        .open_search_hit => |id| openSearchHit(model, id),
+        .refresh_git => refreshGitStatus(model),
         .chrome_changed => |chrome| {
             model.chrome_leading = chrome.insets.left;
             model.header_height = @max(header_natural_height, chrome.insets.top);
@@ -738,6 +790,22 @@ fn ensureTerminalBuffers(model: *Model) !*terminal_session.TerminalBuffers {
     t.* = .{};
     model.terminal = t;
     return t;
+}
+
+fn ensureSearchBuffers(model: *Model) !*workspace_search.SearchBuffers {
+    if (model.search_bufs) |s| return s;
+    const s = try std.heap.page_allocator.create(workspace_search.SearchBuffers);
+    s.* = .{};
+    model.search_bufs = s;
+    return s;
+}
+
+fn ensureGitBuffers(model: *Model) !*git_status.GitBuffers {
+    if (model.git_bufs) |g| return g;
+    const g = try std.heap.page_allocator.create(git_status.GitBuffers);
+    g.* = .{};
+    model.git_bufs = g;
+    return g;
 }
 
 fn syncDocumentFromWorkspace(model: *Model) void {
@@ -839,6 +907,76 @@ fn runTerminalFromModel(model: *Model) void {
     model.terminal_process_count = 0;
     model.process_count = model.governor.aliveCount();
     model.toast = if (term.last_exit == 0) "Command ok" else "Command exited";
+}
+
+fn runWorkspaceSearch(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace to search";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const bufs = ensureSearchBuffers(model) catch {
+        model.toast = "Search alloc failed";
+        return;
+    };
+    _ = model.governor.spawn("feature.search", "workspace-search") catch {};
+    bufs.search(modelIo(model), ws, model.search_query.text());
+    model.search_hits = bufs.hitsSlice();
+    model.governor.killFeature("feature.search");
+    model.process_count = model.governor.aliveCount();
+    model.toast = bufs.status;
+    model.current_view = .search;
+    model.selected_activity = .search;
+}
+
+fn openSearchHit(model: *Model, hit_id: u32) void {
+    if (model.search_bufs) |bufs| {
+        for (bufs.hitsSlice()) |hit| {
+            if (hit.id == hit_id) {
+                if (model.workspace) |ws| {
+                    if (ws.findNodeByPath(hit.path)) |node| {
+                        model.selected_file_id = node.id;
+                        model.current_view = .ide;
+                        model.selected_activity = .explorer;
+                        ws.openFileById(modelIo(model), node.id) catch {};
+                        model.active_tab_id = node.id;
+                        model.open_tabs = ws.tabsSlice();
+                        if (!node.is_dir) {
+                            model.status_language = workspace_store.scannerLanguage(node.path);
+                        }
+                        syncDocumentFromWorkspace(model);
+                        model.toast = "Opened search hit";
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    model.toast = "Hit not found";
+}
+
+fn refreshGitStatus(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.git_summary = "no workspace";
+        model.toast = "Open a workspace for git";
+        return;
+    }
+    const bufs = ensureGitBuffers(model) catch {
+        model.toast = "Git alloc failed";
+        return;
+    };
+    _ = model.governor.spawn("feature.scm", "git status") catch {};
+    bufs.refresh(modelIo(model), model.project_path);
+    model.git_entries = bufs.entriesSlice();
+    model.git_summary = bufs.summary;
+    model.git_branch = bufs.branch();
+    if (bufs.branch_len > 0) model.project_branch = bufs.branch();
+    model.governor.killFeature("feature.scm");
+    model.process_count = model.governor.aliveCount();
+    model.toast = bufs.summary;
 }
 
 fn pathForFile(id: u32) []const u8 {

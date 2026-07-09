@@ -10,8 +10,10 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | File tree | Bounded scan; skip `node_modules` / `.git` / vendor. |
 | Edit file | Native `<textarea>` bound to document buffer (dirty tracking). |
 | Save file | Write active document back to disk (Cmd/Ctrl+S / command palette). |
-| Command palette | Open Folder, Save, Toggle Terminal, theme, safe mode. |
-| Terminal | Pipe-based shell command runner via Process Governor + `fx.spawn` (not full PTY). |
+| Search | Bounded in-process text search over scanned files (no ripgrep). |
+| SCM | `git status --porcelain` + branch via governor (lazy on SCM panel). |
+| Command palette | Open Folder, Save, Search, Git refresh, Terminal, theme, safe mode. |
+| Terminal | Pipe-based shell command runner via Process Governor (not full PTY). |
 | Agent panel | Local task board only — no network AI. |
 | Telemetry | Off. |
 
@@ -19,7 +21,7 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 
 - Monaco / rich editor island
 - Real PTY / interactive shell
-- LSP / Git / Debug / Search index
+- LSP / Debug / Search index / ripgrep process
 - Plugin downloads / marketplace
 - OS folder dialog (stretch; path entry ships first)
 - Electron workbench changes
@@ -28,5 +30,6 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 
 1. `native check` / `test` / `build` pass
 2. Open fixture → edit → save → re-open shows change
-3. Run a shell command in terminal panel; output streams; governor tracks it
-4. First paint stays free of plugins/LSP/git/terminal spawn
+3. Run a shell command in terminal panel; output captured; governor tracks it
+4. Search finds known fixture symbols; SCM panel refreshes without crashing
+5. First paint stays free of plugins/LSP/git/terminal spawn

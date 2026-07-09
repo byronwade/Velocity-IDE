@@ -201,6 +201,13 @@ pub const WorkspaceBuffers = struct {
         return null;
     }
 
+    pub fn findNodeByPath(self: *const WorkspaceBuffers, path: []const u8) ?FileNode {
+        for (self.file_nodes[0..self.file_node_count]) |n| {
+            if (std.mem.eql(u8, n.path, path)) return n;
+        }
+        return null;
+    }
+
     pub fn openFileById(self: *WorkspaceBuffers, io: std.Io, id: u32) !void {
         const node = self.findNode(id) orelse return error.NotFound;
         if (node.is_dir) return;
