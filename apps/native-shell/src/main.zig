@@ -197,6 +197,10 @@ test {
     _ = @import("workspace/outline.zig");
     _ = @import("workspace/go_to_def.zig");
     _ = @import("workspace/editor_view.zig");
+    _ = @import("bridge/editor_island.zig");
+    _ = @import("lsp/jsonrpc.zig");
+    _ = @import("lsp/broker.zig");
     _ = @import("terminal/terminal_session.zig");
+    _ = @import("terminal/pty_session.zig");
     _ = @import("scm/git_status.zig");
 }

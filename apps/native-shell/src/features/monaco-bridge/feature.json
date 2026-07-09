@@ -16,7 +16,15 @@
   },
   "dependencies": [],
   "permissions": [],
-  "status": "stub",
+  "status": "prototype",
+  "integrationStatus": "scaffold",
+  "blockedBySdk": {
+    "scope": "Monaco WebView runtime",
+    "unblockCriteria": [
+      "stable embedded WebView lifecycle and bidirectional message API",
+      "documented focus, keyboard, IME, and accessibility forwarding"
+    ]
+  },
   "implementation": "webview",
   "priority": "P1",
   "category": "editor"

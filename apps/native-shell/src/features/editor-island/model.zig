@@ -1,5 +1,5 @@
-//! Editor Island feature model stub.
-//! Status: stub. Mode: core. Startup allowed: False.
+//! Editor Island feature model scaffold.
+//! Status: prototype. Rich backends remain blocked by SDK.
 
 pub const feature_id = "feature.editor-island";
 pub const mode = "core";

@@ -61,8 +61,8 @@ pub const catalog = [_]FeatureEntry{
     .{ .id = "feature.compare-files", .name = "Compare Files", .mode = .dev, .default_enabled = false, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 0, .enabled = false },
     .{ .id = "feature.diff-editor", .name = "Diff Editor", .mode = .dev, .default_enabled = false, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .enabled = false },
     .{ .id = "feature.merge-editor", .name = "Merge Editor", .mode = .dev, .default_enabled = false, .startup_allowed = false, .memory_budget_mb = 24, .max_processes = 0, .enabled = false },
-    .{ .id = "feature.editor-island", .name = "Editor Island", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 32, .max_processes = 0, .enabled = true },
-    .{ .id = "feature.monaco-bridge", .name = "Monaco Bridge", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 80, .max_processes = 0, .enabled = true },
+    .{ .id = "feature.editor-island", .name = "Editor Island", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 32, .max_processes = 0, .status = .prototype, .enabled = true },
+    .{ .id = "feature.monaco-bridge", .name = "Monaco Bridge", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 80, .max_processes = 0, .status = .prototype, .enabled = true },
     .{ .id = "feature.native-editor-research", .name = "Native Editor Research", .mode = .heavy, .default_enabled = false, .startup_allowed = false, .memory_budget_mb = 0, .max_processes = 0, .enabled = false },
     .{ .id = "feature.multi-cursor", .name = "Multi Cursor", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 4, .max_processes = 0, .enabled = true },
     .{ .id = "feature.column-selection", .name = "Column Selection", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 2, .max_processes = 0, .enabled = true },
@@ -101,7 +101,7 @@ pub const catalog = [_]FeatureEntry{
     .{ .id = "feature.fuzzy-file-search", .name = "Fuzzy File Search", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .enabled = true },
     .{ .id = "feature.symbol-search", .name = "Symbol Search", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .enabled = true },
     .{ .id = "feature.command-search", .name = "Command Search", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 4, .max_processes = 0, .enabled = true },
-    .{ .id = "feature.terminal", .name = "Terminal", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 32, .max_processes = 1, .enabled = true },
+    .{ .id = "feature.terminal", .name = "Terminal", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 32, .max_processes = 1, .status = .prototype, .enabled = true },
     .{ .id = "feature.terminal-profiles", .name = "Terminal Profiles", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 4, .max_processes = 0, .enabled = true },
     .{ .id = "feature.terminal-tabs", .name = "Terminal Tabs", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 4, .max_processes = 0, .enabled = true },
     .{ .id = "feature.terminal-splits", .name = "Terminal Splits", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 4, .max_processes = 0, .enabled = true },
@@ -136,7 +136,7 @@ pub const catalog = [_]FeatureEntry{
     .{ .id = "feature.test-explorer", .name = "Test Explorer", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .enabled = true },
     .{ .id = "feature.test-output", .name = "Test Output", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .enabled = true },
     .{ .id = "feature.coverage", .name = "Coverage", .mode = .heavy, .default_enabled = false, .startup_allowed = false, .memory_budget_mb = 32, .max_processes = 1, .enabled = false },
-    .{ .id = "feature.lsp-broker", .name = "LSP Broker", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .enabled = true },
+    .{ .id = "feature.lsp-broker", .name = "LSP Broker", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .status = .prototype, .enabled = true },
     .{ .id = "feature.lsp-process-manager", .name = "LSP Process Manager", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 4, .enabled = true },
     .{ .id = "feature.language-registry", .name = "Language Registry", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 4, .max_processes = 0, .enabled = true },
     .{ .id = "feature.language-server-registry", .name = "Language Server Registry", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 4, .max_processes = 0, .enabled = true },
@@ -231,13 +231,17 @@ pub const catalog = [_]FeatureEntry{
 
 pub fn countEnabled(entries: []const FeatureEntry) u32 {
     var n: u32 = 0;
-    for (entries) |e| if (e.enabled) { n += 1; };
+    for (entries) |e| if (e.enabled) {
+        n += 1;
+    };
     return n;
 }
 
 pub fn countLoaded(entries: []const FeatureEntry) u32 {
     var n: u32 = 0;
-    for (entries) |e| if (e.loaded) { n += 1; };
+    for (entries) |e| if (e.loaded) {
+        n += 1;
+    };
     return n;
 }
 
@@ -254,7 +258,9 @@ test "catalog size" {
 
 test "startup critical subset is small" {
     var n: u32 = 0;
-    for (catalog) |e| if (e.startup_allowed) { n += 1; };
+    for (catalog) |e| if (e.startup_allowed) {
+        n += 1;
+    };
     try std.testing.expect(n == startup_critical_count);
     try std.testing.expect(n < 30);
 }

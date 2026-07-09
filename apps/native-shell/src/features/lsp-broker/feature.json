@@ -16,7 +16,16 @@
   },
   "dependencies": [],
   "permissions": [],
-  "status": "stub",
+  "status": "prototype",
+  "integrationStatus": "scaffold",
+  "blockedBySdk": {
+    "scope": "language-server process transport",
+    "unblockCriteria": [
+      "supported long-lived child-process API with stdin/stdout streams",
+      "incremental read, write backpressure, cancellation, and exit events",
+      "process-tree ownership integrated with Process Governor and Effects"
+    ]
+  },
   "implementation": "native",
   "priority": "P0",
   "category": "lsp"

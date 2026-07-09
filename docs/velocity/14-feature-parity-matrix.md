@@ -44,8 +44,8 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Compare Files | `feature.compare-files` | dev | P2 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
 | Diff Editor | `feature.diff-editor` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Merge Editor | `feature.merge-editor` | dev | P2 | native | False | 24 | 0 | low | stub | docs/11 + contrib | |
-| Editor Island | `feature.editor-island` | core | P0 | native | False | 32 | 0 | low | stub | docs/11 + contrib | |
-| Monaco Bridge | `feature.monaco-bridge` | core | P1 | webview | False | 80 | 0 | low | stub | docs/11 + contrib | |
+| Editor Island | `feature.editor-island` | core | P0 | native | False | 32 | 0 | low | scaffold / SDK-blocked rich backends | typed protocol; textarea runtime unchanged | Monaco requires stable WebView messaging/focus/IME/a11y; textarea gutter API also absent |
+| Monaco Bridge | `feature.monaco-bridge` | core | P1 | webview | False | 80 | 0 | low | scaffold / blocked by SDK | typed backend only; no WebView | stable WebView lifecycle + bidirectional messaging/focus/IME/a11y |
 | Native Editor Research | `feature.native-editor-research` | heavy | P3 | deferred | False | 0 | 0 | low | stub | docs/11 + contrib | |
 | Multi Cursor | `feature.multi-cursor` | core | P1 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
 | Column Selection | `feature.column-selection` | core | P2 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
@@ -84,7 +84,7 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Fuzzy File Search | `feature.fuzzy-file-search` | core | P0 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Symbol Search | `feature.symbol-search` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Command Search | `feature.command-search` | core | P0 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
-| Terminal | `feature.terminal` | core | P0 | process | False | 32 | 1 | high | stub | docs/11 + contrib | |
+| Terminal | `feature.terminal` | core | P0 | process | False | 32 | 1 | high | scaffold / PTY blocked by SDK | pipe runner works; PTY protocol in-memory only | cross-platform PTY streams, resize, cancellation/process-tree lifecycle |
 | Terminal Profiles | `feature.terminal-profiles` | core | P1 | native | False | 4 | 0 | high | stub | docs/11 + contrib | |
 | Terminal Tabs | `feature.terminal-tabs` | core | P1 | native | False | 4 | 0 | high | stub | docs/11 + contrib | |
 | Terminal Splits | `feature.terminal-splits` | core | P2 | native | False | 4 | 0 | high | stub | docs/11 + contrib | |
@@ -119,7 +119,7 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Test Explorer | `feature.test-explorer` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Test Output | `feature.test-output` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Coverage | `feature.coverage` | heavy | P3 | process | False | 32 | 1 | low | stub | docs/11 + contrib | |
-| LSP Broker | `feature.lsp-broker` | core | P0 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
+| LSP Broker | `feature.lsp-broker` | core | P0 | native | False | 16 | 0 | low | scaffold / transport blocked by SDK | bounded JSON-RPC/session/diagnostics; no process | long-lived streamed child process, backpressure, cancellation/exit, governor ownership |
 | LSP Process Manager | `feature.lsp-process-manager` | core | P0 | process | False | 8 | 4 | low | stub | docs/11 + contrib | |
 | Language Registry | `feature.language-registry` | core | P0 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
 | Language Server Registry | `feature.language-server-registry` | core | P0 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |

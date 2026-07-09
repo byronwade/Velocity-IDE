@@ -1,5 +1,5 @@
-//! LSP Broker feature model stub.
-//! Status: stub. Mode: core. Startup allowed: False.
+//! LSP Broker feature model scaffold.
+//! Status: prototype. Runtime transport remains blocked by SDK.
 
 pub const feature_id = "feature.lsp-broker";
 pub const mode = "core";

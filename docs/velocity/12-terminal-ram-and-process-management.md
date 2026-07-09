@@ -28,4 +28,9 @@ Near-instant terminal panel; low idle RAM; no leaked shells.
 This fork defaults `terminal.integrated.scrollback` to **1000** and pre-allocates for smoothness (`terminalConfiguration.ts`). Velocity keeps a higher default for usability but **hard-caps** and uses a ring buffer to avoid unbounded growth.
 
 ## Status
-Scaffold: mock terminal lines in shell UI; real PTY later.
+Prototype: the non-interactive pipe runner captures command output. A bounded
+PTY session/output/input/resize protocol now exists, but its transport is
+explicitly unavailable and no interactive shell is claimed. It is unblocked
+only by an SDK-supported cross-platform PTY with streamed stdin/stdout, resize,
+cancellation/exit, and process-tree lifecycle hooks. Existing contiguous pipe
+line storage remains separate to avoid regressing borrowed UI/diagnostic data.

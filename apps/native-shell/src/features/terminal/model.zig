@@ -1,5 +1,5 @@
-//! Terminal feature model stub.
-//! Status: stub. Mode: core. Startup allowed: False.
+//! Terminal feature model scaffold.
+//! Status: prototype. Pipe runner works; interactive PTY is blocked by SDK.
 
 pub const feature_id = "feature.terminal";
 pub const mode = "core";

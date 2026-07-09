@@ -1,5 +1,5 @@
-//! Monaco Bridge feature model stub.
-//! Status: stub. Mode: core. Startup allowed: False.
+//! Monaco Bridge feature model scaffold.
+//! Status: prototype. Runtime remains blocked by SDK.
 
 pub const feature_id = "feature.monaco-bridge";
 pub const mode = "core";

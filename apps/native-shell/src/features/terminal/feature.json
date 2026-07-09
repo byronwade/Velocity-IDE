@@ -15,7 +15,16 @@
   },
   "dependencies": [],
   "permissions": [],
-  "status": "stub",
+  "status": "prototype",
+  "integrationStatus": "scaffold",
+  "blockedBySdk": {
+    "scope": "interactive PTY transport only; pipe command runner remains available",
+    "unblockCriteria": [
+      "supported cross-platform PTY spawn API",
+      "streaming stdin/stdout and resize events",
+      "process-tree close and cancellation lifecycle integrated with Effects"
+    ]
+  },
   "implementation": "process",
   "priority": "P0",
   "category": "terminal"

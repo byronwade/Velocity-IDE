@@ -57,7 +57,7 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Undo / redo edits | Bounded 32-entry model history (minimum 16 full-size snapshots); Cmd+Z / Cmd+Shift+Z. |
 | Revert file | Reload active file from disk; undo restores discarded buffer. |
 | Safe overwrite backups | Confirmed conflict overwrite first stores the disk version under `.velocity/backups/`. |
-| Disk refresh | Bounded interaction polling plus a manual **Refresh Files from Disk** command; recurring effects timer remains deferred. |
+| Disk refresh | Bounded interaction polling plus a manual **Refresh Files from Disk** command; recurring Effects timer remains deferred until app-lifetime ownership and teardown cancellation are stable. |
 | Hot exit | Close Window persists bounded tabs and dirty text to `.velocity/hot-exit.bin` and restores the matching workspace. |
 | Copy absolute path | Join workspace root + relative path into toast. |
 | EOL in status | Document stats show LF / CRLF. |
@@ -119,6 +119,8 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 - Monaco / rich editor island
 - Real PTY / interactive shell
 - LSP / Debug / Search index / ripgrep process
+- Stable textarea line-number gutter (SDK lacks gutter/decoration and
+  caret/scroll synchronization contracts)
 - Plugin downloads / marketplace
 - OS folder dialog (stretch; path entry ships first)
 - Electron workbench changes

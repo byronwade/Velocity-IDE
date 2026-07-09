@@ -11,12 +11,12 @@
 9. Performance HUD — **UI + model**
 10. Terminal scaffold + RAM strategy — **docs + mock**
 11. File explorer/search/editor placeholders — **M2 + MVP edit/save**
-12. LSP broker scaffold — **stub**
+12. LSP broker scaffold — **bounded protocol; process transport blocked by SDK**
 13. SCM/debug/tasks/testing placeholders — **UI**
 14. Plugin runtime/registry placeholders — **stub**
 15. Agent panel/task board — **mock**
-16. Real terminal PTY — **MVP: pipe `sh -c` runner (not PTY)**
-17. Monaco editor island bridge — **MVP: native textarea first**
+16. Real terminal PTY — **bounded PTY protocol scaffold; transport blocked by SDK; MVP remains pipe `sh -c`**
+17. Monaco editor island bridge — **typed backend/event scaffold; MVP remains native textarea; WebView blocked by SDK**
 18. Real file/search/workspace — **path open + scan + read/write**
 19. Real Git provider
 20. Real LSP broker
@@ -37,4 +37,9 @@
 - Find + replace once/all in active document; status bar shows line/byte stats
 - Recent projects on launch from prefs (path open); Copy path command
 - Terminal panel runs `/bin/sh -c` via async `fx.spawn` at runtime; governor records spawn/kill
+- Protocol scaffolds do not imply runtime integrations: no PTY or LSP child
+  process exists, and no Monaco WebView is hosted.
+- Textarea gutters still require a stable SDK gutter/decoration and
+  caret/scroll contract. Recurring Effects polling still requires verified
+  app-lifetime ownership and teardown cancellation.
 - See `docs/velocity/18-mvp-definition.md`

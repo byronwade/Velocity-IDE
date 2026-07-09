@@ -772,7 +772,16 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "prototype",
+    "integrationStatus": "scaffold",
+    "blockedBySdk": {
+      "scope": "Monaco/WebView and native-editor backends",
+      "unblockCriteria": [
+        "stable embedded WebView lifecycle and bidirectional message API",
+        "documented focus, keyboard, IME, and accessibility forwarding",
+        "stable textarea gutter or custom editor-surface API"
+      ]
+    },
     "category": "editor",
     "implementation": "native",
     "priority": "P0"
@@ -795,7 +804,15 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "prototype",
+    "integrationStatus": "scaffold",
+    "blockedBySdk": {
+      "scope": "Monaco WebView runtime",
+      "unblockCriteria": [
+        "stable embedded WebView lifecycle and bidirectional message API",
+        "documented focus, keyboard, IME, and accessibility forwarding"
+      ]
+    },
     "category": "editor",
     "implementation": "webview",
     "priority": "P1"
@@ -1664,7 +1681,16 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "prototype",
+    "integrationStatus": "scaffold",
+    "blockedBySdk": {
+      "scope": "interactive PTY transport only; pipe command runner remains available",
+      "unblockCriteria": [
+        "supported cross-platform PTY spawn API",
+        "streaming stdin/stdout and resize events",
+        "process-tree close and cancellation lifecycle integrated with Effects"
+      ]
+    },
     "category": "terminal",
     "implementation": "process",
     "priority": "P0"
@@ -2451,7 +2477,16 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "prototype",
+    "integrationStatus": "scaffold",
+    "blockedBySdk": {
+      "scope": "language-server process transport",
+      "unblockCriteria": [
+        "supported long-lived child-process API with stdin/stdout streams",
+        "incremental read, write backpressure, cancellation, and exit events",
+        "process-tree ownership integrated with Process Governor and Effects"
+      ]
+    },
     "category": "lsp",
     "implementation": "native",
     "priority": "P0"

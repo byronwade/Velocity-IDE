@@ -63,8 +63,9 @@ Commit.
 | `src/theme/tokens.zig` | Design tokens |
 | `src/perf/` | Perf snapshot + budgets |
 | `src/plugins/` | Manifest + permissions stubs |
-| `src/lsp/` | LSP broker boundary |
-| `src/terminal/` | Terminal stub + pty notes |
+| `src/bridge/` | Typed editor backend/state/event scaffold; textarea runtime only |
+| `src/lsp/` | Bounded JSON-RPC/session/diagnostic scaffold; no process transport |
+| `src/terminal/` | Pipe runner plus bounded PTY protocol; PTY transport unavailable |
 
 ## Feature modules
 
@@ -75,6 +76,11 @@ See `docs/velocity/14-feature-parity-matrix.md`.
 ## Product docs
 
 See `/docs/velocity/`.
+
+The editor, LSP, and PTY protocol boundaries are scaffolds, not operational
+rich integrations. Exact Native SDK unblock criteria are tracked in
+`docs/velocity/native-sdk-blockers.md`. In particular, textarea gutters and an
+app-lifetime recurring Effects timer still lack stable SDK contracts.
 
 ## Legal / design
 
