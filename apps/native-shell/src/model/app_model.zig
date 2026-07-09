@@ -137,6 +137,7 @@ pub const Msg = union(enum) {
     submit_open_path,
     update_terminal_command: canvas.TextInputEvent,
     run_terminal_command,
+    stop_terminal_task,
     clear_terminal,
     update_search_query: canvas.TextInputEvent,
     run_search,
@@ -239,6 +240,7 @@ pub const Msg = union(enum) {
     trim_blank_lines,
     refresh_explorer,
     refresh_disk_sync,
+    disk_poll_timer: native_sdk.EffectTimer,
     close_saved_tabs,
     compare_with_saved,
     copy_git_branch,
@@ -310,6 +312,7 @@ pub const Msg = union(enum) {
         "overwrite_file",
         "submit_open_path",
         "run_terminal_command",
+        "stop_terminal_task",
         "clear_terminal",
         "run_search",
         "refresh_git",
@@ -392,6 +395,7 @@ pub const Msg = union(enum) {
         "trim_blank_lines",
         "refresh_explorer",
         "refresh_disk_sync",
+        "disk_poll_timer",
         "close_saved_tabs",
         "compare_with_saved",
         "copy_git_branch",
@@ -412,6 +416,8 @@ pub const Msg = union(enum) {
 
 pub const app_version = "0.1.0";
 pub const toast_timer_key: u64 = 0x746f617374_01;
+pub const disk_poll_timer_key: u64 = 0x6469736b_706f6c6c;
+pub const terminal_process_effect_key: u64 = 0x7465726d_696e616c;
 pub const toast_auto_clear_ms: u64 = 3200;
 pub const max_notification_history: usize = 8;
 pub const max_notification_text: usize = 96;
@@ -495,6 +501,8 @@ pub const Model = struct {
     undo_history: ?*undo_stack.UndoStack = null,
     disk_checker: disk_sync.Checker = .{},
     disk_poll_interval_ms: u32 = prefs_mod.default_disk_poll_interval_ms,
+    disk_poll_armed: bool = false,
+    disk_poll_rejected: bool = false,
     open_path: canvas.TextBuffer(max_open_path) = .{},
     terminal_command: canvas.TextBuffer(max_terminal_command) = .{},
     terminal: ?*terminal_session.TerminalBuffers = null,
@@ -576,8 +584,10 @@ pub const Model = struct {
     untitled_seq: u32 = 1,
     prefs: prefs_mod.Prefs = .{},
     prefs_loaded: bool = false,
-    terminal_effect_key: u64 = 0,
+    terminal_effect_key: u64 = terminal_process_effect_key,
     terminal_async: bool = false,
+    terminal_stopping: bool = false,
+    terminal_process_id: u32 = 0,
     governor: process_governor.Governor = .{},
     toast: []const u8 = "",
     toast_buf: [max_toast_text]u8 = undefined,
@@ -688,6 +698,8 @@ pub const Model = struct {
         "undo_history",
         "disk_checker",
         "disk_poll_interval_ms",
+        "disk_poll_armed",
+        "disk_poll_rejected",
         "open_path",
         "terminal_command",
         "terminal",
@@ -782,6 +794,8 @@ pub const Model = struct {
         "prefs_loaded",
         "terminal_effect_key",
         "terminal_async",
+        "terminal_stopping",
+        "terminal_process_id",
         "governor",
         "editorBody",
         "editor_focus_line",
@@ -1384,6 +1398,7 @@ pub const commands = [_]CommandItem{
     .{ .id = "toggle_final_newline", .title = "Toggle Insert Final Newline", .hint = "" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
     .{ .id = "run_terminal", .title = "Run Terminal Command", .hint = "" },
+    .{ .id = "stop_terminal_task", .title = "Stop Terminal/Task", .hint = "" },
     .{ .id = "run_selected_task", .title = "Run Selected Workspace Task", .hint = "Cmd+Shift+B" },
     .{ .id = "refresh_tasks", .title = "Refresh Workspace Tasks", .hint = "" },
     .{ .id = "run_search", .title = "Search Workspace", .hint = "Cmd+Shift+F" },
@@ -1465,6 +1480,88 @@ pub fn update(model: *Model, msg: Msg) void {
     normalizeToastState(model);
 }
 
+fn messageChangesWorkspace(msg: Msg) bool {
+    return switch (msg) {
+        .open_project, .submit_open_path, .reopen_last_workspace, .go_launch, .close_window => true,
+        .run_command => |id| std.mem.eql(u8, id, "open_folder") or
+            std.mem.eql(u8, id, "reopen_last_workspace") or
+            std.mem.eql(u8, id, "go_launch") or
+            std.mem.eql(u8, id, "close_window"),
+        else => false,
+    };
+}
+
+fn messageClosesWindow(msg: Msg) bool {
+    return switch (msg) {
+        .close_window => true,
+        .run_command => |id| std.mem.eql(u8, id, "close_window"),
+        else => false,
+    };
+}
+
+fn clearActiveCommand(model: *Model, status: process_governor.ProcessStatus, exit_code: i32) void {
+    model.governor.closeEffect(model.terminal_effect_key, status, exit_code);
+    model.process_count = model.governor.aliveCount();
+    model.terminal_process_count = 0;
+    model.terminal_process_id = 0;
+    model.terminal_async = false;
+    model.terminal_stopping = false;
+    if (model.terminal) |term| {
+        term.running = false;
+        term.last_exit = exit_code;
+        term.status = @tagName(status);
+    }
+    if (model.task_running) {
+        model.task_running = false;
+        model.task_status = switch (status) {
+            .cancelled, .killed => "Task cancelled",
+            .rejected => "Task rejected",
+            .spawn_failed => "Task spawn failed",
+            .signaled => "Task terminated by signal",
+            .exited => std.fmt.bufPrint(
+                &model.task_status_buf,
+                "Task exited with code {d}",
+                .{exit_code},
+            ) catch "Task exited",
+            .running => "Task running",
+        };
+    }
+}
+
+fn cancelOwnedEffects(model: *Model, fx: *Effects) void {
+    fx.cancelTimer(disk_poll_timer_key);
+    model.disk_poll_armed = false;
+    model.disk_poll_rejected = false;
+    if (model.terminal_async) {
+        fx.cancel(model.terminal_effect_key);
+        clearActiveCommand(model, .cancelled, native_sdk.effect_error_exit_code);
+    }
+    model.governor.killAll();
+    model.process_count = 0;
+    model.terminal_process_count = 0;
+    model.terminal_process_id = 0;
+    model.terminal_async = false;
+    model.terminal_stopping = false;
+    model.task_running = false;
+    if (model.terminal) |term| term.running = false;
+}
+
+fn reconcileDiskPoll(model: *Model, fx: *Effects) void {
+    if (!model.workspace_from_disk) {
+        if (model.disk_poll_armed) fx.cancelTimer(disk_poll_timer_key);
+        model.disk_poll_armed = false;
+        return;
+    }
+    if (model.disk_poll_armed or model.disk_poll_rejected) return;
+    model.disk_poll_armed = true;
+    fx.startTimer(.{
+        .key = disk_poll_timer_key,
+        .interval_ms = model.disk_poll_interval_ms,
+        .mode = .repeating,
+        .on_fire = Effects.timerMsg(.disk_poll_timer),
+    });
+}
+
 /// Runtime update with Native SDK effects (async terminal spawn).
 pub fn updateFx(model: *Model, msg: Msg, fx: *Effects) void {
     var prev_buf: [max_toast_text]u8 = undefined;
@@ -1472,6 +1569,8 @@ pub fn updateFx(model: *Model, msg: Msg, fx: *Effects) void {
     if (prev_n > 0) @memcpy(prev_buf[0..prev_n], model.toast[0..prev_n]);
     const prev_toast = prev_buf[0..prev_n];
 
+    const changes_workspace = messageChangesWorkspace(msg);
+    if (changes_workspace) cancelOwnedEffects(model, fx);
     updateInner(model, msg, fx);
     normalizeToastState(model);
 
@@ -1479,6 +1578,9 @@ pub fn updateFx(model: *Model, msg: Msg, fx: *Effects) void {
         armToastClearTimer(model, fx);
     }
     handleWindowActions(model, msg, fx);
+    if (!messageClosesWindow(msg) and model.current_view != .launch) {
+        reconcileDiskPoll(model, fx);
+    }
 }
 
 fn settingsSectionVisible(model: *const Model, keywords: []const u8) bool {
@@ -1771,6 +1873,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 toggleFinalNewline(model);
             } else if (std.mem.eql(u8, id, "run_terminal")) {
                 runTerminalFromModel(model, fx);
+            } else if (std.mem.eql(u8, id, "stop_terminal_task")) {
+                stopTerminalTask(model, fx);
             } else if (std.mem.eql(u8, id, "run_selected_task")) {
                 runSelectedTask(model, fx);
             } else if (std.mem.eql(u8, id, "refresh_tasks")) {
@@ -1881,11 +1985,15 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 model.current_view = .processes;
                 model.selected_activity = .processes;
             } else if (std.mem.eql(u8, id, "kill_all_workspace_processes")) {
-                model.process_count = 0;
+                if (fx) |effects| cancelOwnedEffects(model, effects);
+                model.governor.killAll();
+                model.process_count = model.governor.aliveCount();
                 model.terminal_process_count = 0;
                 model.lsp_process_count = 0;
                 model.plugin_process_count = 0;
                 model.process_leaked = 0;
+                model.task_running = false;
+                model.task_status = "Task idle";
             } else if (std.mem.eql(u8, id, "instant_safe_mode")) {
                 model.safe_mode = true;
                 model.runtime_mode_label = "Safe";
@@ -2126,12 +2234,15 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.selected_activity = .processes;
         },
         .kill_all_workspace_processes => {
-            model.governor.killFeature("feature.terminal");
+            if (fx) |effects| cancelOwnedEffects(model, effects);
+            model.governor.killAll();
             model.process_count = model.governor.aliveCount();
             model.terminal_process_count = 0;
             model.lsp_process_count = 0;
             model.plugin_process_count = 0;
             model.process_leaked = model.governor.leak_count;
+            model.task_running = false;
+            model.task_status = "Task idle";
             model.toast = "Killed workspace processes";
         },
         .instant_safe_mode => {
@@ -2167,6 +2278,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         },
         .update_terminal_command => |edit| model.terminal_command.apply(edit),
         .run_terminal_command => runTerminalFromModel(model, fx),
+        .stop_terminal_task => stopTerminalTask(model, fx),
         .clear_terminal => {
             if (model.terminal) |t| t.clear();
             model.term_lines = &.{};
@@ -2188,6 +2300,21 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .commit_changes => commitChanges(model),
         .refresh_explorer => refreshExplorer(model),
         .refresh_disk_sync => refreshDiskSync(model, true),
+        .disk_poll_timer => |timer| {
+            if (timer.key != disk_poll_timer_key) return;
+            switch (timer.outcome) {
+                .fired => {
+                    if (model.disk_poll_armed and model.workspace_from_disk) {
+                        refreshDiskSync(model, false);
+                    }
+                },
+                .rejected => {
+                    model.disk_poll_armed = false;
+                    model.disk_poll_rejected = true;
+                    model.toast = "Automatic disk polling unavailable; use Refresh Files from Disk";
+                },
+            }
+        },
         .close_saved_tabs => closeSavedTabs(model),
         .compare_with_saved => compareWithSaved(model),
         .copy_git_branch => copyGitBranch(model),
@@ -2317,6 +2444,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .update_goto_line => |edit| model.goto_line_input.apply(edit),
         .goto_line => runGotoLine(model),
         .terminal_line => |line| {
+            if (!model.terminal_async or line.key != model.terminal_effect_key) return;
             if (ensureTerminalBuffers(model)) |term| {
                 term.pushLine(line.line);
                 model.term_lines = term.linesSlice();
@@ -2324,30 +2452,38 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             } else |_| {}
         },
         .terminal_exit => |exit| {
+            if (!model.terminal_async or exit.key != model.terminal_effect_key) return;
             if (ensureTerminalBuffers(model)) |term| {
                 term.running = false;
                 term.last_exit = exit.code;
-                term.status = if (exit.reason == .exited and exit.code == 0) "ok" else "exit";
+                term.status = switch (exit.reason) {
+                    .exited => if (exit.code == 0) "ok" else "exited",
+                    .cancelled => "cancelled",
+                    .rejected => "rejected",
+                    .signaled => "signaled",
+                    .spawn_failed => "spawn_failed",
+                };
                 var exit_buf: [48]u8 = undefined;
                 const exit_msg = std.fmt.bufPrint(&exit_buf, "[exit {d} / {s}]", .{ exit.code, @tagName(exit.reason) }) catch "[exit]";
                 term.pushLine(exit_msg);
                 model.term_lines = term.linesSlice();
             } else |_| {}
-            model.governor.killFeature("feature.terminal");
-            model.terminal_process_count = 0;
-            model.process_count = model.governor.aliveCount();
-            model.terminal_async = false;
+            clearActiveCommand(model, switch (exit.reason) {
+                .exited => .exited,
+                .cancelled => .cancelled,
+                .rejected => .rejected,
+                .signaled => .signaled,
+                .spawn_failed => .spawn_failed,
+            }, exit.code);
             parseTerminalDiagnostics(model, false);
-            if (model.task_running) {
-                model.task_running = false;
-                model.task_status = std.fmt.bufPrint(
-                    &model.task_status_buf,
-                    "Task exited with code {d}",
-                    .{exit.code},
-                ) catch "Task finished";
-            }
             if (model.problems.len == 0) {
-                model.toast = if (exit.reason == .exited and exit.code == 0) "Command ok" else "Command exited";
+                model.toast = switch (exit.reason) {
+                    .exited => if (exit.code == 0) "Command ok" else "Command exited",
+                    .cancelled => "Command cancelled",
+                    .rejected => "Command rejected by Effects; try again after the active command exits",
+                    .signaled => "Command terminated by signal",
+                    .spawn_failed => "Command could not be started",
+                };
             }
         },
         .chrome_changed => |chrome| {
@@ -2454,7 +2590,7 @@ fn refreshDiskSync(model: *Model, manual: bool) void {
     const batch = model.disk_checker.check(
         modelIo(model),
         ws,
-        workspace_store.max_open_tabs,
+        if (manual) workspace_store.max_open_tabs else 1,
     );
     model.disk_changed = model.active_tab_id != 0 and model.disk_checker.isStale(model.active_tab_id);
     if (batch.event_count > 0) {
@@ -3458,10 +3594,34 @@ fn openBottomPanel(model: *Model, tab: BottomPanelTab) void {
     persistPrefs(model);
 }
 
+fn stopTerminalTask(model: *Model, fx: ?*Effects) void {
+    if (!model.terminal_async) {
+        model.toast = "No terminal command or task is running";
+        return;
+    }
+    if (model.terminal_stopping) {
+        model.toast = "Stop already requested; waiting for command exit";
+        return;
+    }
+    const effects = fx orelse {
+        model.toast = "Stop is available while the async terminal is running";
+        return;
+    };
+    effects.cancel(model.terminal_effect_key);
+    model.terminal_stopping = true;
+    if (model.terminal) |term| term.status = "stopping";
+    if (model.task_running) model.task_status = "Stopping task";
+    model.toast = "Stopping terminal command...";
+}
+
 fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
     const cmd = model.terminal_command.text();
     if (cmd.len == 0) {
         model.toast = "Enter a command";
+        return;
+    }
+    if (model.terminal_async or (model.terminal != null and model.terminal.?.running)) {
+        model.toast = "A command is already running; use Stop Terminal/Task before starting another";
         return;
     }
     const term = ensureTerminalBuffers(model) catch {
@@ -3469,7 +3629,20 @@ fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
         return;
     };
     const cwd = if (model.workspace_from_disk) model.project_path else "";
-    _ = model.governor.spawn("feature.terminal", cmd) catch {};
+    const process_id = model.governor.spawnEffect(
+        "feature.terminal",
+        cmd,
+        model.terminal_effect_key,
+        .{ .terminal = true, .task = model.task_running },
+    ) catch {
+        model.toast = "Terminal process budget is in use; stop the active command and retry";
+        if (model.task_running) {
+            model.task_running = false;
+            model.task_status = "Task refused: process budget in use";
+        }
+        return;
+    };
+    model.terminal_process_id = process_id;
     model.process_count = model.governor.aliveCount();
     model.terminal_process_count = 1;
     model.show_terminal = true;
@@ -3481,9 +3654,8 @@ fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
         term.running = true;
         term.status = "running";
         model.term_lines = term.linesSlice();
-        model.terminal_effect_key +%= 1;
-        if (model.terminal_effect_key == 0) model.terminal_effect_key = 1;
         model.terminal_async = true;
+        model.terminal_stopping = false;
 
         var script_buf: [512]u8 = undefined;
         const script = if (cwd.len > 0) blk: {
@@ -3509,9 +3681,7 @@ fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
     // Sync fallback for unit tests (no effects channel).
     term.runCommand(modelIo(model), cwd, cmd);
     model.term_lines = term.linesSlice();
-    model.governor.killFeature("feature.terminal");
-    model.terminal_process_count = 0;
-    model.process_count = model.governor.aliveCount();
+    clearActiveCommand(model, .exited, term.last_exit);
     parseTerminalDiagnostics(model, false);
     if (model.problems.len == 0) {
         model.toast = if (term.last_exit == 0) "Command ok" else "Command exited";
@@ -3521,7 +3691,7 @@ fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
 fn refreshTasks(model: *Model) void {
     model.workspace_tasks = &.{};
     model.selected_task_id = 0;
-    model.task_running = false;
+    if (!model.terminal_async) model.task_running = false;
     if (!model.workspace_from_disk) {
         model.task_status = "Open a workspace to detect tasks";
         model.toast = model.task_status;
@@ -3595,6 +3765,11 @@ fn appendShellQuoted(out: []u8, used: *usize, value: []const u8) bool {
 }
 
 fn runSelectedTask(model: *Model, fx: ?*Effects) void {
+    if (model.terminal_async or (model.terminal != null and model.terminal.?.running)) {
+        model.toast = "A command is already running; use Stop Terminal/Task before starting another";
+        openBottomPanel(model, .terminal);
+        return;
+    }
     if (model.workspace_tasks.len == 0) refreshTasks(model);
     var selected: ?WorkspaceTask = null;
     for (model.workspace_tasks) |task| {

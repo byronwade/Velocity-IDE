@@ -35,4 +35,17 @@ native automate widget-action main-canvas "$TERM_BOX" set_text 'echo velocity-sm
 native automate widget-click main-canvas "$RUN_BTN"
 native automate assert --timeout-ms 15000 'velocity-smoke'
 native automate assert --timeout-ms 5000 'exit 0'
+
+# A running command owns the sole terminal/task effect. A second Run must be
+# refused without replacing it, and only the explicit Stop action cancels it.
+native automate widget-action main-canvas "$TERM_BOX" set_text 'while :; do :; done'
+native automate widget-click main-canvas "$RUN_BTN"
+native automate assert --timeout-ms 5000 'running'
+native automate widget-action main-canvas "$TERM_BOX" set_text 'echo must-not-interleave'
+native automate widget-click main-canvas "$RUN_BTN"
+native automate assert --timeout-ms 5000 'use Stop Terminal/Task before starting another'
+STOP_BTN="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=button name="Stop Terminal\/Task".*/\1/p' | head -1)"
+test -n "$STOP_BTN"
+native automate widget-click main-canvas "$STOP_BTN"
+native automate assert --timeout-ms 10000 'Command cancelled'
 echo "terminal-smoke: ok"

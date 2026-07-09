@@ -6,6 +6,22 @@ const std = @import("std");
 pub const KillPolicy = enum { on_feature_disable, on_workspace_close, on_owner_close, never };
 pub const IdlePolicy = enum { none, suspend_idle, kill };
 pub const TrustPolicy = enum { require_workspace_trust, allow_untrusted };
+pub const ProcessStatus = enum {
+    running,
+    exited,
+    cancelled,
+    rejected,
+    signaled,
+    spawn_failed,
+    killed,
+};
+
+pub const Ownership = struct {
+    terminal: bool = false,
+    task: bool = false,
+    lsp: bool = false,
+    debug: bool = false,
+};
 
 pub const ProcessRecord = struct {
     id: u32 = 0,
@@ -25,6 +41,9 @@ pub const ProcessRecord = struct {
     lsp_owned: bool = false,
     task_owned: bool = false,
     debug_owned: bool = false,
+    effect_key: u64 = 0,
+    status: ProcessStatus = .running,
+    exit_code: i32 = 0,
     alive: bool = false,
     leaked: bool = false,
 };
@@ -38,8 +57,22 @@ pub const Governor = struct {
     leak_count: u32 = 0,
 
     pub fn spawn(self: *Governor, feature: []const u8, command: []const u8) !u32 {
+        return self.spawnEffect(feature, command, 0, .{});
+    }
+
+    /// Reserve one governed process record for an SDK effect. `os_pid` stays
+    /// zero because the Effects API intentionally does not expose a PID.
+    pub fn spawnEffect(
+        self: *Governor,
+        feature: []const u8,
+        command: []const u8,
+        effect_key: u64,
+        ownership: Ownership,
+    ) !u32 {
         // Scaffold: record only — no real OS spawn yet.
         if (self.count >= max_tracked) return error.ProcessBudgetExceeded;
+        if (ownership.terminal and self.aliveOwned(.terminal)) return error.TerminalProcessBudgetExceeded;
+        if (ownership.task and self.aliveOwned(.task)) return error.TaskProcessBudgetExceeded;
         const id = self.next_id;
         self.next_id += 1;
         const idx = self.count;
@@ -48,6 +81,12 @@ pub const Governor = struct {
             .id = id,
             .parent_feature = feature,
             .command = command,
+            .terminal_owned = ownership.terminal,
+            .task_owned = ownership.task,
+            .lsp_owned = ownership.lsp,
+            .debug_owned = ownership.debug,
+            .effect_key = effect_key,
+            .status = .running,
             .alive = true,
         };
         return id;
@@ -57,6 +96,7 @@ pub const Governor = struct {
         for (&self.records) |*r| {
             if (r.id == id and r.alive) {
                 r.alive = false;
+                r.status = .killed;
                 return;
             }
         }
@@ -66,8 +106,50 @@ pub const Governor = struct {
         for (&self.records) |*r| {
             if (r.alive and std.mem.eql(u8, r.parent_feature, feature)) {
                 r.alive = false;
+                r.status = .killed;
             }
         }
+    }
+
+    pub fn killAll(self: *Governor) void {
+        for (self.records[0..self.count]) |*record| {
+            if (record.alive) {
+                record.alive = false;
+                record.status = .killed;
+            }
+        }
+    }
+
+    pub fn closeEffect(self: *Governor, effect_key: u64, status: ProcessStatus, exit_code: i32) void {
+        for (&self.records) |*record| {
+            if (record.effect_key == effect_key and record.alive) {
+                record.alive = false;
+                record.status = status;
+                record.exit_code = exit_code;
+                return;
+            }
+        }
+    }
+
+    pub fn recordForEffect(self: *const Governor, effect_key: u64) ?*const ProcessRecord {
+        var index = self.count;
+        while (index > 0) {
+            index -= 1;
+            const record = &self.records[index];
+            if (record.effect_key == effect_key) return record;
+        }
+        return null;
+    }
+
+    const OwnedKind = enum { terminal, task };
+
+    fn aliveOwned(self: *const Governor, kind: OwnedKind) bool {
+        for (self.records[0..self.count]) |record| {
+            if (!record.alive) continue;
+            if (kind == .terminal and record.terminal_owned) return true;
+            if (kind == .task and record.task_owned) return true;
+        }
+        return false;
     }
 
     pub fn aliveCount(self: *const Governor) u32 {
@@ -86,4 +168,22 @@ test "governor tracks spawn without OS process" {
     try std.testing.expect(g.aliveCount() == 1);
     g.kill(id);
     try std.testing.expect(g.aliveCount() == 0);
+}
+
+test "governor enforces terminal and task budgets and records effect outcome" {
+    var g: Governor = .{};
+    _ = try g.spawnEffect("feature.terminal", "sleep 1", 77, .{ .terminal = true, .task = true });
+    try std.testing.expectError(
+        error.TerminalProcessBudgetExceeded,
+        g.spawnEffect("feature.terminal", "echo second", 78, .{ .terminal = true }),
+    );
+    try std.testing.expectEqual(@as(u32, 0), g.recordForEffect(77).?.os_pid);
+    try std.testing.expect(g.recordForEffect(77).?.terminal_owned);
+    try std.testing.expect(g.recordForEffect(77).?.task_owned);
+
+    g.closeEffect(77, .cancelled, 130);
+    const record = g.recordForEffect(77).?;
+    try std.testing.expect(!record.alive);
+    try std.testing.expectEqual(ProcessStatus.cancelled, record.status);
+    try std.testing.expectEqual(@as(i32, 130), record.exit_code);
 }

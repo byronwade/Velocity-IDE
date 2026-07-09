@@ -193,6 +193,116 @@ test "terminal pipe command runs through governor" {
     try testing.expectEqualStrings("Command ok", model.toast);
 }
 
+fn pendingTimerByKey(fx: *model_mod.Effects, key: u64) ?model_mod.Effects.TimerRequest {
+    var index: usize = 0;
+    while (index < fx.pendingTimerCount()) : (index += 1) {
+        const request = fx.pendingTimerAt(index).?;
+        if (request.key == key) return request;
+    }
+    return null;
+}
+
+test "updateFx arms one fixed disk poll timer and cancels it on launch" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    model.disk_poll_interval_ms = 731;
+
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    const timer = pendingTimerByKey(&fx, model_mod.disk_poll_timer_key).?;
+    try testing.expectEqual(@as(u64, 731), timer.interval_ms);
+    try testing.expectEqual(native_sdk.TimerMode.repeating, timer.mode);
+    try testing.expect(model.disk_poll_armed);
+
+    model_mod.updateFx(&model, .go_launch, &fx);
+    try testing.expect(pendingTimerByKey(&fx, model_mod.disk_poll_timer_key) == null);
+    try testing.expect(!model.disk_poll_armed);
+
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    model.terminal_command.set("sleep 10");
+    model_mod.updateFx(&model, .run_terminal_command, &fx);
+    try testing.expectEqual(@as(usize, 1), fx.pendingSpawnCount());
+    model_mod.updateFx(&model, .close_window, &fx);
+    try testing.expect(pendingTimerByKey(&fx, model_mod.disk_poll_timer_key) == null);
+    try testing.expectEqual(@as(usize, 0), fx.activeCount());
+    try testing.expectEqual(@as(u32, 0), model.process_count);
+    try testing.expect(!model.terminal_async);
+}
+
+test "rejected disk poll stays disarmed without re-arm storm" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    fx.cancelTimer(model_mod.disk_poll_timer_key);
+
+    model_mod.updateFx(&model, .{ .disk_poll_timer = .{
+        .key = model_mod.disk_poll_timer_key,
+        .outcome = .rejected,
+    } }, &fx);
+    try testing.expect(model.disk_poll_rejected);
+    try testing.expect(!model.disk_poll_armed);
+    try testing.expect(pendingTimerByKey(&fx, model_mod.disk_poll_timer_key) == null);
+
+    model_mod.updateFx(&model, .clear_toast, &fx);
+    try testing.expect(pendingTimerByKey(&fx, model_mod.disk_poll_timer_key) == null);
+}
+
+test "async terminal refuses double run and Stop cancels stable effect" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    model.terminal_command.set("sleep 10");
+
+    model_mod.updateFx(&model, .run_terminal_command, &fx);
+    try testing.expectEqual(@as(usize, 1), fx.pendingSpawnCount());
+    try testing.expectEqual(model_mod.terminal_process_effect_key, fx.pendingSpawnAt(0).?.key);
+    try testing.expectEqual(@as(u32, 1), model.terminal_process_count);
+    try testing.expectEqual(@as(u32, 0), model.governor.recordForEffect(model.terminal_effect_key).?.os_pid);
+
+    model.terminal_command.set("echo interleaved");
+    model_mod.updateFx(&model, .run_terminal_command, &fx);
+    try testing.expectEqual(@as(usize, 1), fx.pendingSpawnCount());
+    try testing.expect(std.mem.indexOf(u8, model.toast, "Stop Terminal/Task") != null);
+
+    model_mod.updateFx(&model, .stop_terminal_task, &fx);
+    try testing.expect(model.terminal_stopping);
+    try testing.expectEqual(@as(usize, 0), fx.activeCount());
+    model_mod.updateFx(&model, .{ .terminal_exit = .{
+        .key = model.terminal_effect_key,
+        .code = native_sdk.effect_error_exit_code,
+        .reason = .cancelled,
+    } }, &fx);
+    try testing.expect(!model.terminal_async);
+    try testing.expectEqualStrings("cancelled", model.terminal.?.status);
+    try testing.expectEqual(
+        @import("processes/process_governor.zig").ProcessStatus.cancelled,
+        model.governor.recordForEffect(model.terminal_effect_key).?.status,
+    );
+}
+
+test "task and terminal share one governed effect budget" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    try testing.expect(model.workspace_tasks.len > 0);
+
+    model_mod.updateFx(&model, .run_selected_task, &fx);
+    const record = model.governor.recordForEffect(model.terminal_effect_key).?;
+    try testing.expect(record.terminal_owned);
+    try testing.expect(record.task_owned);
+    try testing.expectEqual(@as(usize, 1), fx.pendingSpawnCount());
+
+    model_mod.updateFx(&model, .run_selected_task, &fx);
+    try testing.expectEqual(@as(usize, 1), fx.pendingSpawnCount());
+}
+
 test "workspace search finds auth helper" {
     var model = main.initialModel();
     main.update(&model, .{ .open_project = "acme-dashboard" });
