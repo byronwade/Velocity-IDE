@@ -57,7 +57,7 @@ pub const catalog = [_]FeatureEntry{
     .{ .id = "feature.file-encoding", .name = "File Encoding", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 2, .max_processes = 0, .enabled = true },
     .{ .id = "feature.file-decorations", .name = "File Decorations", .mode = .dev, .default_enabled = false, .startup_allowed = false, .memory_budget_mb = 4, .max_processes = 0, .enabled = false },
     .{ .id = "feature.drag-drop", .name = "Drag and Drop", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 2, .max_processes = 0, .enabled = true },
-    .{ .id = "feature.dirty-state", .name = "Dirty State", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 2, .max_processes = 0, .enabled = true },
+    .{ .id = "feature.dirty-state", .name = "Dirty State", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 2, .max_processes = 0, .status = .working, .enabled = true },
     .{ .id = "feature.compare-files", .name = "Compare Files", .mode = .dev, .default_enabled = false, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 0, .enabled = false },
     .{ .id = "feature.diff-editor", .name = "Diff Editor", .mode = .dev, .default_enabled = false, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .enabled = false },
     .{ .id = "feature.merge-editor", .name = "Merge Editor", .mode = .dev, .default_enabled = false, .startup_allowed = false, .memory_budget_mb = 24, .max_processes = 0, .enabled = false },

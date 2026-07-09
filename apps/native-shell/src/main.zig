@@ -173,6 +173,7 @@ test {
     _ = @import("workspace/edit_transforms.zig");
     _ = @import("workspace/problems.zig");
     _ = @import("workspace/problem_matchers.zig");
+    _ = @import("workspace/file_fingerprint.zig");
     _ = @import("workspace/outline.zig");
     _ = @import("workspace/go_to_def.zig");
     _ = @import("workspace/editor_view.zig");

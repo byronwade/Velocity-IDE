@@ -185,6 +185,15 @@
                   <button size="sm" variant="ghost" on-press="run_quick_open">Go to</button>
                   <button size="sm" variant="primary" on-press="save_file">Save</button>
                 </row>
+                <if test="{showDiskConflict}">
+                  <row gap="6" padding="7" cross="center" background="surface_subtle" label="External file change">
+                    <badge variant="secondary">disk changed</badge>
+                    <text size="sm" grow="1" wrap="false">This file changed outside Velocity. Your working copy is protected.</text>
+                    <button size="sm" variant="ghost" on-press="compare_with_saved">Compare</button>
+                    <button size="sm" variant="ghost" on-press="revert_file">Reload</button>
+                    <button size="sm" variant="secondary" on-press="overwrite_file">Overwrite</button>
+                  </row>
+                </if>
                 <if test="{showFindPanel}">
                   <row gap="4" cross="center">
                     <text-field text="{findQueryText}" placeholder="Find..." on-input="update_find_query" on-submit="run_find" grow="1" label="Find in file" />

@@ -2,7 +2,7 @@
 
 - **id:** `feature.dirty-state`
 - **mode:** `core`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `native`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `2`
@@ -11,7 +11,7 @@
 
 ## Rules
 
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+- Bounded working-copy storage keeps up to 8 open tabs (16 KiB each).
+- Dirty text survives tab switches, explorer rescans, and Save All.
+- Dirty tabs require explicit confirmation before close/bulk close.
+- Safe Save fingerprints disk content and blocks silent external overwrites.

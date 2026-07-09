@@ -125,6 +125,7 @@ pub const Msg = union(enum) {
     instant_safe_mode,
     edit_document: canvas.TextInputEvent,
     save_file,
+    overwrite_file,
     update_open_path: canvas.TextInputEvent,
     submit_open_path,
     update_terminal_command: canvas.TextInputEvent,
@@ -288,6 +289,7 @@ pub const Msg = union(enum) {
         "kill_all_workspace_processes",
         "instant_safe_mode",
         "save_file",
+        "overwrite_file",
         "submit_open_path",
         "run_terminal_command",
         "clear_terminal",
@@ -468,6 +470,7 @@ pub const Model = struct {
     io: ?std.Io = null,
     document: canvas.TextBuffer(max_document) = .{},
     document_dirty: bool = false,
+    disk_changed: bool = false,
     /// Single-level undo snapshot (heap; allocated on first edit).
     undo_storage: ?[]u8 = null,
     undo_len: usize = 0,
@@ -650,6 +653,7 @@ pub const Model = struct {
         "io",
         "document",
         "document_dirty",
+        "disk_changed",
         "undo_storage",
         "undo_len",
         "undo_available",
@@ -1178,6 +1182,10 @@ pub const Model = struct {
         return if (model.document_dirty) "dirty" else "clean";
     }
 
+    pub fn showDiskConflict(model: *const Model) bool {
+        return model.disk_changed and model.showIdeChrome();
+    }
+
     pub fn terminalStatus(model: *const Model) []const u8 {
         if (model.terminal) |t| return t.status;
         return "idle";
@@ -1274,6 +1282,7 @@ pub const plugin_registry = [_]PluginEntry{
 pub const commands = [_]CommandItem{
     .{ .id = "open_folder", .title = "Open Folder", .hint = "Cmd+O" },
     .{ .id = "save_file", .title = "Save File", .hint = "Cmd+S" },
+    .{ .id = "overwrite_file", .title = "Overwrite File Changed on Disk", .hint = "" },
     .{ .id = "save_all", .title = "Save All Dirty Tabs", .hint = "Cmd+Alt+S" },
     .{ .id = "create_new_file", .title = "New File", .hint = "" },
     .{ .id = "delete_selected_file", .title = "Delete Selected File", .hint = "" },
@@ -1431,8 +1440,11 @@ fn isStickyToast(text: []const u8) bool {
     if (std.mem.indexOf(u8, text, "Close again") != null) return true;
     if (std.mem.startsWith(u8, text, "Delete ")) return true;
     if (std.mem.startsWith(u8, text, "Close all")) return true;
+    if (std.mem.startsWith(u8, text, "Close other tabs")) return true;
     if (std.mem.startsWith(u8, text, "Unsaved")) return true;
     if (std.mem.startsWith(u8, text, "Discard")) return true;
+    if (std.mem.startsWith(u8, text, "File changed on disk")) return true;
+    if (std.mem.startsWith(u8, text, "Overwrite changed file")) return true;
     if (std.mem.startsWith(u8, text, "Clear recent")) return true;
     return false;
 }
@@ -1591,6 +1603,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 openFixtureWorkspace(model, "acme-dashboard");
             } else if (std.mem.eql(u8, id, "save_file")) {
                 saveActiveDocument(model);
+            } else if (std.mem.eql(u8, id, "overwrite_file")) {
+                overwriteActiveDocument(model);
             } else if (std.mem.eql(u8, id, "save_all")) {
                 saveAllDirtyTabs(model);
             } else if (std.mem.eql(u8, id, "create_new_file")) {
@@ -2057,6 +2071,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             }
         },
         .save_file => saveActiveDocument(model),
+        .overwrite_file => overwriteActiveDocument(model),
         .save_all => saveAllDirtyTabs(model),
         .update_open_path => |edit| model.open_path.apply(edit),
         .submit_open_path => {
@@ -2300,7 +2315,8 @@ fn ensureGitBuffers(model: *Model) !*git_status.GitBuffers {
 fn syncDocumentFromWorkspace(model: *Model) void {
     if (model.workspace) |ws| {
         model.document.set(ws.editorText());
-        model.document_dirty = false;
+        model.document_dirty = ws.activeTabDirty();
+        model.disk_changed = ws.activeFileChanged(modelIo(model));
         model.undo_available = false;
         model.undo_len = 0;
         model.editor_mode_label = "editable";
@@ -2315,6 +2331,7 @@ fn syncDocumentFromWorkspace(model: *Model) void {
 
 fn syncActiveTabDirty(model: *Model) void {
     if (model.workspace) |ws| {
+        ws.cacheActiveText(model.document.text());
         ws.setTabDirty(model.active_tab_id, model.document_dirty);
         model.open_tabs = ws.tabsSlice();
     }
@@ -2650,7 +2667,7 @@ fn revertActiveFile(model: *Model) void {
     const keep_storage = model.undo_storage;
     const keep_len = model.undo_len;
     const keep_avail = model.undo_available;
-    ws.openFileById(modelIo(model), model.active_tab_id) catch {
+    ws.reloadFileById(modelIo(model), model.active_tab_id) catch {
         model.toast = "Revert failed";
         return;
     };
@@ -2658,6 +2675,7 @@ fn revertActiveFile(model: *Model) void {
     if (model.workspace) |w| {
         model.document.set(w.editorText());
         model.document_dirty = false;
+        model.disk_changed = false;
         model.editor_mode_label = "editable";
         refreshDocStats(model);
         refreshBreadcrumb(model);
@@ -2738,14 +2756,49 @@ fn saveActiveDocument(model: *Model) void {
         model.toast = "No workspace";
         return;
     };
+    if (ws.activeFileChanged(modelIo(model))) {
+        model.disk_changed = true;
+        model.toast = "File changed on disk — Compare, Revert, or Overwrite";
+        return;
+    }
     applySaveHygiene(model);
-    ws.saveActiveFile(modelIo(model), model.document.text()) catch {
-        model.toast = "Save failed";
+    ws.saveActiveFile(modelIo(model), model.document.text()) catch |err| {
+        if (err == error.FileChanged) {
+            model.disk_changed = true;
+            model.toast = "File changed on disk — Compare, Revert, or Overwrite";
+        } else {
+            model.toast = "Save failed";
+        }
         return;
     };
     model.document_dirty = false;
+    model.disk_changed = false;
     model.toast = "Saved";
     syncActiveTabDirty(model);
+}
+
+fn overwriteActiveDocument(model: *Model) void {
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    if (!model.disk_changed) {
+        saveActiveDocument(model);
+        return;
+    }
+    if (!std.mem.startsWith(u8, model.toast, "Overwrite changed file")) {
+        model.toast = "Overwrite changed file? Confirm again";
+        return;
+    }
+    applySaveHygiene(model);
+    ws.saveActiveFileForce(modelIo(model), model.document.text()) catch {
+        model.toast = "Overwrite failed";
+        return;
+    };
+    model.document_dirty = false;
+    model.disk_changed = false;
+    syncActiveTabDirty(model);
+    model.toast = "Overwritten safely";
 }
 
 fn applySaveHygiene(model: *Model) void {
@@ -2781,30 +2834,32 @@ fn saveAllDirtyTabs(model: *Model) void {
         model.toast = "No workspace";
         return;
     };
-    var saved_active: bool = false;
     if (model.document_dirty) {
-        ws.saveActiveFile(modelIo(model), model.document.text()) catch {
-            model.toast = "Save All failed";
-            return;
-        };
-        model.document_dirty = false;
         syncActiveTabDirty(model);
-        saved_active = true;
     }
-    var cleared: u32 = 0;
+    var saved: u32 = 0;
     var i: u32 = 0;
     while (i < ws.tab_count) : (i += 1) {
         if (ws.tabs[i].dirty) {
-            ws.setTabDirty(ws.tabs[i].id, false);
-            cleared += 1;
+            ws.saveTabById(modelIo(model), ws.tabs[i].id) catch |err| {
+                if (err == error.FileChanged) {
+                    const msg = std.fmt.bufPrint(
+                        &model.action_toast_buf,
+                        "File changed on disk: {s}",
+                        .{ws.tabs[i].path},
+                    ) catch "File changed on disk";
+                    model.toast = msg;
+                } else {
+                    model.toast = "Save All failed";
+                }
+                return;
+            };
+            saved += 1;
         }
     }
+    model.document_dirty = false;
     model.open_tabs = ws.tabsSlice();
-    if (!saved_active and cleared == 0) {
-        model.toast = "Nothing dirty";
-    } else {
-        model.toast = "Saved all";
-    }
+    model.toast = if (saved == 0) "Nothing dirty" else "Saved all";
 }
 
 fn filterCommandPalette(model: *Model) void {
@@ -3992,6 +4047,17 @@ fn closeOtherTabs(model: *Model) void {
         return;
     };
     const keep = model.active_tab_id;
+    var has_dirty = false;
+    for (ws.tabsSlice()) |tab| {
+        if (tab.id != keep and tab.dirty) {
+            has_dirty = true;
+            break;
+        }
+    }
+    if (has_dirty and !std.mem.startsWith(u8, model.toast, "Close other tabs")) {
+        model.toast = "Close other tabs? Confirm again to discard dirty";
+        return;
+    }
     // Collect ids to close (copy first — close mutates tabs).
     var to_close: [8]u32 = undefined;
     var n: u32 = 0;
@@ -4004,8 +4070,6 @@ fn closeOtherTabs(model: *Model) void {
     }
     var i: u32 = 0;
     while (i < n) : (i += 1) {
-        // Force-close without dirty soft-confirm for bulk close-other.
-        if (model.document_dirty and model.active_tab_id == to_close[i]) model.document_dirty = false;
         // Remember + close
         const id = to_close[i];
         if (ws.findNode(id)) |node| {
@@ -4037,7 +4101,16 @@ fn closeAllTabs(model: *Model) void {
         model.toast = "No workspace";
         return;
     };
-    if (model.document_dirty) {
+    var has_dirty = model.document_dirty;
+    if (!has_dirty) {
+        for (ws.tabsSlice()) |tab| {
+            if (tab.dirty) {
+                has_dirty = true;
+                break;
+            }
+        }
+    }
+    if (has_dirty) {
         if (!std.mem.startsWith(u8, model.toast, "Close all")) {
             model.toast = "Close all? Confirm again to discard dirty";
             return;
@@ -4252,7 +4325,7 @@ fn discardWorkingTreeChanges(model: *Model) void {
     if (std.mem.eql(u8, status, "discarded changes") and !model.document_dirty) {
         if (model.workspace) |ws| {
             if (model.active_tab_id != 0) {
-                ws.openFileById(modelIo(model), model.active_tab_id) catch {};
+                ws.reloadFileById(modelIo(model), model.active_tab_id) catch {};
                 syncDocumentFromWorkspace(model);
             }
         }
@@ -4396,6 +4469,7 @@ fn compareWithSaved(model: *Model) void {
     const tn = @min(n, model.action_toast_buf.len);
     @memcpy(model.action_toast_buf[0..tn], status[0..tn]);
     model.toast = model.action_toast_buf[0..tn];
+    model.disk_changed = ws.activeFileChanged(modelIo(model));
 }
 
 fn copyGitBranch(model: *Model) void {
@@ -4637,9 +4711,12 @@ fn toggleFinalNewline(model: *Model) void {
 }
 
 fn closeTabById(model: *Model, id: u32) void {
-    if (model.document_dirty and model.active_tab_id == id) {
+    const tab_dirty = (model.document_dirty and model.active_tab_id == id) or
+        (if (model.workspace) |ws| ws.tabIsDirty(id) else false);
+    if (tab_dirty) {
         if (std.mem.startsWith(u8, model.toast, "Unsaved changes")) {
-            model.document_dirty = false;
+            if (model.active_tab_id == id) model.document_dirty = false;
+            if (model.workspace) |ws| ws.setTabDirty(id, false);
             model.toast = "Discarded unsaved changes";
         } else {
             model.toast = "Unsaved changes — Save, or Close again to discard";

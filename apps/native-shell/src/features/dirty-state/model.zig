@@ -1,11 +1,12 @@
-//! Dirty State feature model stub.
-//! Status: stub. Mode: core. Startup allowed: False.
+//! Dirty State feature model.
+//! Status: working. Mode: core. Startup allowed: False.
 
 pub const feature_id = "feature.dirty-state";
 pub const mode = "core";
 pub const memory_budget_mb: u32 = 2;
 pub const max_processes: u32 = 0;
 pub const startup_allowed = false;
+pub const status = "working";
 
 pub const Model = struct {
     enabled: bool = true,

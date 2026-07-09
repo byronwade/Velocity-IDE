@@ -40,7 +40,7 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | File Encoding | `feature.file-encoding` | core | P2 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
 | File Decorations | `feature.file-decorations` | dev | P2 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
 | Drag and Drop | `feature.drag-drop` | core | P2 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
-| Dirty State | `feature.dirty-state` | core | P0 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
+| Dirty State | `feature.dirty-state` | core | P0 | native | False | 2 | 0 | low | working | bounded per-tab copies + safe save | |
 | Compare Files | `feature.compare-files` | dev | P2 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
 | Diff Editor | `feature.diff-editor` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Merge Editor | `feature.merge-editor` | dev | P2 | native | False | 24 | 0 | low | stub | docs/11 + contrib | |

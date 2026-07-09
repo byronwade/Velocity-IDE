@@ -1124,3 +1124,93 @@ test "find navigation updates line peek" {
     main.update(&model, .find_next);
     try testing.expect(model.editor_focus_line == 4);
 }
+
+test "dirty tab text survives switching" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    var first: u32 = 0;
+    var second: u32 = 0;
+    for (model.file_nodes) |node| {
+        if (node.is_dir) continue;
+        if (first == 0) {
+            first = node.id;
+        } else {
+            second = node.id;
+            break;
+        }
+    }
+    try testing.expect(first != 0 and second != 0);
+    main.update(&model, .{ .select_file = first });
+    model.document.set("unsaved working copy\n");
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    main.update(&model, .{ .select_file = second });
+    main.update(&model, .{ .select_tab = first });
+    try testing.expectEqualStrings("unsaved working copy\n", model.document.text());
+    try testing.expect(model.document_dirty);
+}
+
+test "save all writes every dirty tab" {
+    const root = "zig-out/test-model-save-all";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "a\n" });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/b.txt", .data = "b\n" });
+
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    const ws = model.workspace.?;
+    const a = ws.findNodeByPath("a.txt").?;
+    const b = ws.findNodeByPath("b.txt").?;
+
+    main.update(&model, .{ .select_file = a.id });
+    model.document.set("a saved all\n");
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    main.update(&model, .{ .select_file = b.id });
+    model.document.set("b saved all\n");
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    main.update(&model, .save_all);
+    try testing.expectEqualStrings("Saved all", model.toast);
+
+    var out: [64]u8 = undefined;
+    const a_disk = try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out);
+    try testing.expectEqualStrings("a saved all\n", a_disk);
+    const b_disk = try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/b.txt", &out);
+    try testing.expectEqualStrings("b saved all\n", b_disk);
+}
+
+test "safe save blocks external changes and requires overwrite confirmation" {
+    const root = "zig-out/test-safe-save";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "original\n" });
+
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    model.document.set("working copy\n");
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "external edit\n" });
+
+    main.update(&model, .save_file);
+    try testing.expect(model.disk_changed);
+    try testing.expect(model.document_dirty);
+    try testing.expect(std.mem.startsWith(u8, model.toast, "File changed on disk"));
+    var out: [64]u8 = undefined;
+    const protected = try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out);
+    try testing.expectEqualStrings("external edit\n", protected);
+
+    main.update(&model, .overwrite_file);
+    try testing.expect(std.mem.startsWith(u8, model.toast, "Overwrite changed file"));
+    main.update(&model, .overwrite_file);
+    try testing.expect(!model.disk_changed);
+    try testing.expect(!model.document_dirty);
+    const overwritten = try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out);
+    try testing.expectEqualStrings("working copy\n", overwritten);
+}

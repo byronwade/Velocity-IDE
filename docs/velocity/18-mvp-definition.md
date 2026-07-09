@@ -9,8 +9,9 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Open workspace | Open a real folder path (fixture + typed path). OS dialog when Runtime hook exists. |
 | File tree | Bounded scan; skip `node_modules` / `.git` / vendor. |
 | Edit file | Native `<textarea>` bound to document buffer (dirty tracking). |
-| Save file | Write active document back to disk (Cmd/Ctrl+S / command palette). |
-| Save all | Clear dirty markers / save active dirty buffer across tabs. |
+| Save file | Safe Save blocks external overwrites; compare/reload/confirmed overwrite conflict bar. |
+| Save all | Writes every dirty tab's bounded working copy; stops on external conflicts. |
+| Per-tab working copies | Up to 8 bounded 16 KiB buffers survive tab switches and explorer rescans. |
 | New file | Create relative path in workspace from explorer. |
 | Delete file | Soft-confirm then delete selected file from explorer (files only). |
 | Rename file | Rename selected file via New-path field. |
@@ -43,10 +44,10 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Problem matchers | Bounded TypeScript/Zig/GCC-style parser with ANSI stripping, severity/code extraction, dedupe, and 64-item cap. |
 | SCM diff preview | Selecting a git entry loads bounded `git diff` text. |
 | Workspace counts | Explorer + status bar show file/node counts. |
-| Dirty tab marker | Active tab title shows ` *` while unsaved. |
+| Dirty tab marker | Each tab title shows ` *`; dirty text remains attached to its tab. |
 | Search hit count | Search status badge reports `N hits`. |
 | Terminal history | ↑/↓ recall last commands (in-session). |
-| Close Other / Close All | Tab bar + palette close non-active or all tabs (pin blocks close). |
+| Close Other / Close All | Pin-aware and soft-confirms before discarding any dirty working copy. |
 | Pin active tab | Pin/unpin active tab; pinned tab refuses close until unpinned. |
 | Save hygiene | Prefs: trim trailing whitespace + insert final newline on save. |
 | Text transforms | Upper / lower / sort lines / reverse lines on active document. |

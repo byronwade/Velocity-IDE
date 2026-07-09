@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const scanner = @import("scanner.zig");
+const file_fingerprint = @import("file_fingerprint.zig");
 
 pub const max_nodes = scanner.max_nodes;
 pub const max_open_tabs: usize = 8;
@@ -84,6 +85,11 @@ pub const WorkspaceBuffers = struct {
     tab_path_lens: [max_open_tabs]usize = [_]usize{0} ** max_open_tabs,
     tab_title_pool: [max_open_tabs][scanner.max_name_len]u8 = undefined,
     tab_title_lens: [max_open_tabs]usize = [_]usize{0} ** max_open_tabs,
+    /// Bounded in-memory working copies. This prevents tab switches from dropping edits.
+    tab_text_pool: [max_open_tabs][max_editor_bytes]u8 = undefined,
+    tab_text_lens: [max_open_tabs]usize = [_]usize{0} ** max_open_tabs,
+    tab_text_loaded: [max_open_tabs]bool = [_]bool{false} ** max_open_tabs,
+    tab_disk_fingerprints: [max_open_tabs]file_fingerprint.Fingerprint = [_]file_fingerprint.Fingerprint{.{}} ** max_open_tabs,
 
     editor_buf: [max_editor_bytes]u8 = undefined,
     editor_len: usize = 0,
@@ -123,11 +129,69 @@ pub const WorkspaceBuffers = struct {
         self.editor_truncated = false;
     }
 
+    pub fn cacheActiveText(self: *WorkspaceBuffers, text: []const u8) void {
+        const idx = self.activeTabIndex() orelse return;
+        const n = @min(text.len, self.tab_text_pool[idx].len);
+        @memcpy(self.tab_text_pool[idx][0..n], text[0..n]);
+        self.tab_text_lens[idx] = n;
+        self.tab_text_loaded[idx] = true;
+        self.setEditorText(text);
+    }
+
+    pub fn activeTabDirty(self: *const WorkspaceBuffers) bool {
+        const idx = self.activeTabIndex() orelse return false;
+        return self.tabs[idx].dirty;
+    }
+
+    pub fn tabIsDirty(self: *const WorkspaceBuffers, id: u32) bool {
+        const idx = self.tabIndexById(id) orelse return false;
+        return self.tabs[idx].dirty;
+    }
+
     pub fn saveActiveFile(self: *WorkspaceBuffers, io: std.Io, text: []const u8) !void {
+        if (self.activeFileChanged(io)) return error.FileChanged;
+        try self.saveActiveFileForce(io, text);
+    }
+
+    pub fn saveActiveFileForce(self: *WorkspaceBuffers, io: std.Io, text: []const u8) !void {
         const rel = self.editorPath();
         if (rel.len == 0) return error.NotFound;
         try scanner.writeTextFile(io, self.rootPath(), rel, text);
-        self.setEditorText(text);
+        self.cacheActiveText(text);
+        if (self.activeTabIndex()) |idx| {
+            self.tab_disk_fingerprints[idx] = file_fingerprint.ofBytes(text);
+        }
+    }
+
+    pub fn activeFileChanged(self: *const WorkspaceBuffers, io: std.Io) bool {
+        const idx = self.activeTabIndex() orelse return false;
+        return file_fingerprint.changed(
+            io,
+            self.rootPath(),
+            self.tabs[idx].path,
+            self.tab_disk_fingerprints[idx],
+        );
+    }
+
+    pub fn saveTabById(self: *WorkspaceBuffers, io: std.Io, id: u32) !void {
+        const idx = self.tabIndexById(id) orelse return error.NotFound;
+        if (!self.tab_text_loaded[idx]) return error.NotFound;
+        if (file_fingerprint.changed(
+            io,
+            self.rootPath(),
+            self.tabs[idx].path,
+            self.tab_disk_fingerprints[idx],
+        )) return error.FileChanged;
+        try scanner.writeTextFile(
+            io,
+            self.rootPath(),
+            self.tabs[idx].path,
+            self.tab_text_pool[idx][0..self.tab_text_lens[idx]],
+        );
+        self.tab_disk_fingerprints[idx] = file_fingerprint.ofBytes(
+            self.tab_text_pool[idx][0..self.tab_text_lens[idx]],
+        );
+        self.setTabDirty(id, false);
     }
 
     /// Rescan the workspace tree while preserving open tabs (matched by path).
@@ -140,6 +204,9 @@ pub const WorkspaceBuffers = struct {
         var saved_paths: [max_open_tabs][scanner.max_rel_path_len]u8 = undefined;
         var saved_lens: [max_open_tabs]usize = [_]usize{0} ** max_open_tabs;
         var saved_dirty: [max_open_tabs]bool = [_]bool{false} ** max_open_tabs;
+        var saved_text: [max_open_tabs][max_editor_bytes]u8 = undefined;
+        var saved_text_lens: [max_open_tabs]usize = [_]usize{0} ** max_open_tabs;
+        var saved_fingerprints: [max_open_tabs]file_fingerprint.Fingerprint = [_]file_fingerprint.Fingerprint{.{}} ** max_open_tabs;
         var saved_count: u32 = 0;
         for (self.tabsSlice()) |tab| {
             if (saved_count >= max_open_tabs) break;
@@ -147,6 +214,12 @@ pub const WorkspaceBuffers = struct {
             @memcpy(saved_paths[saved_count][0..n], tab.path[0..n]);
             saved_lens[saved_count] = n;
             saved_dirty[saved_count] = tab.dirty;
+            if (tab.dirty) {
+                const text_len = self.tab_text_lens[saved_count];
+                @memcpy(saved_text[saved_count][0..text_len], self.tab_text_pool[saved_count][0..text_len]);
+                saved_text_lens[saved_count] = text_len;
+                saved_fingerprints[saved_count] = self.tab_disk_fingerprints[saved_count];
+            }
             saved_count += 1;
         }
 
@@ -176,7 +249,11 @@ pub const WorkspaceBuffers = struct {
             const path = saved_paths[i][0..saved_lens[i]];
             if (self.findNodeByPath(path)) |node| {
                 self.openFileById(io, node.id) catch continue;
-                if (saved_dirty[i]) self.setTabDirty(node.id, true);
+                if (saved_dirty[i]) {
+                    self.cacheActiveText(saved_text[i][0..saved_text_lens[i]]);
+                    if (self.activeTabIndex()) |idx| self.tab_disk_fingerprints[idx] = saved_fingerprints[i];
+                    self.setTabDirty(node.id, true);
+                }
             }
         }
 
@@ -362,8 +439,12 @@ pub const WorkspaceBuffers = struct {
                     self.tabs[j] = self.tabs[j + 1];
                     self.tab_path_lens[j] = self.tab_path_lens[j + 1];
                     self.tab_title_lens[j] = self.tab_title_lens[j + 1];
+                    self.tab_text_lens[j] = self.tab_text_lens[j + 1];
+                    self.tab_text_loaded[j] = self.tab_text_loaded[j + 1];
+                    self.tab_disk_fingerprints[j] = self.tab_disk_fingerprints[j + 1];
                     @memcpy(self.tab_path_pool[j][0..self.tab_path_lens[j]], self.tab_path_pool[j + 1][0..self.tab_path_lens[j]]);
                     @memcpy(self.tab_title_pool[j][0..self.tab_title_lens[j]], self.tab_title_pool[j + 1][0..self.tab_title_lens[j]]);
+                    @memcpy(self.tab_text_pool[j][0..self.tab_text_lens[j]], self.tab_text_pool[j + 1][0..self.tab_text_lens[j]]);
                     // Re-bind slices after move
                     self.tabs[j].path = self.tab_path_pool[j][0..self.tab_path_lens[j]];
                     self.tabs[j].title = self.tab_title_pool[j][0..self.tab_title_lens[j]];
@@ -385,6 +466,13 @@ pub const WorkspaceBuffers = struct {
         self.editor_truncated = false;
         self.editor_len = 0;
 
+        if (self.tabIndexById(id)) |existing_idx| {
+            if (self.tab_text_loaded[existing_idx]) {
+                self.setEditorText(self.tab_text_pool[existing_idx][0..self.tab_text_lens[existing_idx]]);
+                return;
+            }
+        }
+
         const n = scanner.readTextFile(io, self.rootPath(), node.path, self.editor_buf[0..]) catch |err| {
             if (err == error.BinaryFile) {
                 self.editor_truncated = true;
@@ -394,11 +482,22 @@ pub const WorkspaceBuffers = struct {
                 @memcpy(self.editor_buf[0..msg.len], msg);
                 self.editor_len = msg.len;
             }
-            try self.ensureTab(node);
+            const idx = try self.ensureTab(node);
+            self.tab_text_loaded[idx] = false;
             return;
         };
         self.editor_len = n;
-        try self.ensureTab(node);
+        const idx = try self.ensureTab(node);
+        @memcpy(self.tab_text_pool[idx][0..n], self.editor_buf[0..n]);
+        self.tab_text_lens[idx] = n;
+        self.tab_text_loaded[idx] = true;
+        self.tab_disk_fingerprints[idx] = file_fingerprint.ofBytes(self.editor_buf[0..n]);
+    }
+
+    pub fn reloadFileById(self: *WorkspaceBuffers, io: std.Io, id: u32) !void {
+        if (self.tabIndexById(id)) |idx| self.tab_text_loaded[idx] = false;
+        try self.openFileById(io, id);
+        self.setTabDirty(id, false);
     }
 
     pub fn setTabDirty(self: *WorkspaceBuffers, id: u32, dirty: bool) void {
@@ -429,12 +528,12 @@ pub const WorkspaceBuffers = struct {
         }
     }
 
-    fn ensureTab(self: *WorkspaceBuffers, node: FileNode) !void {
+    fn ensureTab(self: *WorkspaceBuffers, node: FileNode) !usize {
         // Reuse existing tab for path
         var i: u32 = 0;
         while (i < self.tab_count) : (i += 1) {
             if (std.mem.eql(u8, self.tabs[i].path, node.path)) {
-                return;
+                return i;
             }
         }
         if (self.tab_count >= max_open_tabs) {
@@ -444,8 +543,12 @@ pub const WorkspaceBuffers = struct {
                 self.tabs[j] = self.tabs[j + 1];
                 self.tab_path_lens[j] = self.tab_path_lens[j + 1];
                 self.tab_title_lens[j] = self.tab_title_lens[j + 1];
+                self.tab_text_lens[j] = self.tab_text_lens[j + 1];
+                self.tab_text_loaded[j] = self.tab_text_loaded[j + 1];
+                self.tab_disk_fingerprints[j] = self.tab_disk_fingerprints[j + 1];
                 @memcpy(self.tab_path_pool[j][0..self.tab_path_lens[j]], self.tab_path_pool[j + 1][0..self.tab_path_lens[j]]);
                 @memcpy(self.tab_title_pool[j][0..self.tab_title_lens[j]], self.tab_title_pool[j + 1][0..self.tab_title_lens[j]]);
+                @memcpy(self.tab_text_pool[j][0..self.tab_text_lens[j]], self.tab_text_pool[j + 1][0..self.tab_text_lens[j]]);
             }
             self.tab_count -= 1;
         }
@@ -464,7 +567,29 @@ pub const WorkspaceBuffers = struct {
             .language = scanner.languageForPath(node.path),
             .dirty = false,
         };
+        self.tab_text_lens[idx] = 0;
+        self.tab_text_loaded[idx] = false;
+        self.tab_disk_fingerprints[idx] = .{};
         self.tab_count += 1;
+        return idx;
+    }
+
+    fn activeTabIndex(self: *const WorkspaceBuffers) ?usize {
+        const path = self.editorPath();
+        if (path.len == 0) return null;
+        var i: usize = 0;
+        while (i < self.tab_count) : (i += 1) {
+            if (std.mem.eql(u8, self.tabs[i].path, path)) return i;
+        }
+        return null;
+    }
+
+    fn tabIndexById(self: *const WorkspaceBuffers, id: u32) ?usize {
+        var i: usize = 0;
+        while (i < self.tab_count) : (i += 1) {
+            if (self.tabs[i].id == id) return i;
+        }
+        return null;
     }
 };
 
@@ -492,4 +617,38 @@ test "scan fixture skips node_modules" {
         try std.testing.expect(!std.mem.eql(u8, n.name, ".git"));
         try std.testing.expect(!std.mem.startsWith(u8, n.path, "node_modules/"));
     }
+}
+
+test "tab working copies survive switches and save independently" {
+    const root = "zig-out/test-tab-working-copies";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "a disk\n" });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/b.txt", .data = "b disk\n" });
+
+    const ws = try std.testing.allocator.create(WorkspaceBuffers);
+    defer std.testing.allocator.destroy(ws);
+    ws.* = .{};
+    _ = try ws.openPath(std.testing.io, root);
+    const a = ws.findNodeByPath("a.txt").?;
+    const b = ws.findNodeByPath("b.txt").?;
+
+    try ws.openFileById(std.testing.io, a.id);
+    ws.cacheActiveText("a edited\n");
+    ws.setTabDirty(a.id, true);
+    try ws.openFileById(std.testing.io, b.id);
+    ws.cacheActiveText("b edited\n");
+    ws.setTabDirty(b.id, true);
+    try ws.openFileById(std.testing.io, a.id);
+    try std.testing.expectEqualStrings("a edited\n", ws.editorText());
+    try std.testing.expect(ws.activeTabDirty());
+
+    try ws.saveTabById(std.testing.io, a.id);
+    try ws.saveTabById(std.testing.io, b.id);
+    var out: [32]u8 = undefined;
+    const a_disk = try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out);
+    try std.testing.expectEqualStrings("a edited\n", a_disk);
+    const b_disk = try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/b.txt", &out);
+    try std.testing.expectEqualStrings("b edited\n", b_disk);
 }
