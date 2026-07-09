@@ -69,12 +69,7 @@ pub fn onCommand(name: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "quick_open")) return .run_quick_open;
     if (std.mem.eql(u8, name, "find_in_file")) return .run_find;
     if (std.mem.eql(u8, name, "goto_line")) return .goto_line;
-    if (std.mem.eql(u8, name, "escape")) {
-        // Prefer closing overlays in priority order via model — escape closes palette;
-        // quick open also listens via close_quick_open from UI. Map escape to palette close
-        // and also close quick open by sending close_quick_open when needed from update.
-        return .close_command_palette;
-    }
+    if (std.mem.eql(u8, name, "escape")) return .dismiss_overlay;
     if (std.mem.eql(u8, name, "toggle_terminal")) return .toggle_terminal;
     if (std.mem.eql(u8, name, "save_file")) return .save_file;
     return null;

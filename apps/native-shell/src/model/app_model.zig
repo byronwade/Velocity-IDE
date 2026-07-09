@@ -72,6 +72,7 @@ pub const CommandItem = struct {
 pub const Msg = union(enum) {
     open_command_palette,
     close_command_palette,
+    dismiss_overlay,
     update_command_query: canvas.TextInputEvent,
     run_command: []const u8,
     select_activity: Activity,
@@ -130,6 +131,7 @@ pub const Msg = union(enum) {
     refresh_recent,
     toggle_auto_save,
     toggle_find_case,
+    duplicate_line,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -171,6 +173,8 @@ pub const Msg = union(enum) {
         "refresh_recent",
         "toggle_auto_save",
         "toggle_find_case",
+        "duplicate_line",
+        "dismiss_overlay",
         "terminal_line",
         "terminal_exit",
     };
@@ -201,7 +205,10 @@ pub const Model = struct {
     mock_label: []const u8 = "mock",
     workspace_from_disk: bool = false,
     workspace_node_count: u32 = 0,
+    workspace_file_count: u32 = 0,
     workspace_scan_error: []const u8 = "",
+    workspace_files_label: []const u8 = "",
+    workspace_files_buf: [48]u8 = undefined,
     workspace: ?*workspace_store.WorkspaceBuffers = null,
     /// Runtime Io from process.Init; tests fall back to std.testing.io.
     io: ?std.Io = null,
@@ -321,6 +328,12 @@ pub const Model = struct {
         "workspace",
         "workspace_from_disk",
         "workspace_scan_error",
+        "workspace_node_count",
+        "workspace_file_count",
+        "workspace_files_label",
+        "workspace_files_buf",
+        "status_memory",
+        "status_startup",
         "io",
         "document",
         "document_dirty",
@@ -544,6 +557,10 @@ pub const Model = struct {
         return model.replace_text.text();
     }
 
+    pub fn workspaceFilesLabel(model: *const Model) []const u8 {
+        return model.workspace_files_label;
+    }
+
     pub fn documentStats(model: *const Model) []const u8 {
         return model.doc_stats;
     }
@@ -698,6 +715,7 @@ pub const commands = [_]CommandItem{
     .{ .id = "refresh_git", .title = "Refresh Git Status", .hint = "" },
     .{ .id = "reopen_last_workspace", .title = "Reopen Last Workspace", .hint = "" },
     .{ .id = "clear_find", .title = "Clear Find", .hint = "" },
+    .{ .id = "duplicate_line", .title = "Duplicate Document (append copy)", .hint = "" },
     .{ .id = "toggle_agent", .title = "Toggle Agent Panel", .hint = "Cmd+." },
     .{ .id = "open_plugins", .title = "Open Plugin Registry", .hint = "" },
     .{ .id = "open_settings", .title = "Open Settings", .hint = "Cmd+," },
@@ -749,6 +767,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.command_query.clear();
             model.quick_open_visible = false;
         },
+        .dismiss_overlay => dismissOverlay(model),
         .update_command_query => |edit| model.command_query.apply(edit),
         .run_command => |id| {
             model.command_palette_open = false;
@@ -818,6 +837,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 reopenLastWorkspace(model);
             } else if (std.mem.eql(u8, id, "clear_find")) {
                 clearFind(model);
+            } else if (std.mem.eql(u8, id, "duplicate_line")) {
+                duplicateDocumentTail(model);
             } else if (std.mem.eql(u8, id, "open_feature_matrix")) {
                 model.current_view = .features;
                 model.selected_activity = .features;
@@ -1026,6 +1047,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .refresh_recent => syncRecentFromPrefs(model),
         .toggle_auto_save => toggleAutoSave(model),
         .toggle_find_case => toggleFindCase(model),
+        .duplicate_line => duplicateDocumentTail(model),
         .update_quick_query => |edit| {
             model.quick_query.apply(edit);
             filterQuickOpen(model);
@@ -1257,6 +1279,7 @@ fn applyWorkspaceMeta(model: *Model, ws: *workspace_store.WorkspaceBuffers, meta
         model.status_language = ws.tabs[0].language;
     }
     syncDocumentFromWorkspace(model);
+    refreshWorkspaceFileCount(model);
     model.current_view = .ide;
     model.selected_activity = .explorer;
     model.features_loaded = @max(model.features_loaded, 9);
@@ -1471,6 +1494,67 @@ fn clearFind(model: *Model) void {
     model.toast = "Find cleared";
 }
 
+fn dismissOverlay(model: *Model) void {
+    if (model.command_palette_open) {
+        model.command_palette_open = false;
+        model.command_query.clear();
+        model.toast = "";
+        return;
+    }
+    if (model.quick_open_visible) {
+        model.quick_open_visible = false;
+        model.toast = "";
+        return;
+    }
+    if (model.find_query.text().len > 0 or model.find_matches.len > 0) {
+        clearFind(model);
+        return;
+    }
+    model.toast = "";
+}
+
+fn refreshWorkspaceFileCount(model: *Model) void {
+    var files: u32 = 0;
+    for (model.file_nodes) |n| {
+        if (!n.is_dir) files += 1;
+    }
+    model.workspace_file_count = files;
+    const label = std.fmt.bufPrint(&model.workspace_files_buf, "{d} files / {d} nodes", .{ files, model.workspace_node_count }) catch "files";
+    model.workspace_files_label = label;
+}
+
+fn duplicateDocumentTail(model: *Model) void {
+    const text = model.document.text();
+    if (text.len == 0) {
+        model.toast = "Nothing to duplicate";
+        return;
+    }
+    // Append a blank line + copy of the last non-empty line (MVP stand-in for duplicate line).
+    var last_start: usize = 0;
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        if (text[i] == '\n') last_start = i + 1;
+    }
+    const last_line = text[last_start..];
+    if (last_line.len == 0) {
+        model.toast = "Empty last line";
+        return;
+    }
+    var out: [max_document]u8 = undefined;
+    if (text.len + 1 + last_line.len > out.len) {
+        model.toast = "Document too large";
+        return;
+    }
+    @memcpy(out[0..text.len], text);
+    out[text.len] = '\n';
+    @memcpy(out[text.len + 1 ..][0..last_line.len], last_line);
+    model.document.set(out[0 .. text.len + 1 + last_line.len]);
+    model.document_dirty = true;
+    refreshDocStats(model);
+    if (model.auto_save and model.workspace_from_disk) saveActiveDocument(model);
+    model.toast = "Duplicated last line";
+}
+
 fn reopenLastWorkspace(model: *Model) void {
     ensurePrefsLoaded(model);
     const path = model.prefs.lastPathSlice();
@@ -1502,6 +1586,7 @@ fn createNewFile(model: *Model) void {
     model.file_nodes = ws.fileNodesSlice();
     model.open_tabs = ws.tabsSlice();
     model.workspace_node_count = ws.file_node_count;
+    refreshWorkspaceFileCount(model);
     model.selected_file_id = id;
     model.active_tab_id = id;
     model.status_language = workspace_store.scannerLanguage(rel);
@@ -1538,6 +1623,7 @@ fn deleteSelectedFile(model: *Model) void {
     model.file_nodes = ws.fileNodesSlice();
     model.open_tabs = ws.tabsSlice();
     model.workspace_node_count = ws.file_node_count;
+    refreshWorkspaceFileCount(model);
     if (ws.tab_count > 0) {
         model.active_tab_id = ws.tabs[0].id;
         model.selected_file_id = ws.tabs[0].id;
@@ -1573,6 +1659,7 @@ fn renameSelectedFile(model: *Model) void {
     model.file_nodes = ws.fileNodesSlice();
     model.open_tabs = ws.tabsSlice();
     model.workspace_node_count = ws.file_node_count;
+    refreshWorkspaceFileCount(model);
     model.selected_file_id = id;
     model.active_tab_id = id;
     model.status_language = workspace_store.scannerLanguage(new_rel);

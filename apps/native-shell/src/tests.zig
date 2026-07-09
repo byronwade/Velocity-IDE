@@ -413,3 +413,32 @@ test "open git entry missing is graceful" {
     main.update(&model, .{ .open_git_entry = 1 });
     try testing.expect(std.mem.indexOf(u8, model.toast, "not found") != null or std.mem.indexOf(u8, model.toast, "Git") != null);
 }
+
+test "dismiss overlay closes quick open then find" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .run_quick_open);
+    try testing.expect(model.quick_open_visible);
+    main.update(&model, .dismiss_overlay);
+    try testing.expect(!model.quick_open_visible);
+    model.find_query.set("Chart");
+    main.update(&model, .run_find);
+    try testing.expect(model.find_matches.len > 0);
+    main.update(&model, .dismiss_overlay);
+    try testing.expectEqual(@as(usize, 0), model.find_matches.len);
+}
+
+test "duplicate last line appends copy" {
+    var model = main.initialModel();
+    model.document.set("one\ntwo");
+    main.update(&model, .duplicate_line);
+    try testing.expectEqualStrings("one\ntwo\ntwo", model.document.text());
+    try testing.expect(model.document_dirty);
+}
+
+test "workspace file count label after open" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    try testing.expect(model.workspace_file_count > 0);
+    try testing.expect(std.mem.indexOf(u8, model.workspace_files_label, "files") != null);
+}
