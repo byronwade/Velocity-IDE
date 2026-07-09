@@ -106,7 +106,10 @@
               <for each="open_tabs" key="id" as="t">
                 <button size="sm" variant="ghost" selected="{t.id == active_tab_id}" on-press="select_tab:{t.id}">{t.title}</button>
               </for>
+              <button size="sm" variant="ghost" on-press="close_active_tab">x</button>
               <spacer grow="1" />
+              <text-field text="{gotoLineText}" placeholder="Line" on-input="update_goto_line" on-submit="goto_line" width="72" label="Go to line" />
+              <button size="sm" variant="ghost" on-press="goto_line">Go</button>
               <button size="sm" variant="ghost" on-press="toggle_agent_panel">Agent</button>
               <button size="sm" variant="ghost" on-press="toggle_terminal">Terminal</button>
             </row>

@@ -287,3 +287,21 @@ test "prefs persist theme" {
     main.update(&model2, .save_prefs);
     std.Io.Dir.cwd().deleteTree(std.testing.io, ".velocity") catch {};
 }
+
+test "goto line reports position" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.goto_line_input.set("2");
+    main.update(&model, .goto_line);
+    try testing.expect(std.mem.indexOf(u8, model.toast, "Line 2") != null);
+}
+
+test "close tab soft-confirms dirty then discards" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.document_dirty = true;
+    main.update(&model, .close_active_tab);
+    try testing.expect(std.mem.startsWith(u8, model.toast, "Unsaved changes"));
+    main.update(&model, .close_active_tab);
+    try testing.expect(!model.document_dirty);
+}

@@ -25,6 +25,7 @@ pub const max_search_query = workspace_search.max_query;
 pub const max_new_file_path = 160;
 pub const max_find_query = find_in_doc.max_query;
 pub const max_quick_query = quick_open.max_query;
+pub const max_goto_line = 12;
 pub const SearchHit = workspace_search.SearchHit;
 pub const GitEntry = git_status.GitEntry;
 pub const DocMatch = find_in_doc.DocMatch;
@@ -114,6 +115,9 @@ pub const Msg = union(enum) {
     open_quick_item: u32,
     close_quick_open,
     save_prefs,
+    update_goto_line: canvas.TextInputEvent,
+    goto_line,
+    close_active_tab,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -145,6 +149,8 @@ pub const Msg = union(enum) {
         "run_quick_open",
         "close_quick_open",
         "save_prefs",
+        "goto_line",
+        "close_active_tab",
         "terminal_line",
         "terminal_exit",
     };
@@ -202,6 +208,9 @@ pub const Model = struct {
     quick_bufs: ?*quick_open.QuickOpenBuffers = null,
     quick_items: []const QuickItem = &.{},
     quick_open_visible: bool = false,
+    goto_line_input: canvas.TextBuffer(max_goto_line) = .{},
+    goto_line_label: []const u8 = "",
+    goto_line_buf: [32]u8 = undefined,
     prefs: prefs_mod.Prefs = .{},
     prefs_loaded: bool = false,
     terminal_effect_key: u64 = 0,
@@ -293,6 +302,9 @@ pub const Model = struct {
         "find_matches",
         "quick_query",
         "quick_bufs",
+        "goto_line_input",
+        "goto_line_buf",
+        "goto_line_label",
         "prefs",
         "prefs_loaded",
         "terminal_effect_key",
@@ -480,6 +492,10 @@ pub const Model = struct {
         return model.quick_query.text();
     }
 
+    pub fn gotoLineText(model: *const Model) []const u8 {
+        return model.goto_line_input.text();
+    }
+
     pub fn searchStatus(model: *const Model) []const u8 {
         if (model.search_bufs) |s| return s.status;
         return "idle";
@@ -585,6 +601,8 @@ pub const commands = [_]CommandItem{
     .{ .id = "rename_selected_file", .title = "Rename Selected File", .hint = "" },
     .{ .id = "quick_open", .title = "Quick Open File", .hint = "Cmd+P" },
     .{ .id = "find_in_file", .title = "Find in File", .hint = "Cmd+F" },
+    .{ .id = "goto_line", .title = "Go to Line", .hint = "Cmd+G" },
+    .{ .id = "close_active_tab", .title = "Close Active Tab", .hint = "" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
     .{ .id = "run_terminal", .title = "Run Terminal Command", .hint = "" },
     .{ .id = "run_search", .title = "Search Workspace", .hint = "" },
@@ -679,6 +697,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 showQuickOpen(model);
             } else if (std.mem.eql(u8, id, "find_in_file")) {
                 runFindInDocument(model);
+            } else if (std.mem.eql(u8, id, "goto_line")) {
+                runGotoLine(model);
+            } else if (std.mem.eql(u8, id, "close_active_tab")) {
+                closeActiveTab(model);
             } else if (std.mem.eql(u8, id, "run_terminal")) {
                 runTerminalFromModel(model, fx);
             } else if (std.mem.eql(u8, id, "run_search")) {
@@ -769,7 +791,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.active_tab_id = id;
             model.current_view = .ide;
         },
-        .close_tab => {},
+        .close_tab => |id| closeTabById(model, id),
+        .close_active_tab => closeActiveTab(model),
         .select_tab => |id| {
             model.active_tab_id = id;
             if (model.workspace_from_disk) {
@@ -884,6 +907,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.toast = "";
         },
         .save_prefs => persistPrefs(model),
+        .update_goto_line => |edit| model.goto_line_input.apply(edit),
+        .goto_line => runGotoLine(model),
         .terminal_line => |line| {
             if (ensureTerminalBuffers(model)) |term| {
                 term.pushLine(line.line);
@@ -1343,6 +1368,69 @@ fn openQuickItem(model: *Model, item_id: u32) void {
         }
     }
     model.toast = "File not found";
+}
+
+fn closeActiveTab(model: *Model) void {
+    closeTabById(model, model.active_tab_id);
+}
+
+fn closeTabById(model: *Model, id: u32) void {
+    if (model.document_dirty and model.active_tab_id == id) {
+        if (std.mem.startsWith(u8, model.toast, "Unsaved changes")) {
+            model.document_dirty = false;
+            model.toast = "Discarded unsaved changes";
+        } else {
+            model.toast = "Unsaved changes — Save, or Close again to discard";
+            return;
+        }
+    }
+    if (model.workspace_from_disk) {
+        if (model.workspace) |ws| {
+            ws.closeTab(id);
+            model.open_tabs = ws.tabsSlice();
+            if (ws.tab_count > 0) {
+                model.active_tab_id = ws.tabs[ws.tab_count - 1].id;
+                model.selected_file_id = model.active_tab_id;
+                ws.openFileById(modelIo(model), model.active_tab_id) catch {};
+                syncDocumentFromWorkspace(model);
+            } else {
+                model.document.clear();
+                model.active_tab_id = 0;
+            }
+            model.toast = "Tab closed";
+            return;
+        }
+    }
+    model.toast = "Tab closed (mock)";
+}
+
+fn runGotoLine(model: *Model) void {
+    const text = model.goto_line_input.text();
+    if (text.len == 0) {
+        model.toast = "Enter a line number";
+        return;
+    }
+    var line_no: u32 = 0;
+    for (text) |c| {
+        if (c < '0' or c > '9') {
+            model.toast = "Invalid line number";
+            return;
+        }
+        line_no = line_no * 10 + (c - '0');
+        if (line_no > 1_000_000) break;
+    }
+    if (line_no == 0) {
+        model.toast = "Line must be >= 1";
+        return;
+    }
+    var total: u32 = 1;
+    for (model.document.text()) |c| {
+        if (c == '\n') total += 1;
+    }
+    const target = @min(line_no, total);
+    const label = std.fmt.bufPrint(&model.goto_line_buf, "Line {d}/{d}", .{ target, total }) catch "line";
+    model.goto_line_label = label;
+    model.toast = model.goto_line_label;
 }
 
 fn ensurePrefsLoaded(model: *Model) void {

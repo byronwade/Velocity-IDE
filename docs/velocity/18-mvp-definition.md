@@ -16,6 +16,8 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Find in file | Match list + next/prev in active document. |
 | Quick Open | Cmd+P filter workspace files by name/path. |
 | Prefs | Persist theme, last path, panel visibility under `.velocity/prefs.txt`. |
+| Go to line | Cmd+G jump label for active document line count. |
+| Close tab | Soft confirm when dirty; second close discards. |
 | Search | Bounded in-process text search over scanned files (no ripgrep). |
 | SCM | `git status --porcelain` + branch via governor (lazy on SCM panel). |
 | Command palette | Open Folder, Save, Search, Git refresh, Terminal, theme, safe mode. |

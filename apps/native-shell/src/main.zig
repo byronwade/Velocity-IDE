@@ -58,6 +58,7 @@ pub const app_shortcuts = [_]native_sdk.Shortcut{
     .{ .id = "command_palette", .key = "k", .modifiers = .{ .primary = true } },
     .{ .id = "quick_open", .key = "p", .modifiers = .{ .primary = true } },
     .{ .id = "find_in_file", .key = "f", .modifiers = .{ .primary = true } },
+    .{ .id = "goto_line", .key = "g", .modifiers = .{ .primary = true } },
     .{ .id = "escape", .key = "escape" },
     .{ .id = "toggle_terminal", .key = "`", .modifiers = .{ .control = true } },
     .{ .id = "save_file", .key = "s", .modifiers = .{ .primary = true } },
@@ -67,6 +68,7 @@ pub fn onCommand(name: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "command_palette")) return .open_command_palette;
     if (std.mem.eql(u8, name, "quick_open")) return .run_quick_open;
     if (std.mem.eql(u8, name, "find_in_file")) return .run_find;
+    if (std.mem.eql(u8, name, "goto_line")) return .goto_line;
     if (std.mem.eql(u8, name, "escape")) {
         // Prefer closing overlays in priority order via model — escape closes palette;
         // quick open also listens via close_quick_open from UI. Map escape to palette close

@@ -254,6 +254,27 @@ pub const WorkspaceBuffers = struct {
         return null;
     }
 
+    pub fn closeTab(self: *WorkspaceBuffers, id: u32) void {
+        var i: u32 = 0;
+        while (i < self.tab_count) : (i += 1) {
+            if (self.tabs[i].id == id) {
+                var j = i;
+                while (j + 1 < self.tab_count) : (j += 1) {
+                    self.tabs[j] = self.tabs[j + 1];
+                    self.tab_path_lens[j] = self.tab_path_lens[j + 1];
+                    self.tab_title_lens[j] = self.tab_title_lens[j + 1];
+                    @memcpy(self.tab_path_pool[j][0..self.tab_path_lens[j]], self.tab_path_pool[j + 1][0..self.tab_path_lens[j]]);
+                    @memcpy(self.tab_title_pool[j][0..self.tab_title_lens[j]], self.tab_title_pool[j + 1][0..self.tab_title_lens[j]]);
+                    // Re-bind slices after move
+                    self.tabs[j].path = self.tab_path_pool[j][0..self.tab_path_lens[j]];
+                    self.tabs[j].title = self.tab_title_pool[j][0..self.tab_title_lens[j]];
+                }
+                self.tab_count -= 1;
+                return;
+            }
+        }
+    }
+
     pub fn openFileById(self: *WorkspaceBuffers, io: std.Io, id: u32) !void {
         const node = self.findNode(id) orelse return error.NotFound;
         if (node.is_dir) return;
