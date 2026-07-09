@@ -788,4 +788,41 @@ test "trim blank lines and scm stage commit messages" {
     try testing.expectEqualStrings("not a git root", model.toast);
     main.update(&model, .commit_changes);
     try testing.expectEqualStrings("not a git root", model.toast);
+    main.update(&model, .unstage_all);
+    try testing.expectEqualStrings("not a git root", model.toast);
+    main.update(&model, .discard_changes);
+    try testing.expectEqualStrings("Discard working tree? Confirm again", model.toast);
+    main.update(&model, .discard_changes);
+    try testing.expectEqualStrings("not a git root", model.toast);
+}
+
+test "refresh explorer and close saved tabs" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    const before_nodes = model.workspace_node_count;
+    try testing.expect(before_nodes > 0);
+    const active = model.active_tab_id;
+    main.update(&model, .refresh_explorer);
+    try testing.expectEqualStrings("Explorer refreshed", model.toast);
+    try testing.expect(model.workspace_node_count > 0);
+    try testing.expect(model.active_tab_id != 0);
+    _ = active;
+    // Open a second file if available, then close saved (non-active clean) tabs.
+    if (model.file_nodes.len > 1) {
+        var opened_second = false;
+        for (model.file_nodes) |n| {
+            if (!n.is_dir and n.id != model.active_tab_id) {
+                main.update(&model, .{ .select_file = n.id });
+                opened_second = true;
+                break;
+            }
+        }
+        if (opened_second and model.open_tabs.len >= 2) {
+            // Switch back to first tab so second is a saved non-active tab.
+            const first = model.open_tabs[0].id;
+            main.update(&model, .{ .select_tab = first });
+            main.update(&model, .close_saved_tabs);
+            try testing.expect(std.mem.indexOf(u8, model.toast, "Closed") != null or std.mem.eql(u8, model.toast, "No saved tabs to close"));
+        }
+    }
 }

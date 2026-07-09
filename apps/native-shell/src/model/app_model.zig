@@ -194,8 +194,12 @@ pub const Msg = union(enum) {
     preview_git_diff: u32,
     update_commit_message: canvas.TextInputEvent,
     stage_all,
+    unstage_all,
+    discard_changes,
     commit_changes,
     trim_blank_lines,
+    refresh_explorer,
+    close_saved_tabs,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -289,8 +293,12 @@ pub const Msg = union(enum) {
         "scan_problems",
         "preview_git_diff",
         "stage_all",
+        "unstage_all",
+        "discard_changes",
         "commit_changes",
         "trim_blank_lines",
+        "refresh_explorer",
+        "close_saved_tabs",
         "terminal_line",
         "terminal_exit",
     };
@@ -1002,8 +1010,12 @@ pub const commands = [_]CommandItem{
     .{ .id = "run_search", .title = "Search Workspace", .hint = "" },
     .{ .id = "refresh_git", .title = "Refresh Git Status", .hint = "" },
     .{ .id = "stage_all", .title = "Git: Stage All", .hint = "" },
+    .{ .id = "unstage_all", .title = "Git: Unstage All", .hint = "" },
+    .{ .id = "discard_changes", .title = "Git: Discard Working Tree", .hint = "" },
     .{ .id = "commit_changes", .title = "Git: Commit", .hint = "" },
     .{ .id = "trim_blank_lines", .title = "Trim Leading/Trailing Blank Lines", .hint = "" },
+    .{ .id = "refresh_explorer", .title = "Refresh Explorer", .hint = "" },
+    .{ .id = "close_saved_tabs", .title = "Close Saved Tabs", .hint = "" },
     .{ .id = "reopen_last_workspace", .title = "Reopen Last Workspace", .hint = "" },
     .{ .id = "clear_find", .title = "Clear Find", .hint = "" },
     .{ .id = "duplicate_line", .title = "Duplicate Last Line", .hint = "" },
@@ -1219,10 +1231,18 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 refreshGitStatus(model);
             } else if (std.mem.eql(u8, id, "stage_all")) {
                 stageAllChanges(model);
+            } else if (std.mem.eql(u8, id, "unstage_all")) {
+                unstageAllChanges(model);
+            } else if (std.mem.eql(u8, id, "discard_changes")) {
+                discardWorkingTreeChanges(model);
             } else if (std.mem.eql(u8, id, "commit_changes")) {
                 commitChanges(model);
             } else if (std.mem.eql(u8, id, "trim_blank_lines")) {
                 trimBlankLines(model);
+            } else if (std.mem.eql(u8, id, "refresh_explorer")) {
+                refreshExplorer(model);
+            } else if (std.mem.eql(u8, id, "close_saved_tabs")) {
+                closeSavedTabs(model);
             } else if (std.mem.eql(u8, id, "reopen_last_workspace")) {
                 reopenLastWorkspace(model);
             } else if (std.mem.eql(u8, id, "clear_find")) {
@@ -1478,7 +1498,11 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .refresh_git => refreshGitStatus(model),
         .update_commit_message => |edit| model.git_commit_message.apply(edit),
         .stage_all => stageAllChanges(model),
+        .unstage_all => unstageAllChanges(model),
+        .discard_changes => discardWorkingTreeChanges(model),
         .commit_changes => commitChanges(model),
+        .refresh_explorer => refreshExplorer(model),
+        .close_saved_tabs => closeSavedTabs(model),
         .open_git_entry => |id| openGitEntry(model, id),
         .clear_find => clearFind(model),
         .reopen_last_workspace => reopenLastWorkspace(model),
@@ -3129,6 +3153,170 @@ fn commitChanges(model: *Model) void {
         model.git_commit_message.clear();
     }
     model.toast = status;
+}
+
+fn unstageAllChanges(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace for git";
+        return;
+    }
+    const bufs = ensureGitBuffers(model) catch {
+        model.toast = "Git alloc failed";
+        return;
+    };
+    _ = model.governor.spawn("feature.scm", "git reset") catch {};
+    const status = bufs.unstageAll(modelIo(model), model.project_path);
+    model.git_entries = bufs.entriesSlice();
+    model.git_summary = bufs.summary;
+    model.git_branch = bufs.branch();
+    model.governor.killFeature("feature.scm");
+    model.process_count = model.governor.aliveCount();
+    model.current_view = .scm;
+    model.selected_activity = .scm;
+    model.toast = status;
+}
+
+fn discardWorkingTreeChanges(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace for git";
+        return;
+    }
+    if (!std.mem.startsWith(u8, model.toast, "Discard")) {
+        model.toast = "Discard working tree? Confirm again";
+        return;
+    }
+    const bufs = ensureGitBuffers(model) catch {
+        model.toast = "Git alloc failed";
+        return;
+    };
+    _ = model.governor.spawn("feature.scm", "git checkout") catch {};
+    const status = bufs.discardWorkingTree(modelIo(model), model.project_path);
+    model.git_entries = bufs.entriesSlice();
+    model.git_summary = bufs.summary;
+    model.git_branch = bufs.branch();
+    model.governor.killFeature("feature.scm");
+    model.process_count = model.governor.aliveCount();
+    model.current_view = .scm;
+    model.selected_activity = .scm;
+    // Reload active editor from disk after discard when clean.
+    if (std.mem.eql(u8, status, "discarded changes") and !model.document_dirty) {
+        if (model.workspace) |ws| {
+            if (model.active_tab_id != 0) {
+                ws.openFileById(modelIo(model), model.active_tab_id) catch {};
+                syncDocumentFromWorkspace(model);
+            }
+        }
+    }
+    model.toast = status;
+}
+
+fn refreshExplorer(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const active_path = Model.activeTabPath(model);
+    var keep_doc: [max_document]u8 = undefined;
+    const keep_len = if (model.document_dirty) blk: {
+        const n = @min(model.document.text().len, keep_doc.len);
+        @memcpy(keep_doc[0..n], model.document.text()[0..n]);
+        break :blk n;
+    } else 0;
+    const was_dirty = model.document_dirty;
+
+    const new_id = ws.rescanPreserveTabs(modelIo(model), active_path) catch {
+        model.toast = "Refresh failed";
+        return;
+    };
+    model.file_nodes = ws.fileNodesSlice();
+    model.open_tabs = ws.tabsSlice();
+    model.workspace_node_count = ws.file_node_count;
+    refreshWorkspaceFileCount(model);
+    applyExplorerFilter(model);
+
+    if (new_id != 0) {
+        model.active_tab_id = new_id;
+        model.selected_file_id = new_id;
+        if (ws.findNode(new_id)) |node| {
+            model.status_language = workspace_store.scannerLanguage(node.path);
+        }
+        if (was_dirty and keep_len > 0) {
+            ws.setEditorText(keep_doc[0..keep_len]);
+            ws.setTabDirty(new_id, true);
+            model.document.set(keep_doc[0..keep_len]);
+            model.document_dirty = true;
+            refreshDocStats(model);
+            refreshBreadcrumb(model);
+            syncActiveTabDirty(model);
+        } else {
+            syncDocumentFromWorkspace(model);
+        }
+    } else {
+        model.document.clear();
+        model.document_dirty = false;
+        model.active_tab_id = 0;
+        model.selected_file_id = 0;
+        refreshDocStats(model);
+        refreshBreadcrumb(model);
+    }
+    model.current_view = .ide;
+    model.selected_activity = .explorer;
+    model.toast = "Explorer refreshed";
+}
+
+fn closeSavedTabs(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const keep = model.active_tab_id;
+    var to_close: [8]u32 = undefined;
+    var n: u32 = 0;
+    for (ws.tabsSlice()) |tab| {
+        if (tab.id == keep) continue;
+        if (model.pinned_tab_id != 0 and tab.id == model.pinned_tab_id) continue;
+        // Close only clean tabs (title without " *" / dirty flag false).
+        if (tab.dirty) continue;
+        if (n >= to_close.len) break;
+        to_close[n] = tab.id;
+        n += 1;
+    }
+    if (n == 0) {
+        model.toast = "No saved tabs to close";
+        return;
+    }
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        const id = to_close[i];
+        if (ws.findNode(id)) |node| {
+            pushClosedTab(model, node.path, scannerBaseName(node.path));
+        } else {
+            for (ws.tabsSlice()) |tab| {
+                if (tab.id == id) {
+                    pushClosedTab(model, tab.path, tab.title);
+                    break;
+                }
+            }
+        }
+        ws.closeTab(id);
+    }
+    model.open_tabs = ws.tabsSlice();
+    if (keep != 0) {
+        model.active_tab_id = keep;
+        model.selected_file_id = keep;
+        ws.openFileById(modelIo(model), keep) catch {};
+        syncDocumentFromWorkspace(model);
+    }
+    const msg = std.fmt.bufPrint(&model.action_toast_buf, "Closed {d} saved", .{n}) catch "Closed saved tabs";
+    model.toast = msg;
 }
 
 fn copyAllTabPaths(model: *Model) void {

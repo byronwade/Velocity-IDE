@@ -85,6 +85,7 @@
               <button size="sm" variant="ghost" on-press="duplicate_selected_file">Dup</button>
               <button size="sm" variant="ghost" on-press="delete_selected_file">Del</button>
               <button size="sm" variant="ghost" on-press="reveal_in_explorer">Loc</button>
+              <button size="sm" variant="ghost" on-press="refresh_explorer">Ref</button>
             </row>
             <text-field text="{explorerFilterText}" placeholder="Filter files..." on-input="update_explorer_filter" label="Explorer filter" />
             <separator />
@@ -112,6 +113,7 @@
               </for>
               <button size="sm" variant="ghost" on-press="close_active_tab">x</button>
               <button size="sm" variant="ghost" on-press="close_other_tabs">Others</button>
+              <button size="sm" variant="ghost" on-press="close_saved_tabs">Saved</button>
               <button size="sm" variant="ghost" on-press="close_all_tabs">All</button>
               <button size="sm" variant="ghost" on-press="pin_active_tab">{pinLabel}</button>
               <button size="sm" variant="ghost" on-press="reopen_closed_tab">Reopen</button>
@@ -290,9 +292,11 @@
               <row gap="6" cross="center">
                 <text-field text="{commitMessageText}" placeholder="Commit message..." on-input="update_commit_message" on-submit="commit_changes" grow="1" label="Commit message" />
                 <button size="sm" variant="ghost" on-press="stage_all">Stage</button>
+                <button size="sm" variant="ghost" on-press="unstage_all">Unstage</button>
+                <button size="sm" variant="ghost" on-press="discard_changes">Discard</button>
                 <button size="sm" variant="primary" on-press="commit_changes">Commit</button>
               </row>
-              <text size="sm" foreground="text_muted">branch={git_branch} / Stage All then Commit / click entry to open + load diff</text>
+              <text size="sm" foreground="text_muted">branch={git_branch} / Stage Unstage Discard Commit / click entry to open + load diff</text>
               <row grow="1" gap="8">
                 <scroll grow="1" label="Git changes">
                   <column gap="4">

@@ -107,6 +107,69 @@ pub const WorkspaceBuffers = struct {
         self.setEditorText(text);
     }
 
+    /// Rescan the workspace tree while preserving open tabs (matched by path).
+    /// Returns the new node id for `active_path` when found, else 0.
+    /// Caller is responsible for re-applying an unsaved document buffer.
+    pub fn rescanPreserveTabs(self: *WorkspaceBuffers, io: std.Io, active_path: []const u8) !u32 {
+        const root = self.rootPath();
+        if (root.len == 0) return error.NotFound;
+
+        var saved_paths: [max_open_tabs][scanner.max_rel_path_len]u8 = undefined;
+        var saved_lens: [max_open_tabs]usize = [_]usize{0} ** max_open_tabs;
+        var saved_dirty: [max_open_tabs]bool = [_]bool{false} ** max_open_tabs;
+        var saved_count: u32 = 0;
+        for (self.tabsSlice()) |tab| {
+            if (saved_count >= max_open_tabs) break;
+            const n = @min(tab.path.len, saved_paths[saved_count].len);
+            @memcpy(saved_paths[saved_count][0..n], tab.path[0..n]);
+            saved_lens[saved_count] = n;
+            saved_dirty[saved_count] = tab.dirty;
+            saved_count += 1;
+        }
+
+        var root_copy: [max_root_path_len]u8 = undefined;
+        if (root.len > root_copy.len) return error.PathTooLong;
+        @memcpy(root_copy[0..root.len], root);
+        const root_slice = root_copy[0..root.len];
+
+        // Rescan tree only — do not use openPath (it clears tabs and auto-opens first file).
+        var bufs = scanner.ScanBuffers{
+            .nodes = self.scan_nodes[0..],
+            .name_pool = self.name_pool[0..],
+            .path_pool = self.path_pool[0..],
+        };
+        const count = try scanner.scanWorkspace(io, root_slice, &bufs);
+        self.scan_count = count;
+        self.scan_name_used = bufs.name_used;
+        self.scan_path_used = bufs.path_used;
+        self.tab_count = 0;
+        self.editor_len = 0;
+        self.editor_path_len = 0;
+        self.editor_truncated = false;
+        self.rebuildFileNodes();
+
+        var i: u32 = 0;
+        while (i < saved_count) : (i += 1) {
+            const path = saved_paths[i][0..saved_lens[i]];
+            if (self.findNodeByPath(path)) |node| {
+                self.openFileById(io, node.id) catch continue;
+                if (saved_dirty[i]) self.setTabDirty(node.id, true);
+            }
+        }
+
+        if (active_path.len > 0) {
+            if (self.findNodeByPath(active_path)) |node| {
+                self.openFileById(io, node.id) catch {};
+                return node.id;
+            }
+        }
+        if (self.tab_count > 0) {
+            self.openFileById(io, self.tabs[0].id) catch {};
+            return self.tabs[0].id;
+        }
+        return 0;
+    }
+
     /// Create a new relative file (empty or with seed text), rescan, and open it.
     pub fn createFile(self: *WorkspaceBuffers, io: std.Io, rel_path: []const u8, seed: []const u8) !u32 {
         if (rel_path.len == 0) return error.NotFound;

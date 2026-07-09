@@ -73,6 +73,9 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Copy all tab paths | Join open tab paths into toast (newline-separated). |
 | New untitled | `Cmd+N` creates `Untitled-N.txt` in the workspace. |
 | SCM stage / commit | Stage all (`git add -A`) + commit with message field. |
+| SCM unstage / discard | Unstage all (`git reset HEAD`); discard working tree with soft confirm. |
+| Refresh explorer | Rescan workspace tree while preserving open tabs. |
+| Close saved tabs | Close non-active clean tabs (keeps dirty + pinned + active). |
 | Trim blank lines | Strip leading/trailing blank lines from the document. |
 | Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |

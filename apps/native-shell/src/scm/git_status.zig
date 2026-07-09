@@ -230,6 +230,65 @@ pub const GitBuffers = struct {
         return "commit failed";
     }
 
+    /// `git reset HEAD` — unstage the index without touching the working tree.
+    pub fn unstageAll(self: *GitBuffers, io: std.Io, cwd: []const u8) []const u8 {
+        if (cwd.len == 0) return "no workspace";
+        if (!isGitRoot(io, cwd)) return "not a git root";
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+        const result = std.process.run(gpa, io, .{
+            .argv = &.{ "git", "reset", "HEAD" },
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(4096),
+            .stderr_limit = .limited(4096),
+        }) catch return "unstage failed";
+        defer {
+            gpa.free(result.stdout);
+            gpa.free(result.stderr);
+        }
+        switch (result.term) {
+            .exited => |code| {
+                // reset exits 0 even when nothing was staged.
+                if (code == 0) {
+                    self.refresh(io, cwd);
+                    return "unstaged all";
+                }
+            },
+            else => {},
+        }
+        return "unstage failed";
+    }
+
+    /// Discard tracked working-tree changes (`git checkout -- .`). Soft-confirm in UI.
+    pub fn discardWorkingTree(self: *GitBuffers, io: std.Io, cwd: []const u8) []const u8 {
+        if (cwd.len == 0) return "no workspace";
+        if (!isGitRoot(io, cwd)) return "not a git root";
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+        const result = std.process.run(gpa, io, .{
+            .argv = &.{ "git", "checkout", "--", "." },
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(4096),
+            .stderr_limit = .limited(4096),
+        }) catch return "discard failed";
+        defer {
+            gpa.free(result.stdout);
+            gpa.free(result.stderr);
+        }
+        switch (result.term) {
+            .exited => |code| {
+                if (code == 0) {
+                    self.refresh(io, cwd);
+                    return "discarded changes";
+                }
+            },
+            else => {},
+        }
+        return "discard failed";
+    }
+
     pub fn refresh(self: *GitBuffers, io: std.Io, cwd: []const u8) void {
         self.clear();
         if (cwd.len == 0) {
