@@ -110,7 +110,7 @@ pub const catalog = [_]FeatureEntry{
     .{ .id = "feature.terminal-find", .name = "Terminal Find", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 0, .enabled = true },
     .{ .id = "feature.task-runner", .name = "Task Runner", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 2, .enabled = true },
     .{ .id = "feature.task-detector", .name = "Task Detector", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 0, .enabled = true },
-    .{ .id = "feature.problem-matchers", .name = "Problem Matchers", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 0, .enabled = true },
+    .{ .id = "feature.problem-matchers", .name = "Problem Matchers", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 0, .status = .working, .enabled = true },
     .{ .id = "feature.output-panel", .name = "Output Panel", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .enabled = true },
     .{ .id = "feature.scm-core", .name = "SCM Core", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .enabled = true },
     .{ .id = "feature.git-provider", .name = "Git Provider", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 24, .max_processes = 1, .enabled = true },

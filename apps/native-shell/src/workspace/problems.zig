@@ -4,18 +4,23 @@
 const std = @import("std");
 const scanner = @import("scanner.zig");
 const workspace_store = @import("workspace_store.zig");
+const problem_matchers = @import("problem_matchers.zig");
 
 pub const max_problems: usize = 64;
 pub const max_preview: usize = 100;
 
-pub const Severity = enum { info, warning };
+pub const Severity = enum { @"error", warning, info };
+pub const Source = enum { marker, terminal };
 
 pub const Problem = struct {
     id: u32 = 0,
     path: []const u8 = "",
     line: u32 = 0,
+    column: u32 = 0,
     kind: []const u8 = "",
     preview: []const u8 = "",
+    severity_label: []const u8 = "info",
+    source_label: []const u8 = "marker",
 };
 
 pub const ProblemBuffers = struct {
@@ -27,8 +32,10 @@ pub const ProblemBuffers = struct {
     preview_lens: [max_problems]usize = [_]usize{0} ** max_problems,
     kind_pool: [max_problems][8]u8 = undefined,
     kind_lens: [max_problems]usize = [_]usize{0} ** max_problems,
+    error_count: u32 = 0,
+    warning_count: u32 = 0,
     status: []const u8 = "idle",
-    status_buf: [48]u8 = undefined,
+    status_buf: [64]u8 = undefined,
 
     pub fn itemsSlice(self: *ProblemBuffers) []const Problem {
         return self.items[0..self.item_count];
@@ -36,6 +43,8 @@ pub const ProblemBuffers = struct {
 
     pub fn clear(self: *ProblemBuffers) void {
         self.item_count = 0;
+        self.error_count = 0;
+        self.warning_count = 0;
         self.status = "idle";
     }
 
@@ -65,12 +74,48 @@ pub const ProblemBuffers = struct {
             if (i == content.len or content[i] == '\n') {
                 const line = content[start..i];
                 if (markerInLine(line)) |kind| {
-                    self.push(path, line_no, kind, line);
+                    self.push(path, line_no, 0, kind, line, .warning, .marker);
                 }
                 line_no += 1;
                 start = i + 1;
             }
         }
+    }
+
+    pub fn ingestDiagnostics(
+        self: *ProblemBuffers,
+        diagnostics: []const problem_matchers.Diagnostic,
+    ) void {
+        self.clear();
+        for (diagnostics) |diagnostic| {
+            if (self.item_count >= max_problems) break;
+            const severity: Severity = switch (diagnostic.severity) {
+                .@"error" => .@"error",
+                .warning => .warning,
+                .info => .info,
+            };
+            const kind = if (diagnostic.code.len > 0)
+                diagnostic.code
+            else
+                severityLabel(severity);
+            self.push(
+                diagnostic.path,
+                diagnostic.line,
+                diagnostic.column,
+                kind,
+                diagnostic.message,
+                severity,
+                .terminal,
+            );
+        }
+        self.status = if (self.item_count == 0)
+            "no diagnostics"
+        else
+            std.fmt.bufPrint(
+                &self.status_buf,
+                "{d} errors · {d} warnings · {d} total",
+                .{ self.error_count, self.warning_count, self.item_count },
+            ) catch "diagnostics";
     }
 
     fn markerInLine(line: []const u8) ?[]const u8 {
@@ -81,7 +126,16 @@ pub const ProblemBuffers = struct {
         return null;
     }
 
-    fn push(self: *ProblemBuffers, path: []const u8, line: u32, kind: []const u8, preview_src: []const u8) void {
+    fn push(
+        self: *ProblemBuffers,
+        path: []const u8,
+        line: u32,
+        column: u32,
+        kind: []const u8,
+        preview_src: []const u8,
+        severity: Severity,
+        source: Source,
+    ) void {
         const idx = self.item_count;
         const plen = @min(path.len, self.path_pool[idx].len);
         @memcpy(self.path_pool[idx][0..plen], path[0..plen]);
@@ -97,12 +151,35 @@ pub const ProblemBuffers = struct {
             .id = idx + 1,
             .path = self.path_pool[idx][0..plen],
             .line = line,
+            .column = column,
             .kind = self.kind_pool[idx][0..klen],
             .preview = self.preview_pool[idx][0..vlen],
+            .severity_label = severityLabel(severity),
+            .source_label = sourceLabel(source),
         };
+        switch (severity) {
+            .@"error" => self.error_count += 1,
+            .warning => self.warning_count += 1,
+            .info => {},
+        }
         self.item_count += 1;
     }
 };
+
+fn severityLabel(severity: Severity) []const u8 {
+    return switch (severity) {
+        .@"error" => "error",
+        .warning => "warning",
+        .info => "info",
+    };
+}
+
+fn sourceLabel(source: Source) []const u8 {
+    return switch (source) {
+        .marker => "marker",
+        .terminal => "terminal",
+    };
+}
 
 test "problems finds TODO marker" {
     var p: ProblemBuffers = .{};
@@ -111,4 +188,17 @@ test "problems finds TODO marker" {
     try std.testing.expect(p.item_count == 1);
     try std.testing.expectEqualStrings("TODO", p.items[0].kind);
     try std.testing.expect(p.items[0].line == 2);
+    try std.testing.expectEqualStrings("warning", p.items[0].severity_label);
+}
+
+test "problems ingest compiler diagnostics" {
+    var matched: problem_matchers.MatcherBuffers = .{};
+    const lines = [_][]const u8{"src/a.ts(7,3): error TS1001: Broken"};
+    matched.parseLines(&lines);
+    var p: ProblemBuffers = .{};
+    p.ingestDiagnostics(matched.diagnosticsSlice());
+    try std.testing.expectEqual(@as(u32, 1), p.item_count);
+    try std.testing.expectEqual(@as(u32, 1), p.error_count);
+    try std.testing.expectEqualStrings("terminal", p.items[0].source_label);
+    try std.testing.expectEqualStrings("TS1001", p.items[0].kind);
 }

@@ -93,7 +93,7 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Terminal Find | `feature.terminal-find` | core | P1 | native | False | 8 | 0 | high | stub | docs/11 + contrib | |
 | Task Runner | `feature.task-runner` | dev | P1 | process | False | 16 | 2 | high | stub | docs/11 + contrib | |
 | Task Detector | `feature.task-detector` | dev | P2 | process | False | 8 | 0 | high | stub | docs/11 + contrib | |
-| Problem Matchers | `feature.problem-matchers` | dev | P1 | native | False | 8 | 0 | high | stub | docs/11 + contrib | |
+| Problem Matchers | `feature.problem-matchers` | dev | P1 | native | False | 8 | 0 | high | working | bounded TS/Zig/GCC parser | |
 | Output Panel | `feature.output-panel` | dev | P1 | native | False | 16 | 0 | high | stub | docs/11 + contrib | |
 | SCM Core | `feature.scm-core` | dev | P0 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Git Provider | `feature.git-provider` | dev | P0 | process | False | 24 | 1 | low | stub | docs/11 + contrib | |

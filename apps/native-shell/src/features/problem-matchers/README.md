@@ -2,7 +2,7 @@
 
 - **id:** `feature.problem-matchers`
 - **mode:** `dev`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `native`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `8`
@@ -11,7 +11,8 @@
 
 ## Rules
 
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+- Lazy: activates only after a terminal command exits or via **Parse Output**.
+- Parses bounded terminal output into clickable Problems without child processes.
+- Supports TypeScript `path(line,col)`, Zig/GCC/Clang `path:line:col`, ANSI stripping,
+  severity/code extraction, deduplication, and a 64-diagnostic cap.
+- The terminal process itself remains governed by Process Governor.

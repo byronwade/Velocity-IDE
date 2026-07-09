@@ -16,7 +16,7 @@
   },
   "dependencies": [],
   "permissions": [],
-  "status": "stub",
+  "status": "working",
   "implementation": "native",
   "priority": "P1",
   "category": "terminal"

@@ -13,6 +13,7 @@ const quick_open = @import("../workspace/quick_open.zig");
 const replace_mod = @import("../workspace/replace.zig");
 const edit_transforms = @import("../workspace/edit_transforms.zig");
 const problems_mod = @import("../workspace/problems.zig");
+const problem_matchers = @import("../workspace/problem_matchers.zig");
 const scanner_mod = @import("../workspace/scanner.zig");
 const outline_mod = @import("../workspace/outline.zig");
 const go_to_def_mod = @import("../workspace/go_to_def.zig");
@@ -209,6 +210,7 @@ pub const Msg = union(enum) {
     outdent_document,
     reopen_closed_tab,
     scan_problems,
+    parse_terminal_diagnostics,
     open_problem: u32,
     preview_git_diff: u32,
     update_commit_message: canvas.TextInputEvent,
@@ -360,6 +362,7 @@ pub const Msg = union(enum) {
         "outdent_document",
         "reopen_closed_tab",
         "scan_problems",
+        "parse_terminal_diagnostics",
         "preview_git_diff",
         "stage_all",
         "unstage_all",
@@ -484,6 +487,7 @@ pub const Model = struct {
     explorer_filtered: [workspace_store.max_nodes]FileNode = [_]FileNode{.{}} ** workspace_store.max_nodes,
     explorer_filtered_count: u32 = 0,
     problem_bufs: ?*problems_mod.ProblemBuffers = null,
+    matcher_bufs: ?*problem_matchers.MatcherBuffers = null,
     problems: []const Problem = &.{},
     problems_status: []const u8 = "idle",
     git_diff_text: []const u8 = "",
@@ -660,6 +664,7 @@ pub const Model = struct {
         "explorer_filtered",
         "explorer_filtered_count",
         "problem_bufs",
+        "matcher_bufs",
         "problems_status",
         "git_diff_text",
         "closed_tabs",
@@ -1360,6 +1365,7 @@ pub const commands = [_]CommandItem{
     .{ .id = "outdent_document", .title = "Outdent Document", .hint = "Cmd+[" },
     .{ .id = "reopen_closed_tab", .title = "Reopen Closed Tab", .hint = "Cmd+Shift+T" },
     .{ .id = "scan_problems", .title = "Scan TODO/FIXME Problems", .hint = "" },
+    .{ .id = "parse_terminal_diagnostics", .title = "Parse Terminal Diagnostics", .hint = "" },
     .{ .id = "toggle_agent", .title = "Toggle Agent Panel", .hint = "Cmd+." },
     .{ .id = "open_plugins", .title = "Open Plugin Registry", .hint = "" },
     .{ .id = "open_settings", .title = "Open Settings", .hint = "Cmd+," },
@@ -1776,6 +1782,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 reopenClosedTab(model);
             } else if (std.mem.eql(u8, id, "scan_problems")) {
                 scanProblems(model);
+            } else if (std.mem.eql(u8, id, "parse_terminal_diagnostics")) {
+                parseTerminalDiagnostics(model, true);
             } else if (std.mem.eql(u8, id, "open_feature_matrix")) {
                 model.current_view = .features;
                 model.selected_activity = .features;
@@ -2172,6 +2180,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .outdent_document => indentDocument(model, false),
         .reopen_closed_tab => reopenClosedTab(model),
         .scan_problems => scanProblems(model),
+        .parse_terminal_diagnostics => parseTerminalDiagnostics(model, true),
         .open_problem => |id| openProblem(model, id),
         .preview_git_diff => |id| previewGitDiff(model, id),
         .terminal_history_older => terminalHistory(model, true),
@@ -2210,7 +2219,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.terminal_process_count = 0;
             model.process_count = model.governor.aliveCount();
             model.terminal_async = false;
-            model.toast = if (exit.reason == .exited and exit.code == 0) "Command ok" else "Command exited";
+            parseTerminalDiagnostics(model, false);
+            if (model.problems.len == 0) {
+                model.toast = if (exit.reason == .exited and exit.code == 0) "Command ok" else "Command exited";
+            }
         },
         .chrome_changed => |chrome| {
             model.chrome_leading = chrome.insets.left;
@@ -3057,7 +3069,11 @@ fn openBottomPanel(model: *Model, tab: BottomPanelTab) void {
     model.bottom_panel_open = true;
     model.bottom_panel_tab = tab;
     if (tab == .terminal) model.show_terminal = true;
-    if (tab == .problems and model.workspace_from_disk and model.problems.len == 0) {
+    if (tab == .problems and
+        model.workspace_from_disk and
+        model.problems.len == 0 and
+        std.mem.eql(u8, model.problems_status, "idle"))
+    {
         scanProblems(model);
     }
 }
@@ -3116,7 +3132,10 @@ fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
     model.governor.killFeature("feature.terminal");
     model.terminal_process_count = 0;
     model.process_count = model.governor.aliveCount();
-    model.toast = if (term.last_exit == 0) "Command ok" else "Command exited";
+    parseTerminalDiagnostics(model, false);
+    if (model.problems.len == 0) {
+        model.toast = if (term.last_exit == 0) "Command ok" else "Command exited";
+    }
 }
 
 fn runWorkspaceSearch(model: *Model) void {
@@ -3428,6 +3447,41 @@ fn ensureProblemBuffers(model: *Model) !*problems_mod.ProblemBuffers {
     return p;
 }
 
+fn ensureMatcherBuffers(model: *Model) !*problem_matchers.MatcherBuffers {
+    if (model.matcher_bufs) |p| return p;
+    const p = try std.heap.page_allocator.create(problem_matchers.MatcherBuffers);
+    p.* = .{};
+    model.matcher_bufs = p;
+    return p;
+}
+
+fn parseTerminalDiagnostics(model: *Model, show_when_empty: bool) void {
+    const term = model.terminal orelse {
+        model.toast = "No terminal output";
+        return;
+    };
+    const matcher = ensureMatcherBuffers(model) catch {
+        model.toast = "Diagnostic parser alloc failed";
+        return;
+    };
+    matcher.parseLines(term.linesSlice());
+    const problems = ensureProblemBuffers(model) catch {
+        model.toast = "Problems alloc failed";
+        return;
+    };
+    problems.ingestDiagnostics(matcher.diagnosticsSlice());
+    model.problems = problems.itemsSlice();
+    model.problems_status = problems.status;
+    appendOutput(model, problems.status);
+    if (problems.item_count > 0) {
+        openBottomPanel(model, .problems);
+        model.toast = problems.status;
+    } else if (show_when_empty) {
+        openBottomPanel(model, .problems);
+        model.toast = "No terminal diagnostics";
+    }
+}
+
 fn scanProblems(model: *Model) void {
     if (!model.workspace_from_disk) {
         model.toast = "Open a workspace to scan";
@@ -3712,6 +3766,7 @@ fn runFindInDocument(model: *Model) void {
     } else {
         const msg = std.fmt.bufPrint(&model.action_toast_buf, "{d} matches", .{bufs.match_count}) catch "matches";
         model.toast = msg;
+        if (bufs.activeMatch()) |match| jumpToDocumentLine(model, match.line);
     }
 }
 
@@ -3853,6 +3908,7 @@ fn findNavigate(model: *Model, forward: bool) void {
     }
     if (forward) bufs.next() else bufs.prev();
     updateFindLabel(model);
+    if (bufs.activeMatch()) |match| jumpToDocumentLine(model, match.line);
     model.toast = model.find_active_label;
 }
 

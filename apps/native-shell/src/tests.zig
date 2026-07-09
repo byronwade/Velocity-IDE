@@ -1089,3 +1089,38 @@ test "line peek dismisses on escape" {
     main.update(&model, .dismiss_overlay);
     try testing.expect(!model.hasPeek());
 }
+
+test "terminal diagnostics populate clickable problems" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.terminal_command.set("echo 'src/server/auth.ts(1,1): error TS9999: smoke failure'");
+    main.update(&model, .run_terminal_command);
+    try testing.expect(model.problems.len == 1);
+    try testing.expectEqualStrings("src/server/auth.ts", model.problems[0].path);
+    try testing.expectEqualStrings("error", model.problems[0].severity_label);
+    try testing.expectEqualStrings("TS9999", model.problems[0].kind);
+    try testing.expect(model.showBottomProblems());
+    const id = model.problems[0].id;
+    main.update(&model, .{ .open_problem = id });
+    try testing.expectEqualStrings("src/server/auth.ts", model.activeTabPath());
+    try testing.expect(model.editor_focus_line == 1);
+    try testing.expect(model.hasPeek());
+}
+
+test "manual diagnostic parse reports empty terminal" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .parse_terminal_diagnostics);
+    try testing.expectEqualStrings("No terminal output", model.toast);
+}
+
+test "find navigation updates line peek" {
+    var model = main.initialModel();
+    model.document.set("alpha\nneedle\nbeta\nneedle\n");
+    model.find_query.set("needle");
+    main.update(&model, .run_find);
+    try testing.expect(model.editor_focus_line == 2);
+    try testing.expect(model.hasPeek());
+    main.update(&model, .find_next);
+    try testing.expect(model.editor_focus_line == 4);
+}

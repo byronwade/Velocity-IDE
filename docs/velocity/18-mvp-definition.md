@@ -16,7 +16,7 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Rename file | Rename selected file via New-path field. |
 | Explorer filter | Filter tree by name/path substring. |
 | Reveal in explorer | Select active editor file in the tree. |
-| Find in file | Match list + next/prev in active document. |
+| Find in file | Match list + next/prev; navigation updates the editor line peek. |
 | Replace in file | Replace once / replace all using find + replace fields. |
 | Quick Open | Cmd+P filter workspace files; empty query prefers recent files. |
 | Recent files | Last opened files feed Quick Open when the query is empty. |
@@ -39,7 +39,8 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Toggle comment | Cmd+/ toggles `//` / `#` / HTML comments on all lines. |
 | Indent / Outdent | Indent or outdent whole document by 2 spaces. |
 | Reopen closed tab | Cmd+Shift+T restores last closed file tab. |
-| Problems panel | Bottom-panel tab; scans TODO/FIXME/HACK/XXX markers; click to open. |
+| Problems panel | Bottom-panel tab; scans markers and terminal diagnostics; click to open. |
+| Problem matchers | Bounded TypeScript/Zig/GCC-style parser with ANSI stripping, severity/code extraction, dedupe, and 64-item cap. |
 | SCM diff preview | Selecting a git entry loads bounded `git diff` text. |
 | Workspace counts | Explorer + status bar show file/node counts. |
 | Dirty tab marker | Active tab title shows ` *` while unsaved. |

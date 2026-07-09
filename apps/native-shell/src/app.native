@@ -257,7 +257,8 @@
                   </if>
                   <if test="{showBottomProblems}">
                     <badge variant="secondary">{problemsStatus}</badge>
-                    <button size="sm" variant="ghost" on-press="scan_problems">Scan</button>
+                    <button size="sm" variant="ghost" on-press="parse_terminal_diagnostics">Parse Output</button>
+                    <button size="sm" variant="ghost" on-press="scan_problems">Scan Markers</button>
                   </if>
                   <button size="sm" variant="ghost" on-press="toggle_bottom_panel">×</button>
                 </row>
@@ -290,9 +291,13 @@
                     <column gap="2">
                       <for each="problems" key="id" as="p">
                         <list-item on-press="open_problem:{p.id}" padding="6" gap="4" label="{p.path}">
-                          <badge variant="secondary">{p.kind}</badge>
+                          <badge variant="secondary">{p.severity_label}</badge>
                           <column gap="2" grow="1">
-                            <text size="sm" wrap="false">{p.path}:{p.line}</text>
+                            <row gap="6" cross="center">
+                              <text size="sm" wrap="false">{p.path}:{p.line}:{p.column}</text>
+                              <text size="sm" foreground="text_muted">{p.kind}</text>
+                              <text size="sm" foreground="text_muted">{p.source_label}</text>
+                            </row>
                             <text size="sm" foreground="text_muted" wrap="true">{p.preview}</text>
                           </column>
                         </list-item>
