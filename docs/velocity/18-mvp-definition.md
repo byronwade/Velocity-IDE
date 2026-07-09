@@ -54,6 +54,10 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Revert file | Reload active file from disk; undo restores discarded buffer. |
 | Copy absolute path | Join workspace root + relative path into toast. |
 | EOL in status | Document stats show LF / CRLF. |
+| Next / Previous tab | Ctrl+Tab / Ctrl+Shift+Tab cycle open tabs. |
+| Remove / insert blank lines | Strip blank lines or append a blank line at end. |
+| Copy file name | Basename of active path into toast. |
+| Word count | Status bar includes words; command shows toast. |
 | Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |
 | Agent panel | Local task board only — no network AI. |

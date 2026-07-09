@@ -114,6 +114,8 @@
               <button size="sm" variant="ghost" on-press="close_all_tabs">All</button>
               <button size="sm" variant="ghost" on-press="pin_active_tab">{pinLabel}</button>
               <button size="sm" variant="ghost" on-press="reopen_closed_tab">Reopen</button>
+              <button size="sm" variant="ghost" on-press="prev_tab">PrevTab</button>
+              <button size="sm" variant="ghost" on-press="next_tab">NextTab</button>
               <spacer grow="1" />
               <button size="sm" variant="ghost" on-press="toggle_line_comment">//</button>
               <button size="sm" variant="ghost" on-press="indent_document">In</button>
@@ -126,6 +128,8 @@
               <button size="sm" variant="ghost" on-press="join_lines">Join</button>
               <button size="sm" variant="ghost" on-press="move_line_up">LnUp</button>
               <button size="sm" variant="ghost" on-press="move_line_down">LnDn</button>
+              <button size="sm" variant="ghost" on-press="remove_blank_lines">NoBlank</button>
+              <button size="sm" variant="ghost" on-press="insert_blank_line">+Blank</button>
               <button size="sm" variant="ghost" on-press="undo_edit">Undo</button>
               <text-field text="{gotoLineText}" placeholder="Line" on-input="update_goto_line" on-submit="goto_line" width="72" label="Go to line" />
               <button size="sm" variant="ghost" on-press="goto_line">Go</button>
@@ -146,6 +150,8 @@
                   <button size="sm" variant="ghost" on-press="reveal_in_explorer">Reveal</button>
                   <button size="sm" variant="ghost" on-press="copy_active_path">Path</button>
                   <button size="sm" variant="ghost" on-press="copy_absolute_path">Abs</button>
+                  <button size="sm" variant="ghost" on-press="copy_filename">Name</button>
+                  <button size="sm" variant="ghost" on-press="show_word_count">Words</button>
                   <button size="sm" variant="ghost" on-press="revert_file">Revert</button>
                   <button size="sm" variant="ghost" on-press="save_all">Save All</button>
                   <button size="sm" variant="primary" on-press="save_file">Save</button>
@@ -468,8 +474,8 @@
         <text>Keyboard Shortcuts</text>
         <text size="sm" foreground="text_muted">Cmd+K palette / Cmd+P quick open / Cmd+F find / Cmd+G go to line</text>
         <text size="sm" foreground="text_muted">Cmd+S save / Cmd+/ comment / Cmd+Shift+T reopen tab / Cmd+Z undo</text>
-        <text size="sm" foreground="text_muted">Ctrl+` terminal / Esc dismiss overlays / Focus mode hides chrome</text>
-        <text size="sm" foreground="text_muted">Close Others / Close All / Pin / DelLn / Join / LnUp / LnDn / Revert</text>
+        <text size="sm" foreground="text_muted">Ctrl+Tab next tab / Ctrl+Shift+Tab prev tab / Ctrl+` terminal</text>
+        <text size="sm" foreground="text_muted">Esc dismiss / Focus mode / DelLn Join LnUp NoBlank / Revert</text>
         <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>
       </column>
     </column>

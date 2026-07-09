@@ -436,6 +436,79 @@ pub fn detectEol(text: []const u8) []const u8 {
     return "LF";
 }
 
+/// Remove blank / whitespace-only lines.
+pub fn removeBlankLines(text: []const u8, out: []u8) ?usize {
+    var dst: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    var wrote_any = false;
+    const has_trailing_nl = text.len > 0 and text[text.len - 1] == '\n';
+    while (i <= text.len) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            if (i == text.len and has_trailing_nl and start == text.len) break;
+            const line = text[start..i];
+            if (std.mem.trim(u8, line, " \t\r").len > 0) {
+                if (wrote_any) {
+                    if (dst + 1 > out.len) return null;
+                    out[dst] = '\n';
+                    dst += 1;
+                }
+                if (dst + line.len > out.len) return null;
+                @memcpy(out[dst..][0..line.len], line);
+                dst += line.len;
+                wrote_any = true;
+            }
+            start = i + 1;
+            if (i == text.len) break;
+        }
+    }
+    if (wrote_any and has_trailing_nl) {
+        if (dst + 1 > out.len) return null;
+        out[dst] = '\n';
+        dst += 1;
+    }
+    return dst;
+}
+
+pub fn insertBlankLineAtEnd(text: []const u8, out: []u8) ?usize {
+    if (text.len + 1 > out.len) return null;
+    @memcpy(out[0..text.len], text);
+    if (text.len == 0 or text[text.len - 1] != '\n') {
+        if (text.len + 2 > out.len) return null;
+        out[text.len] = '\n';
+        out[text.len + 1] = '\n';
+        return text.len + 2;
+    }
+    out[text.len] = '\n';
+    return text.len + 1;
+}
+
+pub fn countWords(text: []const u8) u32 {
+    var words: u32 = 0;
+    var in_word = false;
+    for (text) |c| {
+        const is_ws = c == ' ' or c == '\t' or c == '\n' or c == '\r';
+        if (is_ws) {
+            in_word = false;
+        } else if (!in_word) {
+            in_word = true;
+            words += 1;
+        }
+    }
+    return words;
+}
+
+/// Basename of a path (last segment).
+pub fn fileNameOf(path: []const u8) []const u8 {
+    if (path.len == 0) return path;
+    var i = path.len;
+    while (i > 0) {
+        i -= 1;
+        if (path[i] == '/' or path[i] == '\\') return path[i + 1 ..];
+    }
+    return path;
+}
+
 test "case and sort transforms" {
     var out: [128]u8 = undefined;
     const u = toUpperCase("AbC", &out).?;
@@ -466,4 +539,14 @@ test "delete join and move last line" {
     try std.testing.expectEqualStrings("a\nc\nb\n", out[0..m]);
     try std.testing.expectEqualStrings("CRLF", detectEol("a\r\nb\n"));
     try std.testing.expectEqualStrings("LF", detectEol("a\nb"));
+}
+
+test "blank lines insert remove and words" {
+    var out: [128]u8 = undefined;
+    const r = removeBlankLines("a\n\nb\n  \nc\n", &out).?;
+    try std.testing.expectEqualStrings("a\nb\nc\n", out[0..r]);
+    const i = insertBlankLineAtEnd("hi", &out).?;
+    try std.testing.expectEqualStrings("hi\n\n", out[0..i]);
+    try std.testing.expectEqual(@as(u32, 3), countWords("one two  three"));
+    try std.testing.expectEqualStrings("Chart.tsx", fileNameOf("src/components/Chart.tsx"));
 }

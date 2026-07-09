@@ -665,4 +665,34 @@ test "doc stats include eol" {
     model.document.set("a\r\nb\n");
     model_mod.refreshDocStats(&model);
     try testing.expect(std.mem.indexOf(u8, model.doc_stats, "CRLF") != null);
+    try testing.expect(std.mem.indexOf(u8, model.doc_stats, "words") != null);
+}
+
+test "cycle tabs next and prev" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    // Open a second file via quick open if possible.
+    model.quick_query.set("auth");
+    main.update(&model, .run_quick_open);
+    if (model.quick_items.len > 0) {
+        main.update(&model, .{ .open_quick_item = model.quick_items[0].id });
+    }
+    const first = model.active_tab_id;
+    main.update(&model, .next_tab);
+    if (model.open_tabs.len > 1) {
+        try testing.expect(model.active_tab_id != first);
+        main.update(&model, .prev_tab);
+        try testing.expectEqual(first, model.active_tab_id);
+    }
+}
+
+test "remove blank lines and copy filename" {
+    var model = main.initialModel();
+    model.document.set("a\n\nb\n");
+    main.update(&model, .remove_blank_lines);
+    try testing.expectEqualStrings("a\nb\n", model.document.text());
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .copy_filename);
+    try testing.expect(model.path_toast.len > 0);
+    try testing.expect(std.mem.indexOf(u8, model.path_toast, "/") == null);
 }

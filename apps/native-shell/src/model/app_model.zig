@@ -153,6 +153,12 @@ pub const Msg = union(enum) {
     undo_edit,
     revert_file,
     copy_absolute_path,
+    next_tab,
+    prev_tab,
+    remove_blank_lines,
+    insert_blank_line,
+    copy_filename,
+    show_word_count,
     update_replace_text: canvas.TextInputEvent,
     replace_once,
     replace_all,
@@ -225,6 +231,12 @@ pub const Msg = union(enum) {
         "undo_edit",
         "revert_file",
         "copy_absolute_path",
+        "next_tab",
+        "prev_tab",
+        "remove_blank_lines",
+        "insert_blank_line",
+        "copy_filename",
+        "show_word_count",
         "replace_once",
         "replace_all",
         "copy_active_path",
@@ -334,8 +346,8 @@ pub const Model = struct {
     goto_line_label: []const u8 = "",
     goto_line_buf: [32]u8 = undefined,
     replace_text: canvas.TextBuffer(max_replace) = .{},
-    doc_stats: []const u8 = "0 lines · 0 bytes · LF",
-    doc_stats_buf: [64]u8 = undefined,
+    doc_stats: []const u8 = "0 lines · 0 words · 0 bytes · LF",
+    doc_stats_buf: [80]u8 = undefined,
     path_toast: []const u8 = "",
     path_toast_buf: [520]u8 = undefined,
     action_toast_buf: [48]u8 = undefined,
@@ -892,6 +904,12 @@ pub const commands = [_]CommandItem{
     .{ .id = "undo_edit", .title = "Undo Last Edit", .hint = "Cmd+Z" },
     .{ .id = "revert_file", .title = "Revert File from Disk", .hint = "" },
     .{ .id = "copy_absolute_path", .title = "Copy Absolute Path", .hint = "" },
+    .{ .id = "next_tab", .title = "Next Tab", .hint = "Ctrl+Tab" },
+    .{ .id = "prev_tab", .title = "Previous Tab", .hint = "Ctrl+Shift+Tab" },
+    .{ .id = "remove_blank_lines", .title = "Remove Blank Lines", .hint = "" },
+    .{ .id = "insert_blank_line", .title = "Insert Blank Line at End", .hint = "" },
+    .{ .id = "copy_filename", .title = "Copy File Name", .hint = "" },
+    .{ .id = "show_word_count", .title = "Show Word Count", .hint = "" },
     .{ .id = "toggle_trim_trailing", .title = "Toggle Trim Trailing Whitespace", .hint = "" },
     .{ .id = "toggle_final_newline", .title = "Toggle Insert Final Newline", .hint = "" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
@@ -1055,6 +1073,18 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 revertActiveFile(model);
             } else if (std.mem.eql(u8, id, "copy_absolute_path")) {
                 copyAbsolutePath(model);
+            } else if (std.mem.eql(u8, id, "next_tab")) {
+                cycleTab(model, true);
+            } else if (std.mem.eql(u8, id, "prev_tab")) {
+                cycleTab(model, false);
+            } else if (std.mem.eql(u8, id, "remove_blank_lines")) {
+                removeBlankLines(model);
+            } else if (std.mem.eql(u8, id, "insert_blank_line")) {
+                insertBlankLine(model);
+            } else if (std.mem.eql(u8, id, "copy_filename")) {
+                copyFileName(model);
+            } else if (std.mem.eql(u8, id, "show_word_count")) {
+                showWordCount(model);
             } else if (std.mem.eql(u8, id, "toggle_trim_trailing")) {
                 toggleTrimTrailing(model);
             } else if (std.mem.eql(u8, id, "toggle_final_newline")) {
@@ -1195,6 +1225,12 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .undo_edit => undoLastEdit(model),
         .revert_file => revertActiveFile(model),
         .copy_absolute_path => copyAbsolutePath(model),
+        .next_tab => cycleTab(model, true),
+        .prev_tab => cycleTab(model, false),
+        .remove_blank_lines => removeBlankLines(model),
+        .insert_blank_line => insertBlankLine(model),
+        .copy_filename => copyFileName(model),
+        .show_word_count => showWordCount(model),
         .select_tab => |id| {
             model.active_tab_id = id;
             if (model.workspace_from_disk) {
@@ -1451,7 +1487,8 @@ pub fn refreshDocStats(model: *Model) void {
     }
     if (text.len == 0) lines = 0;
     const eol = edit_transforms.detectEol(text);
-    const label = std.fmt.bufPrint(&model.doc_stats_buf, "{d} lines · {d} bytes · {s}", .{ lines, text.len, eol }) catch "stats";
+    const words = edit_transforms.countWords(text);
+    const label = std.fmt.bufPrint(&model.doc_stats_buf, "{d} lines · {d} words · {d} bytes · {s}", .{ lines, words, text.len, eol }) catch "stats";
     model.doc_stats = label;
 }
 
@@ -1596,6 +1633,79 @@ fn copyAbsolutePath(model: *Model) void {
     dst += rel.len;
     model.path_toast = model.path_toast_buf[0..dst];
     model.toast = model.path_toast;
+}
+
+fn copyFileName(model: *Model) void {
+    const path = Model.activeTabPath(model);
+    if (path.len == 0) {
+        model.toast = "No active path";
+        model.path_toast = "";
+        return;
+    }
+    const name = edit_transforms.fileNameOf(path);
+    const n = @min(name.len, model.path_toast_buf.len);
+    @memcpy(model.path_toast_buf[0..n], name[0..n]);
+    model.path_toast = model.path_toast_buf[0..n];
+    model.toast = model.path_toast;
+}
+
+fn showWordCount(model: *Model) void {
+    refreshDocStats(model);
+    const words = edit_transforms.countWords(model.document.text());
+    const msg = std.fmt.bufPrint(&model.action_toast_buf, "{d} words", .{words}) catch "words";
+    model.toast = msg;
+}
+
+fn removeBlankLines(model: *Model) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = edit_transforms.removeBlankLines(model.document.text(), &out) orelse {
+        model.toast = "Remove blank lines failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..n], "Removed blank lines");
+}
+
+fn insertBlankLine(model: *Model) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = edit_transforms.insertBlankLineAtEnd(model.document.text(), &out) orelse {
+        model.toast = "Insert blank line failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..n], "Inserted blank line");
+}
+
+fn cycleTab(model: *Model, forward: bool) void {
+    const open = model.open_tabs;
+    if (open.len < 2) {
+        model.toast = if (open.len == 0) "No tabs" else "Only one tab";
+        return;
+    }
+    var idx: usize = 0;
+    var found = false;
+    for (open, 0..) |tab, i| {
+        if (tab.id == model.active_tab_id) {
+            idx = i;
+            found = true;
+            break;
+        }
+    }
+    if (!found) idx = 0;
+    const next_idx: usize = if (forward)
+        (idx + 1) % open.len
+    else if (idx == 0)
+        open.len - 1
+    else
+        idx - 1;
+    const next_id = open[next_idx].id;
+    model.active_tab_id = next_id;
+    if (model.workspace_from_disk) {
+        if (model.workspace) |ws| {
+            ws.openFileById(modelIo(model), next_id) catch {};
+            model.open_tabs = ws.tabsSlice();
+            syncDocumentFromWorkspace(model);
+        }
+    }
+    model.toast = "Switched tab";
 }
 
 fn pushUndoSnapshot(model: *Model) void {
