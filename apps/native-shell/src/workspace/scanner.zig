@@ -240,6 +240,20 @@ pub fn renameRelFile(io: Io, root_path: []const u8, old_rel: []const u8, new_rel
     root.rename(old_rel, root, new_rel, io) catch return error.AccessDenied;
 }
 
+pub fn createRelDir(io: Io, root_path: []const u8, rel_path: []const u8) !void {
+    if (rel_path.len == 0) return error.AccessDenied;
+    var root = try Io.Dir.cwd().openDir(io, root_path, .{});
+    defer root.close(io);
+    root.createDirPath(io, rel_path) catch return error.AccessDenied;
+}
+
+pub fn deleteRelDir(io: Io, root_path: []const u8, rel_path: []const u8) !void {
+    if (rel_path.len == 0) return error.AccessDenied;
+    var root = try Io.Dir.cwd().openDir(io, root_path, .{});
+    defer root.close(io);
+    root.deleteTree(io, rel_path) catch return error.AccessDenied;
+}
+
 /// Join root + relative path into `out`. Returns joined slice.
 pub fn joinRootRel(root: []const u8, rel: []const u8, out: []u8) ![]const u8 {
     if (root.len == 0) {

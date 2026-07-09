@@ -84,6 +84,10 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Hard wrap | Wrap long lines at column 80. |
 | Copy document | Copy active buffer into toast (truncated if huge). |
 | Go to symbol | Jump toast to first line matching find query (case-insensitive). |
+| New folder | Create relative directory from New-path field. |
+| File size | Toast active buffer byte size. |
+| Word wrap pref | Toggle + persist soft wrap preference (label; textarea wrap later). |
+| Close tab shortcut | `Cmd+W` closes the active tab. |
 | Trim blank lines | Strip leading/trailing blank lines from the document. |
 | Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |

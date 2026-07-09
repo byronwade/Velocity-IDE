@@ -82,6 +82,7 @@
             <row gap="4" cross="center">
               <text-field text="{newFilePathText}" placeholder="src/new.ts" on-input="update_new_file_path" on-submit="create_new_file" grow="1" label="New file path" />
               <button size="sm" variant="secondary" on-press="create_new_file">New</button>
+              <button size="sm" variant="ghost" on-press="create_folder">Dir</button>
               <button size="sm" variant="ghost" on-press="rename_selected_file">Ren</button>
               <button size="sm" variant="ghost" on-press="duplicate_selected_file">Dup</button>
               <button size="sm" variant="ghost" on-press="delete_selected_file">Del</button>
@@ -172,6 +173,7 @@
                   <button size="sm" variant="ghost" on-press="copy_filename">Name</button>
                   <button size="sm" variant="ghost" on-press="copy_all_tab_paths">Tabs</button>
                   <button size="sm" variant="ghost" on-press="compare_with_saved">DiffDisk</button>
+                  <button size="sm" variant="ghost" on-press="show_file_size">Size</button>
                   <button size="sm" variant="ghost" on-press="new_untitled">Untitled</button>
                   <button size="sm" variant="ghost" on-press="show_word_count">Words</button>
                   <button size="sm" variant="ghost" on-press="revert_file">Revert</button>
@@ -433,6 +435,7 @@
               <button variant="ghost" on-press="toggle_final_newline">{finalNewlineLabel}</button>
               <button variant="ghost" on-press="cycle_indent_size">{indentSizeLabel}</button>
               <button variant="ghost" on-press="toggle_sidebar">{sidebarLabel}</button>
+              <button variant="ghost" on-press="toggle_word_wrap">{wordWrapLabel}</button>
               <button variant="ghost" on-press="toggle_focus_mode">{focusModeLabel}</button>
               <button variant="ghost" on-press="save_prefs">Save Preferences</button>
               <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
@@ -507,7 +510,7 @@
       <column width="480" gap="8" padding="12" background="surface">
         <text>Keyboard Shortcuts</text>
         <text size="sm" foreground="text_muted">Cmd+K palette / Cmd+P quick open / Cmd+F find / Cmd+G go to line</text>
-        <text size="sm" foreground="text_muted">Cmd+S save / Cmd+/ comment / Cmd+Shift+T reopen / Cmd+Z undo / Cmd+B sidebar</text>
+        <text size="sm" foreground="text_muted">Cmd+S save / Cmd+W close tab / Cmd+/ comment / Cmd+Shift+T reopen / Cmd+Z undo / Cmd+B sidebar</text>
         <text size="sm" foreground="text_muted">Ctrl+Tab next tab / Ctrl+Shift+Tab prev tab / Ctrl+` terminal</text>
         <text size="sm" foreground="text_muted">Esc dismiss / Focus mode / DelLn Join / LF CRLF / Time stamp</text>
         <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>

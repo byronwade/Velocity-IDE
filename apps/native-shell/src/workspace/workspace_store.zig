@@ -216,6 +216,19 @@ pub const WorkspaceBuffers = struct {
         return error.NotFound;
     }
 
+    /// Create a relative directory, rescan, return the new node id.
+    pub fn createFolder(self: *WorkspaceBuffers, io: std.Io, rel_path: []const u8) !u32 {
+        if (rel_path.len == 0) return error.NotFound;
+        try scanner.createRelDir(io, self.rootPath(), rel_path);
+        const root = self.rootPath();
+        var root_copy: [max_root_path_len]u8 = undefined;
+        if (root.len > root_copy.len) return error.PathTooLong;
+        @memcpy(root_copy[0..root.len], root);
+        _ = try self.openPath(io, root_copy[0..root.len]);
+        if (self.findNodeByPath(rel_path)) |node| return node.id;
+        return error.NotFound;
+    }
+
     pub fn clear(self: *WorkspaceBuffers) void {
         self.* = .{};
     }

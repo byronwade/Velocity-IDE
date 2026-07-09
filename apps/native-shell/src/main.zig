@@ -68,6 +68,7 @@ pub const app_shortcuts = [_]native_sdk.Shortcut{
     .{ .id = "prev_tab", .key = "tab", .modifiers = .{ .control = true, .shift = true } },
     .{ .id = "toggle_sidebar", .key = "b", .modifiers = .{ .primary = true } },
     .{ .id = "new_untitled", .key = "n", .modifiers = .{ .primary = true } },
+    .{ .id = "close_active_tab", .key = "w", .modifiers = .{ .primary = true } },
     .{ .id = "escape", .key = "escape" },
     .{ .id = "toggle_terminal", .key = "`", .modifiers = .{ .control = true } },
     .{ .id = "save_file", .key = "s", .modifiers = .{ .primary = true } },
@@ -87,6 +88,7 @@ pub fn onCommand(name: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "prev_tab")) return .prev_tab;
     if (std.mem.eql(u8, name, "toggle_sidebar")) return .toggle_sidebar;
     if (std.mem.eql(u8, name, "new_untitled")) return .new_untitled;
+    if (std.mem.eql(u8, name, "close_active_tab")) return .close_active_tab;
     if (std.mem.eql(u8, name, "escape")) return .dismiss_overlay;
     if (std.mem.eql(u8, name, "toggle_terminal")) return .toggle_terminal;
     if (std.mem.eql(u8, name, "save_file")) return .save_file;

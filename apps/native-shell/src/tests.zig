@@ -2,6 +2,7 @@ const std = @import("std");
 const native_sdk = @import("native_sdk");
 const main = @import("main.zig");
 const model_mod = @import("model/app_model.zig");
+const scanner_mod = @import("workspace/scanner.zig");
 
 const canvas = native_sdk.canvas;
 const testing = std.testing;
@@ -871,4 +872,27 @@ test "format hard wrap copy document go to symbol" {
     model.find_query.set("widget");
     main.update(&model, .go_to_symbol);
     try testing.expect(std.mem.indexOf(u8, model.toast, "Symbol @ 2") != null);
+}
+
+test "create folder file size word wrap close tab shortcut" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.new_file_path.set("tmp_mvp_dir");
+    main.update(&model, .create_folder);
+    try testing.expectEqualStrings("Folder created", model.toast);
+    // Soft-confirm delete of a disposable folder isn't supported — remove via scanner helper.
+    if (model.workspace) |ws| {
+        scanner_mod.deleteRelDir(std.testing.io, ws.rootPath(), "tmp_mvp_dir") catch {};
+        main.update(&model, .refresh_explorer);
+    }
+    model.document.set("abcd");
+    main.update(&model, .show_file_size);
+    try testing.expect(std.mem.indexOf(u8, model.toast, "4 bytes") != null);
+    main.update(&model, .toggle_word_wrap);
+    try testing.expectEqualStrings("Word wrap on", model.toast);
+    try testing.expect(model.word_wrap);
+    main.update(&model, .toggle_word_wrap);
+    try testing.expectEqualStrings("Word wrap off", model.toast);
+    // Cmd+W maps to close_active_tab via onCommand.
+    try testing.expect(main.onCommand("close_active_tab") != null);
 }

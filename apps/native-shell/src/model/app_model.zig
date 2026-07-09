@@ -209,6 +209,9 @@ pub const Msg = union(enum) {
     hard_wrap,
     copy_document,
     go_to_symbol,
+    create_folder,
+    show_file_size,
+    toggle_word_wrap,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -316,6 +319,9 @@ pub const Msg = union(enum) {
         "hard_wrap",
         "copy_document",
         "go_to_symbol",
+        "create_folder",
+        "show_file_size",
+        "toggle_word_wrap",
         "terminal_line",
         "terminal_exit",
     };
@@ -396,6 +402,7 @@ pub const Model = struct {
     find_whole_word: bool = false,
     search_case_sensitive: bool = false,
     show_sidebar: bool = true,
+    word_wrap: bool = false,
     auto_save: bool = false,
     trim_trailing_ws: bool = false,
     insert_final_newline: bool = true,
@@ -544,6 +551,7 @@ pub const Model = struct {
         "find_whole_word",
         "search_case_sensitive",
         "show_sidebar",
+        "word_wrap",
         "auto_save",
         "trim_trailing_ws",
         "insert_final_newline",
@@ -853,6 +861,10 @@ pub const Model = struct {
         return if (model.show_sidebar) "Sidebar: shown" else "Sidebar: hidden";
     }
 
+    pub fn wordWrapLabel(model: *const Model) []const u8 {
+        return if (model.word_wrap) "Wrap: on" else "Wrap: off";
+    }
+
     pub fn terminalPanelLabel(model: *const Model) []const u8 {
         return if (model.show_terminal) "Terminal: shown" else "Terminal: hidden";
     }
@@ -982,7 +994,7 @@ pub const commands = [_]CommandItem{
     .{ .id = "toggle_auto_save", .title = "Toggle Auto Save", .hint = "" },
     .{ .id = "toggle_find_case", .title = "Toggle Find Case Sensitivity", .hint = "" },
     .{ .id = "goto_line", .title = "Go to Line", .hint = "Cmd+G" },
-    .{ .id = "close_active_tab", .title = "Close Active Tab", .hint = "" },
+    .{ .id = "close_active_tab", .title = "Close Active Tab", .hint = "Cmd+W" },
     .{ .id = "close_other_tabs", .title = "Close Other Tabs", .hint = "" },
     .{ .id = "close_all_tabs", .title = "Close All Tabs", .hint = "" },
     .{ .id = "pin_active_tab", .title = "Pin / Unpin Active Tab", .hint = "" },
@@ -1041,6 +1053,9 @@ pub const commands = [_]CommandItem{
     .{ .id = "hard_wrap", .title = "Hard Wrap at 80", .hint = "" },
     .{ .id = "copy_document", .title = "Copy Document", .hint = "" },
     .{ .id = "go_to_symbol", .title = "Go to Symbol in File", .hint = "Cmd+Shift+O" },
+    .{ .id = "create_folder", .title = "New Folder", .hint = "" },
+    .{ .id = "show_file_size", .title = "Show File Size", .hint = "" },
+    .{ .id = "toggle_word_wrap", .title = "Toggle Word Wrap", .hint = "Alt+Z" },
     .{ .id = "reopen_last_workspace", .title = "Reopen Last Workspace", .hint = "" },
     .{ .id = "clear_find", .title = "Clear Find", .hint = "" },
     .{ .id = "duplicate_line", .title = "Duplicate Last Line", .hint = "" },
@@ -1284,6 +1299,12 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 copyDocument(model);
             } else if (std.mem.eql(u8, id, "go_to_symbol")) {
                 goToSymbol(model);
+            } else if (std.mem.eql(u8, id, "create_folder")) {
+                createFolder(model);
+            } else if (std.mem.eql(u8, id, "show_file_size")) {
+                showFileSize(model);
+            } else if (std.mem.eql(u8, id, "toggle_word_wrap")) {
+                toggleWordWrap(model);
             } else if (std.mem.eql(u8, id, "reopen_last_workspace")) {
                 reopenLastWorkspace(model);
             } else if (std.mem.eql(u8, id, "clear_find")) {
@@ -1552,6 +1573,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .hard_wrap => hardWrapDocument(model),
         .copy_document => copyDocument(model),
         .go_to_symbol => goToSymbol(model),
+        .create_folder => createFolder(model),
+        .show_file_size => showFileSize(model),
+        .toggle_word_wrap => toggleWordWrap(model),
         .open_git_entry => |id| openGitEntry(model, id),
         .clear_find => clearFind(model),
         .reopen_last_workspace => reopenLastWorkspace(model),
@@ -3507,6 +3531,50 @@ fn goToSymbol(model: *Model) void {
     model.goto_line_input.set(nn);
 }
 
+fn createFolder(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const rel = model.new_file_path.text();
+    if (rel.len == 0) {
+        model.toast = "Enter a folder path";
+        return;
+    }
+    const id = ws.createFolder(modelIo(model), rel) catch {
+        model.toast = "Create folder failed";
+        return;
+    };
+    model.file_nodes = ws.fileNodesSlice();
+    model.open_tabs = ws.tabsSlice();
+    model.workspace_node_count = ws.file_node_count;
+    refreshWorkspaceFileCount(model);
+    applyExplorerFilter(model);
+    model.selected_file_id = id;
+    model.current_view = .ide;
+    model.selected_activity = .explorer;
+    model.toast = "Folder created";
+    model.new_file_path.clear();
+}
+
+fn showFileSize(model: *Model) void {
+    const text = model.document.text();
+    const path = Model.activeTabPath(model);
+    const name = if (path.len > 0) edit_transforms.fileNameOf(path) else "(buffer)";
+    const msg = std.fmt.bufPrint(&model.action_toast_buf, "{s}: {d} bytes", .{ name, text.len }) catch "size";
+    model.toast = msg;
+}
+
+fn toggleWordWrap(model: *Model) void {
+    model.word_wrap = !model.word_wrap;
+    persistPrefs(model);
+    model.toast = if (model.word_wrap) "Word wrap on" else "Word wrap off";
+}
+
 fn copyAllTabPaths(model: *Model) void {
     const open = model.open_tabs;
     if (open.len == 0) {
@@ -3755,6 +3823,7 @@ fn applyPrefsToModel(model: *Model) void {
     model.find_whole_word = model.prefs.find_whole_word;
     model.search_case_sensitive = model.prefs.search_case_sensitive;
     model.show_sidebar = model.prefs.show_sidebar;
+    model.word_wrap = model.prefs.word_wrap;
     model.trim_trailing_ws = model.prefs.trim_trailing_ws;
     model.insert_final_newline = model.prefs.insert_final_newline;
     model.indent_size = if (model.prefs.indent_size == 4) 4 else 2;
@@ -3785,6 +3854,7 @@ fn persistPrefs(model: *Model) void {
     model.prefs.find_whole_word = model.find_whole_word;
     model.prefs.search_case_sensitive = model.search_case_sensitive;
     model.prefs.show_sidebar = model.show_sidebar;
+    model.prefs.word_wrap = model.word_wrap;
     model.prefs.trim_trailing_ws = model.trim_trailing_ws;
     model.prefs.insert_final_newline = model.insert_final_newline;
     model.prefs.indent_size = model.indent_size;
