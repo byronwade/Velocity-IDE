@@ -741,3 +741,18 @@ test "duplicate selected file" {
     main.update(&model, .delete_selected_file);
     main.update(&model, .delete_selected_file);
 }
+
+test "sidebar toggle and search case and timestamp" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    try testing.expect(model_mod.Model.showLeftPanel(&model));
+    main.update(&model, .toggle_sidebar);
+    try testing.expect(!model.show_sidebar);
+    try testing.expect(!model_mod.Model.showLeftPanel(&model));
+    main.update(&model, .toggle_search_case);
+    try testing.expect(model.search_case_sensitive);
+    model.document.set("prefix ");
+    main.update(&model, .insert_timestamp);
+    try testing.expect(model.document.text().len > "prefix ".len);
+    try testing.expect(std.mem.startsWith(u8, model.document.text(), "prefix "));
+}

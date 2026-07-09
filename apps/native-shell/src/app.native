@@ -136,9 +136,11 @@
               <button size="sm" variant="ghost" on-press="convert_spaces_to_tabs">Sp>Tab</button>
               <button size="sm" variant="ghost" on-press="convert_to_lf">LF</button>
               <button size="sm" variant="ghost" on-press="convert_to_crlf">CRLF</button>
+              <button size="sm" variant="ghost" on-press="insert_timestamp">Time</button>
               <button size="sm" variant="ghost" on-press="undo_edit">Undo</button>
               <text-field text="{gotoLineText}" placeholder="Line" on-input="update_goto_line" on-submit="goto_line" width="72" label="Go to line" />
               <button size="sm" variant="ghost" on-press="goto_line">Go</button>
+              <button size="sm" variant="ghost" on-press="toggle_sidebar">{sidebarLabel}</button>
               <button size="sm" variant="ghost" on-press="toggle_focus_mode">{focusModeLabel}</button>
               <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Keys</button>
               <button size="sm" variant="ghost" on-press="toggle_agent_panel">Agent</button>
@@ -253,6 +255,7 @@
               </row>
               <row gap="6" cross="center">
                 <text-field text="{searchQueryText}" placeholder="Search workspace..." on-input="update_search_query" on-submit="run_search" grow="1" label="Search query" />
+                <button size="sm" variant="ghost" on-press="toggle_search_case">{searchCaseLabel}</button>
                 <button size="sm" variant="primary" on-press="run_search">Search</button>
               </row>
               <text size="sm" foreground="text_muted">Bounded in-process scan (no ripgrep). Caps at 64 hits.</text>
@@ -407,6 +410,7 @@
               <button variant="ghost" on-press="toggle_trim_trailing">{trimTrailingLabel}</button>
               <button variant="ghost" on-press="toggle_final_newline">{finalNewlineLabel}</button>
               <button variant="ghost" on-press="cycle_indent_size">{indentSizeLabel}</button>
+              <button variant="ghost" on-press="toggle_sidebar">{sidebarLabel}</button>
               <button variant="ghost" on-press="toggle_focus_mode">{focusModeLabel}</button>
               <button variant="ghost" on-press="save_prefs">Save Preferences</button>
               <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
@@ -481,9 +485,9 @@
       <column width="480" gap="8" padding="12" background="surface">
         <text>Keyboard Shortcuts</text>
         <text size="sm" foreground="text_muted">Cmd+K palette / Cmd+P quick open / Cmd+F find / Cmd+G go to line</text>
-        <text size="sm" foreground="text_muted">Cmd+S save / Cmd+/ comment / Cmd+Shift+T reopen tab / Cmd+Z undo</text>
+        <text size="sm" foreground="text_muted">Cmd+S save / Cmd+/ comment / Cmd+Shift+T reopen / Cmd+Z undo / Cmd+B sidebar</text>
         <text size="sm" foreground="text_muted">Ctrl+Tab next tab / Ctrl+Shift+Tab prev tab / Ctrl+` terminal</text>
-        <text size="sm" foreground="text_muted">Esc dismiss / Focus mode / DelLn Join LnUp NoBlank / Revert</text>
+        <text size="sm" foreground="text_muted">Esc dismiss / Focus mode / DelLn Join / LF CRLF / Time stamp</text>
         <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>
       </column>
     </column>

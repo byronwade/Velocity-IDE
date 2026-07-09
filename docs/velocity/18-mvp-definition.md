@@ -65,6 +65,9 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | CRLF ↔ LF | Convert document line endings. |
 | Find whole word | Prefs toggle; match only at word boundaries. |
 | Duplicate file | Explorer Dup creates `name_copy.ext` beside selection. |
+| Search case | Workspace search case-sensitive toggle (persisted). |
+| Insert timestamp | Appends UTC `YYYY-MM-DD HH:MM:SS` to the document. |
+| Toggle sidebar | Independent left explorer chrome (`Cmd+B`). |
 | Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |
 | Agent panel | Local task board only — no network AI. |

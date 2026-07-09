@@ -716,6 +716,32 @@ pub fn duplicatePathName(path: []const u8, out: []u8) ?usize {
     return dst;
 }
 
+/// Append an ISO-ish UTC timestamp (seconds since epoch formatted).
+pub fn formatTimestamp(epoch_secs: i64, out: []u8) ?usize {
+    if (out.len < 20) return null;
+    // Simple YYYY-MM-DD HH:MM:SS UTC from unix seconds (no leap seconds).
+    const secs: u64 = if (epoch_secs < 0) 0 else @intCast(epoch_secs);
+    const day_secs: u64 = 86400;
+    const days = secs / day_secs;
+    const sod = secs % day_secs;
+    const hour: u64 = sod / 3600;
+    const minute: u64 = (sod % 3600) / 60;
+    const second: u64 = sod % 60;
+    // Civil from days since 1970-01-01 (Howard Hinnant algorithm).
+    const z = days + 719468;
+    const era = z / 146097;
+    const doe = z - era * 146097;
+    const yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const y = yoe + era * 400;
+    const doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const mp = (5 * doy + 2) / 153;
+    const d = doy - (153 * mp + 2) / 5 + 1;
+    const m = if (mp < 10) mp + 3 else mp - 9;
+    const year = if (m <= 2) y + 1 else y;
+    const written = std.fmt.bufPrint(out, "{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}", .{ year, m, d, hour, minute, second }) catch return null;
+    return written.len;
+}
+
 test "case and sort transforms" {
     var out: [128]u8 = undefined;
     const u = toUpperCase("AbC", &out).?;
@@ -777,4 +803,6 @@ test "eol convert and duplicate path" {
     try std.testing.expectEqualStrings("a\r\nb\r\n", out[0..b]);
     const p = duplicatePathName("src/app.tsx", &out).?;
     try std.testing.expectEqualStrings("src/app_copy.tsx", out[0..p]);
+    const ts = formatTimestamp(0, &out).?;
+    try std.testing.expectEqualStrings("1970-01-01 00:00:00", out[0..ts]);
 }

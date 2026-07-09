@@ -41,6 +41,16 @@ pub const SearchBuffers = struct {
         ws: *workspace_store.WorkspaceBuffers,
         query: []const u8,
     ) void {
+        self.searchWithOptions(io, ws, query, false);
+    }
+
+    pub fn searchWithOptions(
+        self: *SearchBuffers,
+        io: std.Io,
+        ws: *workspace_store.WorkspaceBuffers,
+        query: []const u8,
+        case_sensitive: bool,
+    ) void {
         self.clear();
         if (query.len == 0) {
             self.status = "empty query";
@@ -53,7 +63,7 @@ pub const SearchBuffers = struct {
             const node = ws.file_nodes[i];
             if (node.is_dir) continue;
             const n = scanner.readTextFile(io, ws.rootPath(), node.path, file_buf[0..]) catch continue;
-            self.scanFile(node.path, file_buf[0..n], query);
+            self.scanFile(node.path, file_buf[0..n], query, case_sensitive);
         }
         if (self.hit_count == 0) {
             self.status = "no matches";
@@ -62,16 +72,18 @@ pub const SearchBuffers = struct {
         }
     }
 
-    fn scanFile(self: *SearchBuffers, path: []const u8, content: []const u8, query: []const u8) void {
+    fn scanFile(self: *SearchBuffers, path: []const u8, content: []const u8, query: []const u8, case_sensitive: bool) void {
         var line_no: u32 = 1;
         var start: usize = 0;
         var i: usize = 0;
         while (i <= content.len and self.hit_count < max_hits) : (i += 1) {
             if (i == content.len or content[i] == '\n') {
                 const line = content[start..i];
-                if (std.ascii.indexOfIgnoreCase(line, query) != null) {
-                    self.pushHit(path, line_no, line);
-                }
+                const hit = if (case_sensitive)
+                    std.mem.indexOf(u8, line, query) != null
+                else
+                    std.ascii.indexOfIgnoreCase(line, query) != null;
+                if (hit) self.pushHit(path, line_no, line);
                 line_no += 1;
                 start = i + 1;
             }
@@ -107,4 +119,17 @@ test "search finds fixture auth helper" {
     search_bufs.search(std.testing.io, ws, "createSession");
     try std.testing.expect(search_bufs.hit_count > 0);
     try std.testing.expect(std.mem.indexOf(u8, search_bufs.hits[0].path, "auth.ts") != null);
+}
+
+test "search case sensitive" {
+    const ws = try std.testing.allocator.create(workspace_store.WorkspaceBuffers);
+    defer std.testing.allocator.destroy(ws);
+    ws.* = .{};
+    _ = try ws.openPath(std.testing.io, "fixtures/acme-dashboard");
+    var search_bufs: SearchBuffers = .{};
+    search_bufs.searchWithOptions(std.testing.io, ws, "TODO", true);
+    const case_hits = search_bufs.hit_count;
+    try std.testing.expect(case_hits > 0);
+    search_bufs.searchWithOptions(std.testing.io, ws, "todo", true);
+    try std.testing.expect(search_bufs.hit_count < case_hits or search_bufs.hit_count == 0);
 }

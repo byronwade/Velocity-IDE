@@ -167,6 +167,9 @@ pub const Msg = union(enum) {
     convert_to_crlf,
     toggle_find_whole_word,
     duplicate_selected_file,
+    toggle_search_case,
+    toggle_sidebar,
+    insert_timestamp,
     update_replace_text: canvas.TextInputEvent,
     replace_once,
     replace_all,
@@ -253,6 +256,9 @@ pub const Msg = union(enum) {
         "convert_to_crlf",
         "toggle_find_whole_word",
         "duplicate_selected_file",
+        "toggle_search_case",
+        "toggle_sidebar",
+        "insert_timestamp",
         "replace_once",
         "replace_all",
         "copy_active_path",
@@ -347,6 +353,8 @@ pub const Model = struct {
     find_label_buf: [48]u8 = undefined,
     find_case_sensitive: bool = false,
     find_whole_word: bool = false,
+    search_case_sensitive: bool = false,
+    show_sidebar: bool = true,
     auto_save: bool = false,
     trim_trailing_ws: bool = false,
     insert_final_newline: bool = true,
@@ -491,6 +499,8 @@ pub const Model = struct {
         "find_matches",
         "find_case_sensitive",
         "find_whole_word",
+        "search_case_sensitive",
+        "show_sidebar",
         "auto_save",
         "trim_trailing_ws",
         "insert_final_newline",
@@ -786,6 +796,14 @@ pub const Model = struct {
         return if (model.find_whole_word) "Word: on" else "Word: off";
     }
 
+    pub fn searchCaseLabel(model: *const Model) []const u8 {
+        return if (model.search_case_sensitive) "Search Aa: on" else "Search Aa: off";
+    }
+
+    pub fn sidebarLabel(model: *const Model) []const u8 {
+        return if (model.show_sidebar) "Sidebar: shown" else "Sidebar: hidden";
+    }
+
     pub fn terminalPanelLabel(model: *const Model) []const u8 {
         return if (model.show_terminal) "Terminal: shown" else "Terminal: hidden";
     }
@@ -836,7 +854,7 @@ pub const Model = struct {
     }
 
     pub fn showLeftPanel(model: *const Model) bool {
-        return model.current_view == .ide and model.selected_activity == .explorer and !model.focus_mode;
+        return model.current_view == .ide and model.selected_activity == .explorer and model.show_sidebar and !model.focus_mode;
     }
 
     pub fn showIdeChrome(model: *const Model) bool {
@@ -946,6 +964,9 @@ pub const commands = [_]CommandItem{
     .{ .id = "convert_to_crlf", .title = "Convert Line Endings to CRLF", .hint = "" },
     .{ .id = "toggle_find_whole_word", .title = "Toggle Find Whole Word", .hint = "" },
     .{ .id = "duplicate_selected_file", .title = "Duplicate Selected File", .hint = "" },
+    .{ .id = "toggle_search_case", .title = "Toggle Search Case Sensitivity", .hint = "" },
+    .{ .id = "toggle_sidebar", .title = "Toggle Sidebar", .hint = "Cmd+B" },
+    .{ .id = "insert_timestamp", .title = "Insert Timestamp", .hint = "" },
     .{ .id = "toggle_trim_trailing", .title = "Toggle Trim Trailing Whitespace", .hint = "" },
     .{ .id = "toggle_final_newline", .title = "Toggle Insert Final Newline", .hint = "" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
@@ -1137,6 +1158,12 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 toggleFindWholeWord(model);
             } else if (std.mem.eql(u8, id, "duplicate_selected_file")) {
                 duplicateSelectedFile(model);
+            } else if (std.mem.eql(u8, id, "toggle_search_case")) {
+                toggleSearchCase(model);
+            } else if (std.mem.eql(u8, id, "toggle_sidebar")) {
+                toggleSidebar(model);
+            } else if (std.mem.eql(u8, id, "insert_timestamp")) {
+                insertTimestamp(model);
             } else if (std.mem.eql(u8, id, "toggle_trim_trailing")) {
                 toggleTrimTrailing(model);
             } else if (std.mem.eql(u8, id, "toggle_final_newline")) {
@@ -1291,6 +1318,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .convert_to_crlf => convertLineEndings(model, false),
         .toggle_find_whole_word => toggleFindWholeWord(model),
         .duplicate_selected_file => duplicateSelectedFile(model),
+        .toggle_search_case => toggleSearchCase(model),
+        .toggle_sidebar => toggleSidebar(model),
+        .insert_timestamp => insertTimestamp(model),
         .select_tab => |id| {
             model.active_tab_id = id;
             if (model.workspace_from_disk) {
@@ -2088,7 +2118,7 @@ fn runWorkspaceSearch(model: *Model) void {
         return;
     };
     _ = model.governor.spawn("feature.search", "workspace-search") catch {};
-    bufs.search(modelIo(model), ws, model.search_query.text());
+    bufs.searchWithOptions(modelIo(model), ws, model.search_query.text(), model.search_case_sensitive);
     model.search_hits = bufs.hitsSlice();
     model.governor.killFeature("feature.search");
     model.process_count = model.governor.aliveCount();
@@ -2663,6 +2693,39 @@ fn toggleFindWholeWord(model: *Model) void {
     }
 }
 
+fn toggleSearchCase(model: *Model) void {
+    model.search_case_sensitive = !model.search_case_sensitive;
+    persistPrefs(model);
+    model.toast = if (model.search_case_sensitive) "Search: case sensitive" else "Search: ignore case";
+}
+
+fn toggleSidebar(model: *Model) void {
+    model.show_sidebar = !model.show_sidebar;
+    persistPrefs(model);
+    if (model.show_sidebar and model.current_view == .ide) {
+        model.selected_activity = .explorer;
+    }
+    model.toast = if (model.show_sidebar) "Sidebar shown" else "Sidebar hidden";
+}
+
+fn insertTimestamp(model: *Model) void {
+    var stamp: [32]u8 = undefined;
+    const now_secs = std.Io.Clock.real.now(modelIo(model)).toSeconds();
+    const n = edit_transforms.formatTimestamp(now_secs, &stamp) orelse {
+        model.toast = "Timestamp failed";
+        return;
+    };
+    const text = model.document.text();
+    if (text.len + n > edit_transforms.max_out) {
+        model.toast = "Document too large";
+        return;
+    }
+    var out: [edit_transforms.max_out]u8 = undefined;
+    @memcpy(out[0..text.len], text);
+    @memcpy(out[text.len..][0..n], stamp[0..n]);
+    applyDocumentTransform(model, out[0 .. text.len + n], "Inserted timestamp");
+}
+
 fn convertLineEndings(model: *Model, to_lf: bool) void {
     var out: [edit_transforms.max_out]u8 = undefined;
     const n = if (to_lf)
@@ -3129,6 +3192,8 @@ fn applyPrefsToModel(model: *Model) void {
     model.auto_save = model.prefs.auto_save;
     model.find_case_sensitive = model.prefs.find_case_sensitive;
     model.find_whole_word = model.prefs.find_whole_word;
+    model.search_case_sensitive = model.prefs.search_case_sensitive;
+    model.show_sidebar = model.prefs.show_sidebar;
     model.trim_trailing_ws = model.prefs.trim_trailing_ws;
     model.insert_final_newline = model.prefs.insert_final_newline;
     model.indent_size = if (model.prefs.indent_size == 4) 4 else 2;
@@ -3157,6 +3222,8 @@ fn persistPrefs(model: *Model) void {
     model.prefs.auto_save = model.auto_save;
     model.prefs.find_case_sensitive = model.find_case_sensitive;
     model.prefs.find_whole_word = model.find_whole_word;
+    model.prefs.search_case_sensitive = model.search_case_sensitive;
+    model.prefs.show_sidebar = model.show_sidebar;
     model.prefs.trim_trailing_ws = model.trim_trailing_ws;
     model.prefs.insert_final_newline = model.insert_final_newline;
     model.prefs.indent_size = model.indent_size;
