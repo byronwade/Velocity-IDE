@@ -33,6 +33,11 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Clear find | Clears find/replace fields and match list. |
 | Escape dismiss | Closes palette → quick open → clears find (priority order). |
 | Duplicate line | Appends a copy of the last document line (MVP). |
+| Toggle comment | Cmd+/ toggles `//` / `#` / HTML comments on all lines. |
+| Indent / Outdent | Indent or outdent whole document by 2 spaces. |
+| Reopen closed tab | Cmd+Shift+T restores last closed file tab. |
+| Problems panel | Scans TODO/FIXME/HACK/XXX markers; click to open. |
+| SCM diff preview | Selecting a git entry loads bounded `git diff` text. |
 | Workspace counts | Explorer + status bar show file/node counts. |
 | Dirty tab marker | Active tab title shows ` *` while unsaved. |
 | Search hit count | Search status badge reports `N hits`. |

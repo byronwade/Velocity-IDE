@@ -55,6 +55,7 @@
           <button size="sm" variant="ghost" selected="{explorerSelected}" on-press="select_activity:{activity_explorer}" label="Explorer">Ex</button>
           <button size="sm" variant="ghost" selected="{searchSelected}" on-press="select_activity:{activity_search}" label="Search">Se</button>
           <button size="sm" variant="ghost" selected="{scmSelected}" on-press="select_activity:{activity_scm}" label="Source Control">Sc</button>
+          <button size="sm" variant="ghost" selected="{problemsSelected}" on-press="select_activity:{activity_problems}" label="Problems">Pb</button>
           <button size="sm" variant="ghost" selected="{debugSelected}" on-press="select_activity:{activity_debug}" label="Debug">Db</button>
           <button size="sm" variant="ghost" selected="{testingSelected}" on-press="select_activity:{activity_testing}" label="Testing">Ts</button>
           <button size="sm" variant="ghost" selected="{agentsSelected}" on-press="select_activity:{activity_agents}" label="Agents">Ag</button>
@@ -109,7 +110,11 @@
                 <button size="sm" variant="ghost" selected="{t.id == active_tab_id}" on-press="select_tab:{t.id}">{t.title}</button>
               </for>
               <button size="sm" variant="ghost" on-press="close_active_tab">x</button>
+              <button size="sm" variant="ghost" on-press="reopen_closed_tab">Reopen</button>
               <spacer grow="1" />
+              <button size="sm" variant="ghost" on-press="toggle_line_comment">//</button>
+              <button size="sm" variant="ghost" on-press="indent_document">In</button>
+              <button size="sm" variant="ghost" on-press="outdent_document">Out</button>
               <text-field text="{gotoLineText}" placeholder="Line" on-input="update_goto_line" on-submit="goto_line" width="72" label="Go to line" />
               <button size="sm" variant="ghost" on-press="goto_line">Go</button>
               <button size="sm" variant="ghost" on-press="toggle_agent_panel">Agent</button>
@@ -243,13 +248,49 @@
                 <badge variant="secondary">{git_summary}</badge>
                 <button size="sm" variant="secondary" on-press="refresh_git">Refresh</button>
               </row>
-              <text size="sm" foreground="text_muted">branch={git_branch} / git status --porcelain via Process Governor</text>
-              <scroll grow="1" label="Git changes">
+              <text size="sm" foreground="text_muted">branch={git_branch} / click entry to open + load diff</text>
+              <row grow="1" gap="8">
+                <scroll grow="1" label="Git changes">
+                  <column gap="4">
+                    <for each="git_entries" key="id" as="entry">
+                      <list-item on-press="open_git_entry:{entry.id}" padding="6" gap="8" cross="center" label="{entry.path}">
+                        <badge variant="secondary">{entry.status}</badge>
+                        <text grow="1" wrap="false">{entry.path}</text>
+                      </list-item>
+                    </for>
+                  </column>
+                </scroll>
+                <column width="360" gap="6" padding="8" background="surface_subtle">
+                  <row gap="8" cross="center">
+                    <text size="sm" grow="1">Diff preview</text>
+                    <badge variant="secondary">{git_diff_status}</badge>
+                  </row>
+                  <scroll grow="1" label="Git diff">
+                    <text size="sm" wrap="true">{gitDiffText}</text>
+                  </scroll>
+                </column>
+              </row>
+            </column>
+          </if>
+
+          <!-- Problems (TODO/FIXME markers) -->
+          <if test="{isProblems}">
+            <column grow="1" gap="10" padding="16">
+              <row gap="8" cross="center">
+                <text grow="1">Problems</text>
+                <badge variant="secondary">{problemsStatus}</badge>
+                <button size="sm" variant="secondary" on-press="scan_problems">Scan</button>
+              </row>
+              <text size="sm" foreground="text_muted">TODO / FIXME / HACK / XXX markers (no LSP yet)</text>
+              <scroll grow="1" label="Problems list">
                 <column gap="4">
-                  <for each="git_entries" key="id" as="entry">
-                    <list-item on-press="open_git_entry:{entry.id}" padding="6" gap="8" cross="center" label="{entry.path}">
-                      <badge variant="secondary">{entry.status}</badge>
-                      <text grow="1" wrap="false">{entry.path}</text>
+                  <for each="problems" key="id" as="p">
+                    <list-item on-press="open_problem:{p.id}" padding="8" gap="6" label="{p.path}">
+                      <badge variant="secondary">{p.kind}</badge>
+                      <column gap="2" grow="1">
+                        <text wrap="false">{p.path}:{p.line}</text>
+                        <text size="sm" foreground="text_muted" wrap="true">{p.preview}</text>
+                      </column>
                     </list-item>
                   </for>
                 </column>

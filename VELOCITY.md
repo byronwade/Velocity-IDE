@@ -18,6 +18,9 @@ This repository contains:
 | Prefs + Recent | Theme / last path / panels / recent / auto-save / find-case |
 | Document stats | Status bar line + byte counts |
 | Breadcrumb | Active relative path in editor header |
+| Problems | TODO/FIXME/HACK/XXX marker scan panel |
+| SCM diff | Bounded git diff preview on entry open |
+| Editor transforms | Toggle comment, indent/outdent, reopen closed tab |
 | Search (MVP) | Bounded in-process workspace text search |
 | SCM (MVP) | Lazy `git status` / branch via governor |
 | Terminal (MVP) | Async `fx.spawn` pipe runner (sync fallback in tests) |

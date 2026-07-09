@@ -11,6 +11,8 @@ const workspace_search = @import("../workspace/search.zig");
 const find_in_doc = @import("../workspace/find_in_doc.zig");
 const quick_open = @import("../workspace/quick_open.zig");
 const replace_mod = @import("../workspace/replace.zig");
+const edit_transforms = @import("../workspace/edit_transforms.zig");
+const problems_mod = @import("../workspace/problems.zig");
 const terminal_session = @import("../terminal/terminal_session.zig");
 const process_governor = @import("../processes/process_governor.zig");
 const git_status = @import("../scm/git_status.zig");
@@ -32,9 +34,15 @@ pub const SearchHit = workspace_search.SearchHit;
 pub const GitEntry = git_status.GitEntry;
 pub const DocMatch = find_in_doc.DocMatch;
 pub const QuickItem = quick_open.QuickItem;
+pub const Problem = problems_mod.Problem;
 
-pub const ViewKind = enum { launch, ide, plugins, settings, perf, features, processes, search, scm, debug, testing };
-pub const Activity = enum { explorer, search, scm, agents, terminal, plugins, settings, debug, testing, features, processes };
+pub const ClosedTab = struct {
+    path: []const u8 = "",
+    title: []const u8 = "",
+};
+
+pub const ViewKind = enum { launch, ide, plugins, settings, perf, features, processes, search, scm, debug, testing, problems };
+pub const Activity = enum { explorer, search, scm, agents, terminal, plugins, settings, debug, testing, features, processes, problems };
 pub const AgentStatus = enum { running, planning, ready_for_review, failed, completed };
 
 pub const FileNode = workspace_store.FileNode;
@@ -136,6 +144,13 @@ pub const Msg = union(enum) {
     duplicate_line,
     terminal_history_older,
     terminal_history_newer,
+    toggle_line_comment,
+    indent_document,
+    outdent_document,
+    reopen_closed_tab,
+    scan_problems,
+    open_problem: u32,
+    preview_git_diff: u32,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -182,6 +197,12 @@ pub const Msg = union(enum) {
         "dismiss_overlay",
         "terminal_history_older",
         "terminal_history_newer",
+        "toggle_line_comment",
+        "indent_document",
+        "outdent_document",
+        "reopen_closed_tab",
+        "scan_problems",
+        "preview_git_diff",
         "terminal_line",
         "terminal_exit",
     };
@@ -235,6 +256,17 @@ pub const Model = struct {
     explorer_filter: canvas.TextBuffer(64) = .{},
     explorer_filtered: [workspace_store.max_nodes]FileNode = [_]FileNode{.{}} ** workspace_store.max_nodes,
     explorer_filtered_count: u32 = 0,
+    problem_bufs: ?*problems_mod.ProblemBuffers = null,
+    problems: []const Problem = &.{},
+    problems_status: []const u8 = "idle",
+    git_diff_text: []const u8 = "",
+    git_diff_status: []const u8 = "—",
+    closed_tabs: [8]ClosedTab = [_]ClosedTab{.{}} ** 8,
+    closed_tab_count: u32 = 0,
+    closed_path_pool: [8][240]u8 = undefined,
+    closed_path_lens: [8]usize = [_]usize{0} ** 8,
+    closed_title_pool: [8][64]u8 = undefined,
+    closed_title_lens: [8]usize = [_]usize{0} ** 8,
     find_query: canvas.TextBuffer(max_find_query) = .{},
     find_bufs: ?*find_in_doc.FindBuffers = null,
     find_matches: []const DocMatch = &.{},
@@ -305,6 +337,7 @@ pub const Model = struct {
     activity_testing: Activity = .testing,
     activity_features: Activity = .features,
     activity_processes: Activity = .processes,
+    activity_problems: Activity = .problems,
     project_acme: []const u8 = "acme-dashboard",
     project_scratch: []const u8 = "scratch",
 
@@ -357,6 +390,16 @@ pub const Model = struct {
         "explorer_filter",
         "explorer_filtered",
         "explorer_filtered_count",
+        "problem_bufs",
+        "problems_status",
+        "git_diff_text",
+        "closed_tabs",
+        "closed_tab_count",
+        "closed_path_pool",
+        "closed_path_lens",
+        "closed_title_pool",
+        "closed_title_lens",
+        "reopenClosedLabel",
         "find_query",
         "find_bufs",
         "find_label_buf",
@@ -467,6 +510,10 @@ pub const Model = struct {
         return model.selected_activity == .processes;
     }
 
+    pub fn problemsSelected(model: *const Model) bool {
+        return model.selected_activity == .problems;
+    }
+
     pub fn isFeatures(model: *const Model) bool {
         return model.current_view == .features;
     }
@@ -491,8 +538,25 @@ pub const Model = struct {
         return model.current_view == .testing;
     }
 
+    pub fn isProblems(model: *const Model) bool {
+        return model.current_view == .problems or model.selected_activity == .problems;
+    }
+
     pub fn showPlaceholderPanel(model: *const Model) bool {
-        return model.current_view == .search or model.current_view == .scm or model.current_view == .debug or model.current_view == .testing or model.current_view == .features or model.current_view == .processes;
+        return model.current_view == .search or model.current_view == .scm or model.current_view == .debug or model.current_view == .testing or model.current_view == .features or model.current_view == .processes or model.current_view == .problems;
+    }
+
+    pub fn gitDiffText(model: *const Model) []const u8 {
+        return model.git_diff_text;
+    }
+
+    pub fn problemsStatus(model: *const Model) []const u8 {
+        return model.problems_status;
+    }
+
+    pub fn reopenClosedLabel(model: *const Model) []const u8 {
+        if (model.closed_tab_count == 0) return "Reopen Closed";
+        return "Reopen Closed";
     }
 
     pub fn featureMatrixSummary(model: *const Model) []const u8 {
@@ -733,7 +797,12 @@ pub const commands = [_]CommandItem{
     .{ .id = "refresh_git", .title = "Refresh Git Status", .hint = "" },
     .{ .id = "reopen_last_workspace", .title = "Reopen Last Workspace", .hint = "" },
     .{ .id = "clear_find", .title = "Clear Find", .hint = "" },
-    .{ .id = "duplicate_line", .title = "Duplicate Document (append copy)", .hint = "" },
+    .{ .id = "duplicate_line", .title = "Duplicate Last Line", .hint = "" },
+    .{ .id = "toggle_line_comment", .title = "Toggle Line Comment", .hint = "Cmd+/" },
+    .{ .id = "indent_document", .title = "Indent Document", .hint = "Cmd+]" },
+    .{ .id = "outdent_document", .title = "Outdent Document", .hint = "Cmd+[" },
+    .{ .id = "reopen_closed_tab", .title = "Reopen Closed Tab", .hint = "Cmd+Shift+T" },
+    .{ .id = "scan_problems", .title = "Scan TODO/FIXME Problems", .hint = "" },
     .{ .id = "toggle_agent", .title = "Toggle Agent Panel", .hint = "Cmd+." },
     .{ .id = "open_plugins", .title = "Open Plugin Registry", .hint = "" },
     .{ .id = "open_settings", .title = "Open Settings", .hint = "Cmd+," },
@@ -859,6 +928,16 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 clearFind(model);
             } else if (std.mem.eql(u8, id, "duplicate_line")) {
                 duplicateDocumentTail(model);
+            } else if (std.mem.eql(u8, id, "toggle_line_comment")) {
+                toggleLineComment(model);
+            } else if (std.mem.eql(u8, id, "indent_document")) {
+                indentDocument(model, true);
+            } else if (std.mem.eql(u8, id, "outdent_document")) {
+                indentDocument(model, false);
+            } else if (std.mem.eql(u8, id, "reopen_closed_tab")) {
+                reopenClosedTab(model);
+            } else if (std.mem.eql(u8, id, "scan_problems")) {
+                scanProblems(model);
             } else if (std.mem.eql(u8, id, "open_feature_matrix")) {
                 model.current_view = .features;
                 model.selected_activity = .features;
@@ -897,6 +976,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 .testing => model.current_view = .testing,
                 .features => model.current_view = .features,
                 .processes => model.current_view = .processes,
+                .problems => {
+                    model.current_view = .problems;
+                    if (model.workspace_from_disk and model.problems.len == 0) scanProblems(model);
+                },
                 .terminal => {
                     model.current_view = .ide;
                     model.show_terminal = true;
@@ -1074,6 +1157,13 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .toggle_auto_save => toggleAutoSave(model),
         .toggle_find_case => toggleFindCase(model),
         .duplicate_line => duplicateDocumentTail(model),
+        .toggle_line_comment => toggleLineComment(model),
+        .indent_document => indentDocument(model, true),
+        .outdent_document => indentDocument(model, false),
+        .reopen_closed_tab => reopenClosedTab(model),
+        .scan_problems => scanProblems(model),
+        .open_problem => |id| openProblem(model, id),
+        .preview_git_diff => |id| previewGitDiff(model, id),
         .terminal_history_older => terminalHistory(model, true),
         .terminal_history_newer => terminalHistory(model, false),
         .update_quick_query => |edit| {
@@ -1500,6 +1590,11 @@ fn openGitEntry(model: *Model, entry_id: u32) void {
     if (model.git_bufs) |bufs| {
         for (bufs.entriesSlice()) |entry| {
             if (entry.id == entry_id) {
+                // Always load diff preview for the selected entry.
+                bufs.loadDiff(modelIo(model), model.project_path, entry_id);
+                model.git_diff_text = bufs.diffText();
+                model.git_diff_status = bufs.diff_status;
+
                 if (ws.findNodeByPath(entry.path)) |node| {
                     if (node.is_dir) {
                         model.toast = "Directory entry";
@@ -1519,12 +1614,30 @@ fn openGitEntry(model: *Model, entry_id: u32) void {
                     model.toast = "Opened from SCM";
                     return;
                 }
-                model.toast = "File not in scan (untracked/outside?)";
+                model.toast = "Diff loaded (file not in scan)";
                 return;
             }
         }
     }
     model.toast = "Git entry not found";
+}
+
+fn previewGitDiff(model: *Model, entry_id: u32) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const bufs = ensureGitBuffers(model) catch {
+        model.toast = "Git alloc failed";
+        return;
+    };
+    if (bufs.entry_count == 0) refreshGitStatus(model);
+    bufs.loadDiff(modelIo(model), model.project_path, entry_id);
+    model.git_diff_text = bufs.diffText();
+    model.git_diff_status = bufs.diff_status;
+    model.current_view = .scm;
+    model.selected_activity = .scm;
+    model.toast = bufs.diff_status;
 }
 
 fn clearFind(model: *Model) void {
@@ -1597,6 +1710,94 @@ fn duplicateDocumentTail(model: *Model) void {
     syncActiveTabDirty(model);
     if (model.auto_save and model.workspace_from_disk) saveActiveDocument(model);
     model.toast = "Duplicated last line";
+}
+
+fn applyDocumentTransform(model: *Model, new_text: []const u8, ok_toast: []const u8) void {
+    model.document.set(new_text);
+    model.document_dirty = true;
+    refreshDocStats(model);
+    syncActiveTabDirty(model);
+    if (model.auto_save and model.workspace_from_disk) saveActiveDocument(model);
+    model.toast = ok_toast;
+}
+
+fn toggleLineComment(model: *Model) void {
+    const path = Model.activeTabPath(model);
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = edit_transforms.toggleLineComments(model.document.text(), path, &out) orelse {
+        model.toast = "Comment transform failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..n], "Toggled comments");
+}
+
+fn indentDocument(model: *Model, indent: bool) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = if (indent)
+        edit_transforms.indentLines(model.document.text(), 2, &out)
+    else
+        edit_transforms.outdentLines(model.document.text(), 2, &out);
+    const len = n orelse {
+        model.toast = "Indent failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..len], if (indent) "Indented" else "Outdented");
+}
+
+fn ensureProblemBuffers(model: *Model) !*problems_mod.ProblemBuffers {
+    if (model.problem_bufs) |p| return p;
+    const p = try std.heap.page_allocator.create(problems_mod.ProblemBuffers);
+    p.* = .{};
+    model.problem_bufs = p;
+    return p;
+}
+
+fn scanProblems(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace to scan";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const bufs = ensureProblemBuffers(model) catch {
+        model.toast = "Problems alloc failed";
+        return;
+    };
+    bufs.scan(modelIo(model), ws);
+    model.problems = bufs.itemsSlice();
+    model.problems_status = bufs.status;
+    model.current_view = .problems;
+    model.selected_activity = .problems;
+    model.toast = bufs.status;
+}
+
+fn openProblem(model: *Model, problem_id: u32) void {
+    if (model.problem_bufs) |bufs| {
+        for (bufs.itemsSlice()) |item| {
+            if (item.id == problem_id) {
+                if (model.workspace) |ws| {
+                    if (ws.findNodeByPath(item.path)) |node| {
+                        model.selected_file_id = node.id;
+                        model.current_view = .ide;
+                        model.selected_activity = .explorer;
+                        ws.openFileById(modelIo(model), node.id) catch {};
+                        model.active_tab_id = node.id;
+                        model.open_tabs = ws.tabsSlice();
+                        model.status_language = workspace_store.scannerLanguage(node.path);
+                        syncDocumentFromWorkspace(model);
+                        // Surface line via goto toast
+                        const label = std.fmt.bufPrint(&model.goto_line_buf, "Line {d}", .{item.line}) catch "line";
+                        model.goto_line_label = label;
+                        model.toast = model.goto_line_label;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    model.toast = "Problem not found";
 }
 
 fn terminalHistory(model: *Model, older: bool) void {
@@ -1923,6 +2124,17 @@ fn closeTabById(model: *Model, id: u32) void {
     }
     if (model.workspace_from_disk) {
         if (model.workspace) |ws| {
+            // Remember closed path for reopen.
+            if (ws.findNode(id)) |node| {
+                pushClosedTab(model, node.path, scannerBaseName(node.path));
+            } else {
+                for (ws.tabsSlice()) |tab| {
+                    if (tab.id == id) {
+                        pushClosedTab(model, tab.path, tab.title);
+                        break;
+                    }
+                }
+            }
             ws.closeTab(id);
             model.open_tabs = ws.tabsSlice();
             if (ws.tab_count > 0) {
@@ -1939,6 +2151,92 @@ fn closeTabById(model: *Model, id: u32) void {
         }
     }
     model.toast = "Tab closed (mock)";
+}
+
+fn scannerBaseName(path: []const u8) []const u8 {
+    var i = path.len;
+    while (i > 0) {
+        i -= 1;
+        if (path[i] == '/' or path[i] == '\\') return path[i + 1 ..];
+    }
+    return path;
+}
+
+fn pushClosedTab(model: *Model, path: []const u8, title: []const u8) void {
+    if (path.len == 0) return;
+    // Shift existing entries down (newest at 0).
+    var i: u32 = @min(model.closed_tab_count, 7);
+    while (i > 0) : (i -= 1) {
+        const plen = model.closed_path_lens[i - 1];
+        @memcpy(model.closed_path_pool[i][0..plen], model.closed_path_pool[i - 1][0..plen]);
+        model.closed_path_lens[i] = plen;
+        const tlen = model.closed_title_lens[i - 1];
+        @memcpy(model.closed_title_pool[i][0..tlen], model.closed_title_pool[i - 1][0..tlen]);
+        model.closed_title_lens[i] = tlen;
+        model.closed_tabs[i] = .{
+            .path = model.closed_path_pool[i][0..plen],
+            .title = model.closed_title_pool[i][0..tlen],
+        };
+    }
+    const pn = @min(path.len, model.closed_path_pool[0].len);
+    @memcpy(model.closed_path_pool[0][0..pn], path[0..pn]);
+    model.closed_path_lens[0] = pn;
+    const tn = @min(title.len, model.closed_title_pool[0].len);
+    @memcpy(model.closed_title_pool[0][0..tn], title[0..tn]);
+    model.closed_title_lens[0] = tn;
+    model.closed_tabs[0] = .{
+        .path = model.closed_path_pool[0][0..pn],
+        .title = model.closed_title_pool[0][0..tn],
+    };
+    if (model.closed_tab_count < 8) model.closed_tab_count += 1;
+}
+
+fn reopenClosedTab(model: *Model) void {
+    if (model.closed_tab_count == 0) {
+        model.toast = "No closed tabs";
+        return;
+    }
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const path = model.closed_tabs[0].path;
+    // Pop front
+    var i: u32 = 0;
+    while (i + 1 < model.closed_tab_count) : (i += 1) {
+        const plen = model.closed_path_lens[i + 1];
+        @memcpy(model.closed_path_pool[i][0..plen], model.closed_path_pool[i + 1][0..plen]);
+        model.closed_path_lens[i] = plen;
+        const tlen = model.closed_title_lens[i + 1];
+        @memcpy(model.closed_title_pool[i][0..tlen], model.closed_title_pool[i + 1][0..tlen]);
+        model.closed_title_lens[i] = tlen;
+        model.closed_tabs[i] = .{
+            .path = model.closed_path_pool[i][0..plen],
+            .title = model.closed_title_pool[i][0..tlen],
+        };
+    }
+    model.closed_tab_count -= 1;
+
+    if (ws.findNodeByPath(path)) |node| {
+        model.selected_file_id = node.id;
+        model.current_view = .ide;
+        model.selected_activity = .explorer;
+        ws.openFileById(modelIo(model), node.id) catch {
+            model.toast = "Reopen failed";
+            return;
+        };
+        model.active_tab_id = node.id;
+        model.open_tabs = ws.tabsSlice();
+        model.status_language = workspace_store.scannerLanguage(node.path);
+        syncDocumentFromWorkspace(model);
+        model.toast = "Tab reopened";
+        return;
+    }
+    model.toast = "File gone from workspace";
 }
 
 fn runGotoLine(model: *Model) void {
@@ -2028,6 +2326,8 @@ fn refreshGitStatus(model: *Model) void {
     model.git_summary = bufs.summary;
     model.git_branch = bufs.branch();
     if (bufs.branch_len > 0) model.project_branch = bufs.branch();
+    model.git_diff_text = bufs.diffText();
+    model.git_diff_status = bufs.diff_status;
     model.governor.killFeature("feature.scm");
     model.process_count = model.governor.aliveCount();
     model.toast = bufs.summary;

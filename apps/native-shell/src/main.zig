@@ -59,6 +59,8 @@ pub const app_shortcuts = [_]native_sdk.Shortcut{
     .{ .id = "quick_open", .key = "p", .modifiers = .{ .primary = true } },
     .{ .id = "find_in_file", .key = "f", .modifiers = .{ .primary = true } },
     .{ .id = "goto_line", .key = "g", .modifiers = .{ .primary = true } },
+    .{ .id = "toggle_comment", .key = "/", .modifiers = .{ .primary = true } },
+    .{ .id = "reopen_closed_tab", .key = "t", .modifiers = .{ .primary = true, .shift = true } },
     .{ .id = "escape", .key = "escape" },
     .{ .id = "toggle_terminal", .key = "`", .modifiers = .{ .control = true } },
     .{ .id = "save_file", .key = "s", .modifiers = .{ .primary = true } },
@@ -69,6 +71,8 @@ pub fn onCommand(name: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "quick_open")) return .run_quick_open;
     if (std.mem.eql(u8, name, "find_in_file")) return .run_find;
     if (std.mem.eql(u8, name, "goto_line")) return .goto_line;
+    if (std.mem.eql(u8, name, "toggle_comment")) return .toggle_line_comment;
+    if (std.mem.eql(u8, name, "reopen_closed_tab")) return .reopen_closed_tab;
     if (std.mem.eql(u8, name, "escape")) return .dismiss_overlay;
     if (std.mem.eql(u8, name, "toggle_terminal")) return .toggle_terminal;
     if (std.mem.eql(u8, name, "save_file")) return .save_file;
@@ -144,6 +148,8 @@ test {
     _ = @import("workspace/find_in_doc.zig");
     _ = @import("workspace/quick_open.zig");
     _ = @import("workspace/replace.zig");
+    _ = @import("workspace/edit_transforms.zig");
+    _ = @import("workspace/problems.zig");
     _ = @import("terminal/terminal_session.zig");
     _ = @import("scm/git_status.zig");
 }

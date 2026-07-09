@@ -24,9 +24,17 @@ pub const GitBuffers = struct {
     branch_len: usize = 0,
     summary: []const u8 = "not loaded",
     available: bool = false,
+    diff_buf: [8 * 1024]u8 = undefined,
+    diff_len: usize = 0,
+    diff_status: []const u8 = "—",
+    selected_entry_id: u32 = 0,
 
     pub fn entriesSlice(self: *GitBuffers) []const GitEntry {
         return self.entries[0..self.entry_count];
+    }
+
+    pub fn diffText(self: *const GitBuffers) []const u8 {
+        return self.diff_buf[0..self.diff_len];
     }
 
     pub fn branch(self: *const GitBuffers) []const u8 {
@@ -39,6 +47,75 @@ pub const GitBuffers = struct {
         self.branch_len = 0;
         self.summary = "not loaded";
         self.available = false;
+        self.diff_len = 0;
+        self.diff_status = "—";
+        self.selected_entry_id = 0;
+    }
+
+    /// Load a bounded `git diff` / `git diff --no-index` style preview for one path.
+    pub fn loadDiff(self: *GitBuffers, io: std.Io, cwd: []const u8, entry_id: u32) void {
+        self.diff_len = 0;
+        self.selected_entry_id = entry_id;
+        var path: []const u8 = "";
+        var status: []const u8 = "";
+        for (self.entriesSlice()) |e| {
+            if (e.id == entry_id) {
+                path = e.path;
+                status = e.status;
+                break;
+            }
+        }
+        if (path.len == 0) {
+            self.diff_status = "no entry";
+            return;
+        }
+        if (cwd.len == 0) {
+            self.diff_status = "no workspace";
+            return;
+        }
+
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+
+        const untracked = status.len > 0 and status[0] == '?';
+        const result = if (untracked)
+            std.process.run(gpa, io, .{
+                .argv = &.{ "git", "diff", "--no-index", "--", "/dev/null", path },
+                .cwd = .{ .path = cwd },
+                .stdout_limit = .limited(self.diff_buf.len),
+                .stderr_limit = .limited(1024),
+            })
+        else
+            std.process.run(gpa, io, .{
+                .argv = &.{ "git", "diff", "HEAD", "--", path },
+                .cwd = .{ .path = cwd },
+                .stdout_limit = .limited(self.diff_buf.len),
+                .stderr_limit = .limited(1024),
+            });
+
+        const run = result catch {
+            self.diff_status = "diff failed";
+            return;
+        };
+        defer {
+            gpa.free(run.stdout);
+            gpa.free(run.stderr);
+        }
+
+        // git diff --no-index exits 1 when files differ; still useful output.
+        if (run.stdout.len == 0) {
+            self.diff_status = if (untracked) "untracked (empty)" else "no diff";
+            const msg = if (untracked) "(untracked file — no HEAD base)" else "(no textual diff)";
+            const n = @min(msg.len, self.diff_buf.len);
+            @memcpy(self.diff_buf[0..n], msg[0..n]);
+            self.diff_len = n;
+            return;
+        }
+        const n = @min(run.stdout.len, self.diff_buf.len);
+        @memcpy(self.diff_buf[0..n], run.stdout[0..n]);
+        self.diff_len = n;
+        self.diff_status = "diff loaded";
     }
 
     pub fn refresh(self: *GitBuffers, io: std.Io, cwd: []const u8) void {

@@ -502,3 +502,50 @@ test "reveal in explorer selects active file" {
     try testing.expect(model.selected_file_id == active or model.selected_file_id != 0);
     try testing.expect(model.selected_activity == .explorer);
 }
+
+test "toggle line comment roundtrip" {
+    var model = main.initialModel();
+    model.document.set("alpha\nbeta\n");
+    main.update(&model, .toggle_line_comment);
+    try testing.expectEqualStrings("// alpha\n// beta\n", model.document.text());
+    main.update(&model, .toggle_line_comment);
+    try testing.expectEqualStrings("alpha\nbeta\n", model.document.text());
+}
+
+test "indent and outdent document" {
+    var model = main.initialModel();
+    model.document.set("x\ny\n");
+    main.update(&model, .indent_document);
+    try testing.expectEqualStrings("  x\n  y\n", model.document.text());
+    main.update(&model, .outdent_document);
+    try testing.expectEqualStrings("x\ny\n", model.document.text());
+}
+
+test "problems scan finds TODO in fixture" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .scan_problems);
+    try testing.expect(model.problems.len > 0);
+    try testing.expect(std.mem.indexOf(u8, model.problems_status, "markers") != null);
+}
+
+test "reopen closed tab restores file" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    const first = model.active_tab_id;
+    // Open another file then close the first via close after switching
+    if (model.workspace) |ws| {
+        if (ws.file_node_count > 2) {
+            const other = ws.file_nodes[2].id;
+            if (!ws.file_nodes[2].is_dir) {
+                main.update(&model, .{ .select_file = other });
+            }
+        }
+    }
+    main.update(&model, .{ .select_tab = first });
+    main.update(&model, .close_active_tab);
+    try testing.expectEqualStrings("Tab closed", model.toast);
+    try testing.expect(model.closed_tab_count > 0);
+    main.update(&model, .reopen_closed_tab);
+    try testing.expectEqualStrings("Tab reopened", model.toast);
+}
