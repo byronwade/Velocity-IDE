@@ -26,7 +26,9 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Go to line | Cmd+G jump label for active document line count. |
 | Close tab | Soft confirm when dirty; second close discards. |
 | Search | Bounded in-process text search over scanned files (no ripgrep). |
-| SCM | `git status --porcelain` + branch via governor (lazy on SCM panel). |
+| SCM | `git status --porcelain` + branch via governor; click entry to open file. |
+| Reopen last | Launch / command palette reopens prefs `last_path`. |
+| Clear find | Clears find/replace fields and match list. |
 | Command palette | Open Folder, Save, Search, Git refresh, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |
 | Agent panel | Local task board only — no network AI. |

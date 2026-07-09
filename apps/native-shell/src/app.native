@@ -23,8 +23,8 @@
         </column>
         <row gap="8" main="center">
           <button variant="primary" on-press="open_project:{project_acme}">Open Folder</button>
-          <button variant="secondary" on-press="open_command_palette">Clone Repo</button>
-          <button variant="ghost" on-press="open_command_palette">Connect SSH</button>
+          <button variant="secondary" on-press="reopen_last_workspace">Reopen Last</button>
+          <button variant="ghost" on-press="open_command_palette">Clone Repo</button>
           <button variant="ghost" on-press="open_project:{project_scratch}">New Scratch</button>
         </row>
         <column gap="6" width="480" padding="12" background="surface_subtle">
@@ -131,6 +131,7 @@
                   <button size="sm" variant="ghost" on-press="find_prev">Prev</button>
                   <button size="sm" variant="ghost" on-press="find_next">Next</button>
                   <button size="sm" variant="secondary" on-press="run_find">Find</button>
+                  <button size="sm" variant="ghost" on-press="clear_find">Clear</button>
                 </row>
                 <row gap="4" cross="center">
                   <text-field text="{replaceText}" placeholder="Replace with..." on-input="update_replace_text" grow="1" label="Replace" />
@@ -241,10 +242,10 @@
               <scroll grow="1" label="Git changes">
                 <column gap="4">
                   <for each="git_entries" key="id" as="entry">
-                    <row gap="8" padding="6" cross="center">
+                    <list-item on-press="open_git_entry:{entry.id}" padding="6" gap="8" cross="center" label="{entry.path}">
                       <badge variant="secondary">{entry.status}</badge>
                       <text grow="1" wrap="false">{entry.path}</text>
-                    </row>
+                    </list-item>
                   </for>
                 </column>
               </scroll>

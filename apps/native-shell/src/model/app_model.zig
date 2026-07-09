@@ -104,6 +104,9 @@ pub const Msg = union(enum) {
     run_search,
     open_search_hit: u32,
     refresh_git,
+    open_git_entry: u32,
+    clear_find,
+    reopen_last_workspace,
     update_new_file_path: canvas.TextInputEvent,
     create_new_file,
     delete_selected_file,
@@ -149,6 +152,8 @@ pub const Msg = union(enum) {
         "clear_terminal",
         "run_search",
         "refresh_git",
+        "clear_find",
+        "reopen_last_workspace",
         "create_new_file",
         "delete_selected_file",
         "rename_selected_file",
@@ -691,6 +696,8 @@ pub const commands = [_]CommandItem{
     .{ .id = "run_terminal", .title = "Run Terminal Command", .hint = "" },
     .{ .id = "run_search", .title = "Search Workspace", .hint = "" },
     .{ .id = "refresh_git", .title = "Refresh Git Status", .hint = "" },
+    .{ .id = "reopen_last_workspace", .title = "Reopen Last Workspace", .hint = "" },
+    .{ .id = "clear_find", .title = "Clear Find", .hint = "" },
     .{ .id = "toggle_agent", .title = "Toggle Agent Panel", .hint = "Cmd+." },
     .{ .id = "open_plugins", .title = "Open Plugin Registry", .hint = "" },
     .{ .id = "open_settings", .title = "Open Settings", .hint = "Cmd+," },
@@ -807,6 +814,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 model.current_view = .scm;
                 model.selected_activity = .scm;
                 refreshGitStatus(model);
+            } else if (std.mem.eql(u8, id, "reopen_last_workspace")) {
+                reopenLastWorkspace(model);
+            } else if (std.mem.eql(u8, id, "clear_find")) {
+                clearFind(model);
             } else if (std.mem.eql(u8, id, "open_feature_matrix")) {
                 model.current_view = .features;
                 model.selected_activity = .features;
@@ -997,6 +1008,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .run_search => runWorkspaceSearch(model),
         .open_search_hit => |id| openSearchHit(model, id),
         .refresh_git => refreshGitStatus(model),
+        .open_git_entry => |id| openGitEntry(model, id),
+        .clear_find => clearFind(model),
+        .reopen_last_workspace => reopenLastWorkspace(model),
         .update_new_file_path => |edit| model.new_file_path.apply(edit),
         .create_new_file => createNewFile(model),
         .delete_selected_file => deleteSelectedFile(model),
@@ -1406,6 +1420,65 @@ fn openSearchHit(model: *Model, hit_id: u32) void {
         }
     }
     model.toast = "Hit not found";
+}
+
+fn openGitEntry(model: *Model, entry_id: u32) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    if (model.git_bufs) |bufs| {
+        for (bufs.entriesSlice()) |entry| {
+            if (entry.id == entry_id) {
+                if (ws.findNodeByPath(entry.path)) |node| {
+                    if (node.is_dir) {
+                        model.toast = "Directory entry";
+                        return;
+                    }
+                    model.selected_file_id = node.id;
+                    model.current_view = .ide;
+                    model.selected_activity = .explorer;
+                    ws.openFileById(modelIo(model), node.id) catch {
+                        model.toast = "Open failed";
+                        return;
+                    };
+                    model.active_tab_id = node.id;
+                    model.open_tabs = ws.tabsSlice();
+                    model.status_language = workspace_store.scannerLanguage(node.path);
+                    syncDocumentFromWorkspace(model);
+                    model.toast = "Opened from SCM";
+                    return;
+                }
+                model.toast = "File not in scan (untracked/outside?)";
+                return;
+            }
+        }
+    }
+    model.toast = "Git entry not found";
+}
+
+fn clearFind(model: *Model) void {
+    model.find_query.clear();
+    model.replace_text.clear();
+    model.find_matches = &.{};
+    model.find_active_label = "";
+    model.find_status = "idle";
+    if (model.find_bufs) |f| f.clear();
+    model.toast = "Find cleared";
+}
+
+fn reopenLastWorkspace(model: *Model) void {
+    ensurePrefsLoaded(model);
+    const path = model.prefs.lastPathSlice();
+    if (path.len == 0) {
+        model.toast = "No last workspace";
+        return;
+    }
+    openWorkspacePath(model, path);
 }
 
 fn createNewFile(model: *Model) void {

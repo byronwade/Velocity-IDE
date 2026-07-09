@@ -382,3 +382,34 @@ test "breadcrumb tracks active path" {
     try testing.expect(model.breadcrumb.len > 0);
     try testing.expect(std.mem.indexOf(u8, model.breadcrumb, "/") != null or model.breadcrumb.len > 0);
 }
+
+test "clear find resets query and matches" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.find_query.set("Chart");
+    model.replace_text.set("X");
+    main.update(&model, .run_find);
+    try testing.expect(model.find_matches.len > 0);
+    main.update(&model, .clear_find);
+    try testing.expectEqual(@as(usize, 0), model.find_query.text().len);
+    try testing.expectEqual(@as(usize, 0), model.find_matches.len);
+}
+
+test "reopen last workspace from prefs" {
+    var model = main.initialModel();
+    model.io = std.testing.io;
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    try testing.expect(model.workspace_from_disk);
+    model.current_view = .launch;
+    main.update(&model, .reopen_last_workspace);
+    try testing.expect(model.current_view == .ide);
+    try testing.expect(model.workspace_from_disk);
+    std.Io.Dir.cwd().deleteTree(std.testing.io, ".velocity") catch {};
+}
+
+test "open git entry missing is graceful" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .{ .open_git_entry = 1 });
+    try testing.expect(std.mem.indexOf(u8, model.toast, "not found") != null or std.mem.indexOf(u8, model.toast, "Git") != null);
+}
