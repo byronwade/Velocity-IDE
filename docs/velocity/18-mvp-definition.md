@@ -10,6 +10,7 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | File tree | Bounded scan; skip `node_modules` / `.git` / vendor. |
 | Edit file | Native `<textarea>` bound to document buffer (dirty tracking). |
 | Save file | Write active document back to disk (Cmd/Ctrl+S / command palette). |
+| Save all | Clear dirty markers / save active dirty buffer across tabs. |
 | New file | Create relative path in workspace from explorer. |
 | Delete file | Soft-confirm then delete selected file from explorer (files only). |
 | Rename file | Rename selected file via New-path field. |

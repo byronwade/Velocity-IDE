@@ -549,3 +549,39 @@ test "reopen closed tab restores file" {
     main.update(&model, .reopen_closed_tab);
     try testing.expectEqualStrings("Tab reopened", model.toast);
 }
+
+test "command palette filters by query" {
+    var model = main.initialModel();
+    main.update(&model, .open_command_palette);
+    try testing.expect(model.command_items.len == model_mod.commands.len);
+    model.command_query.set("save");
+    model_mod.filterCommandPaletteForTest(&model);
+    try testing.expect(model.command_items.len > 0);
+    try testing.expect(model.command_items.len < model_mod.commands.len);
+    for (model.command_items) |cmd| {
+        const hit = std.ascii.indexOfIgnoreCase(cmd.title, "save") != null or std.ascii.indexOfIgnoreCase(cmd.id, "save") != null;
+        try testing.expect(hit);
+    }
+}
+
+test "save all clears dirty active document" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.document.set(model.document.text());
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    main.update(&model, .save_all);
+    try testing.expect(!model.document_dirty);
+    try testing.expectEqualStrings("Saved all", model.toast);
+}
+
+test "open search hit jumps to line toast" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.search_query.set("createSession");
+    main.update(&model, .run_search);
+    try testing.expect(model.search_hits.len > 0);
+    const id = model.search_hits[0].id;
+    main.update(&model, .{ .open_search_hit = id });
+    try testing.expect(std.mem.indexOf(u8, model.toast, "Line") != null);
+}

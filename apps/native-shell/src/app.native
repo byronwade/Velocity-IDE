@@ -130,6 +130,7 @@
                   <badge variant="secondary">{editor_mode_label}</badge>
                   <button size="sm" variant="ghost" on-press="run_quick_open">Go to</button>
                   <button size="sm" variant="ghost" on-press="reveal_in_explorer">Reveal</button>
+                  <button size="sm" variant="ghost" on-press="save_all">Save All</button>
                   <button size="sm" variant="primary" on-press="save_file">Save</button>
                 </row>
                 <row gap="4" cross="center">

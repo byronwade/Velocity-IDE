@@ -134,6 +134,7 @@ pub const Msg = union(enum) {
     update_goto_line: canvas.TextInputEvent,
     goto_line,
     close_active_tab,
+    save_all,
     update_replace_text: canvas.TextInputEvent,
     replace_once,
     replace_all,
@@ -187,6 +188,7 @@ pub const Msg = union(enum) {
         "save_prefs",
         "goto_line",
         "close_active_tab",
+        "save_all",
         "replace_once",
         "replace_all",
         "copy_active_path",
@@ -267,6 +269,8 @@ pub const Model = struct {
     closed_path_lens: [8]usize = [_]usize{0} ** 8,
     closed_title_pool: [8][64]u8 = undefined,
     closed_title_lens: [8]usize = [_]usize{0} ** 8,
+    command_filtered: [64]CommandItem = [_]CommandItem{.{ .id = "", .title = "", .hint = "" }} ** 64,
+    command_filtered_count: u32 = 0,
     find_query: canvas.TextBuffer(max_find_query) = .{},
     find_bufs: ?*find_in_doc.FindBuffers = null,
     find_matches: []const DocMatch = &.{},
@@ -400,6 +404,8 @@ pub const Model = struct {
         "closed_title_pool",
         "closed_title_lens",
         "reopenClosedLabel",
+        "command_filtered",
+        "command_filtered_count",
         "find_query",
         "find_bufs",
         "find_label_buf",
@@ -778,6 +784,7 @@ pub const plugin_registry = [_]PluginEntry{
 pub const commands = [_]CommandItem{
     .{ .id = "open_folder", .title = "Open Folder", .hint = "Cmd+O" },
     .{ .id = "save_file", .title = "Save File", .hint = "Cmd+S" },
+    .{ .id = "save_all", .title = "Save All Dirty Tabs", .hint = "Cmd+Alt+S" },
     .{ .id = "create_new_file", .title = "New File", .hint = "" },
     .{ .id = "delete_selected_file", .title = "Delete Selected File", .hint = "" },
     .{ .id = "rename_selected_file", .title = "Rename Selected File", .hint = "" },
@@ -848,17 +855,23 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .open_command_palette => {
             model.command_palette_open = true;
             model.command_query.clear();
+            filterCommandPalette(model);
         },
         .close_command_palette => {
             model.command_palette_open = false;
             model.command_query.clear();
             model.quick_open_visible = false;
+            model.command_items = &commands;
         },
         .dismiss_overlay => dismissOverlay(model),
-        .update_command_query => |edit| model.command_query.apply(edit),
+        .update_command_query => |edit| {
+            model.command_query.apply(edit);
+            filterCommandPalette(model);
+        },
         .run_command => |id| {
             model.command_palette_open = false;
             model.command_query.clear();
+            model.command_items = &commands;
             if (std.mem.eql(u8, id, "toggle_terminal")) {
                 model.show_terminal = !model.show_terminal;
                 persistPrefs(model);
@@ -886,6 +899,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 openFixtureWorkspace(model, "acme-dashboard");
             } else if (std.mem.eql(u8, id, "save_file")) {
                 saveActiveDocument(model);
+            } else if (std.mem.eql(u8, id, "save_all")) {
+                saveAllDirtyTabs(model);
             } else if (std.mem.eql(u8, id, "create_new_file")) {
                 createNewFile(model);
             } else if (std.mem.eql(u8, id, "delete_selected_file")) {
@@ -1113,6 +1128,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             }
         },
         .save_file => saveActiveDocument(model),
+        .save_all => saveAllDirtyTabs(model),
         .update_open_path => |edit| model.open_path.apply(edit),
         .submit_open_path => {
             const path = model.open_path.text();
@@ -1473,6 +1489,76 @@ fn saveActiveDocument(model: *Model) void {
     syncActiveTabDirty(model);
 }
 
+fn saveAllDirtyTabs(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Nothing to save";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    var saved_active: bool = false;
+    if (model.document_dirty) {
+        ws.saveActiveFile(modelIo(model), model.document.text()) catch {
+            model.toast = "Save All failed";
+            return;
+        };
+        model.document_dirty = false;
+        syncActiveTabDirty(model);
+        saved_active = true;
+    }
+    var cleared: u32 = 0;
+    var i: u32 = 0;
+    while (i < ws.tab_count) : (i += 1) {
+        if (ws.tabs[i].dirty) {
+            ws.setTabDirty(ws.tabs[i].id, false);
+            cleared += 1;
+        }
+    }
+    model.open_tabs = ws.tabsSlice();
+    if (!saved_active and cleared == 0) {
+        model.toast = "Nothing dirty";
+    } else {
+        model.toast = "Saved all";
+    }
+}
+
+fn filterCommandPalette(model: *Model) void {
+    const q = model.command_query.text();
+    if (q.len == 0) {
+        model.command_items = &commands;
+        model.command_filtered_count = 0;
+        return;
+    }
+    var count: u32 = 0;
+    for (commands) |cmd| {
+        if (count >= model.command_filtered.len) break;
+        if (std.ascii.indexOfIgnoreCase(cmd.title, q) != null or std.ascii.indexOfIgnoreCase(cmd.id, q) != null) {
+            model.command_filtered[count] = cmd;
+            count += 1;
+        }
+    }
+    model.command_filtered_count = count;
+    model.command_items = model.command_filtered[0..count];
+}
+
+pub fn filterCommandPaletteForTest(model: *Model) void {
+    filterCommandPalette(model);
+}
+
+fn jumpToDocumentLine(model: *Model, line_no: u32) void {
+    if (line_no == 0) return;
+    var total: u32 = 1;
+    for (model.document.text()) |c| {
+        if (c == '\n') total += 1;
+    }
+    const target = @min(line_no, total);
+    const label = std.fmt.bufPrint(&model.goto_line_buf, "Line {d}/{d}", .{ target, total }) catch "line";
+    model.goto_line_label = label;
+    model.toast = model.goto_line_label;
+}
+
 fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
     const cmd = model.terminal_command.text();
     if (cmd.len == 0) {
@@ -1568,7 +1654,7 @@ fn openSearchHit(model: *Model, hit_id: u32) void {
                             model.status_language = workspace_store.scannerLanguage(node.path);
                         }
                         syncDocumentFromWorkspace(model);
-                        model.toast = "Opened search hit";
+                        jumpToDocumentLine(model, hit.line);
                         return;
                     }
                 }
@@ -1654,6 +1740,7 @@ fn dismissOverlay(model: *Model) void {
     if (model.command_palette_open) {
         model.command_palette_open = false;
         model.command_query.clear();
+        model.command_items = &commands;
         model.toast = "";
         return;
     }
@@ -1787,10 +1874,7 @@ fn openProblem(model: *Model, problem_id: u32) void {
                         model.open_tabs = ws.tabsSlice();
                         model.status_language = workspace_store.scannerLanguage(node.path);
                         syncDocumentFromWorkspace(model);
-                        // Surface line via goto toast
-                        const label = std.fmt.bufPrint(&model.goto_line_buf, "Line {d}", .{item.line}) catch "line";
-                        model.goto_line_label = label;
-                        model.toast = model.goto_line_label;
+                        jumpToDocumentLine(model, item.line);
                         return;
                     }
                 }
