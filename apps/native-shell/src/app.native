@@ -82,6 +82,7 @@
               <text-field text="{newFilePathText}" placeholder="src/new.ts" on-input="update_new_file_path" on-submit="create_new_file" grow="1" label="New file path" />
               <button size="sm" variant="secondary" on-press="create_new_file">New</button>
               <button size="sm" variant="ghost" on-press="rename_selected_file">Ren</button>
+              <button size="sm" variant="ghost" on-press="duplicate_selected_file">Dup</button>
               <button size="sm" variant="ghost" on-press="delete_selected_file">Del</button>
               <button size="sm" variant="ghost" on-press="reveal_in_explorer">Loc</button>
             </row>
@@ -133,6 +134,8 @@
               <button size="sm" variant="ghost" on-press="insert_blank_line">+Blank</button>
               <button size="sm" variant="ghost" on-press="convert_tabs_to_spaces">Tab>Sp</button>
               <button size="sm" variant="ghost" on-press="convert_spaces_to_tabs">Sp>Tab</button>
+              <button size="sm" variant="ghost" on-press="convert_to_lf">LF</button>
+              <button size="sm" variant="ghost" on-press="convert_to_crlf">CRLF</button>
               <button size="sm" variant="ghost" on-press="undo_edit">Undo</button>
               <text-field text="{gotoLineText}" placeholder="Line" on-input="update_goto_line" on-submit="goto_line" width="72" label="Go to line" />
               <button size="sm" variant="ghost" on-press="goto_line">Go</button>
@@ -163,6 +166,7 @@
                   <text-field text="{findQueryText}" placeholder="Find in file..." on-input="update_find_query" on-submit="run_find" grow="1" label="Find in file" />
                   <badge variant="secondary">{find_active_label}</badge>
                   <button size="sm" variant="ghost" on-press="toggle_find_case">{findCaseLabel}</button>
+                  <button size="sm" variant="ghost" on-press="toggle_find_whole_word">{findWholeWordLabel}</button>
                   <button size="sm" variant="ghost" on-press="find_prev">Prev</button>
                   <button size="sm" variant="ghost" on-press="find_next">Next</button>
                   <button size="sm" variant="secondary" on-press="run_find">Find</button>

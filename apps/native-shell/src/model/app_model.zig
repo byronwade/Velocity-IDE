@@ -163,6 +163,10 @@ pub const Msg = union(enum) {
     convert_tabs_to_spaces,
     convert_spaces_to_tabs,
     transform_sort_unique,
+    convert_to_lf,
+    convert_to_crlf,
+    toggle_find_whole_word,
+    duplicate_selected_file,
     update_replace_text: canvas.TextInputEvent,
     replace_once,
     replace_all,
@@ -245,6 +249,10 @@ pub const Msg = union(enum) {
         "convert_tabs_to_spaces",
         "convert_spaces_to_tabs",
         "transform_sort_unique",
+        "convert_to_lf",
+        "convert_to_crlf",
+        "toggle_find_whole_word",
+        "duplicate_selected_file",
         "replace_once",
         "replace_all",
         "copy_active_path",
@@ -338,6 +346,7 @@ pub const Model = struct {
     find_active_label: []const u8 = "",
     find_label_buf: [48]u8 = undefined,
     find_case_sensitive: bool = false,
+    find_whole_word: bool = false,
     auto_save: bool = false,
     trim_trailing_ws: bool = false,
     insert_final_newline: bool = true,
@@ -481,6 +490,7 @@ pub const Model = struct {
         "find_status",
         "find_matches",
         "find_case_sensitive",
+        "find_whole_word",
         "auto_save",
         "trim_trailing_ws",
         "insert_final_newline",
@@ -772,6 +782,10 @@ pub const Model = struct {
         return if (model.find_case_sensitive) "Aa: on" else "Aa: off";
     }
 
+    pub fn findWholeWordLabel(model: *const Model) []const u8 {
+        return if (model.find_whole_word) "Word: on" else "Word: off";
+    }
+
     pub fn terminalPanelLabel(model: *const Model) []const u8 {
         return if (model.show_terminal) "Terminal: shown" else "Terminal: hidden";
     }
@@ -928,6 +942,10 @@ pub const commands = [_]CommandItem{
     .{ .id = "convert_tabs_to_spaces", .title = "Convert Tabs to Spaces", .hint = "" },
     .{ .id = "convert_spaces_to_tabs", .title = "Convert Spaces to Tabs", .hint = "" },
     .{ .id = "transform_sort_unique", .title = "Transform: Sort Unique Lines", .hint = "" },
+    .{ .id = "convert_to_lf", .title = "Convert Line Endings to LF", .hint = "" },
+    .{ .id = "convert_to_crlf", .title = "Convert Line Endings to CRLF", .hint = "" },
+    .{ .id = "toggle_find_whole_word", .title = "Toggle Find Whole Word", .hint = "" },
+    .{ .id = "duplicate_selected_file", .title = "Duplicate Selected File", .hint = "" },
     .{ .id = "toggle_trim_trailing", .title = "Toggle Trim Trailing Whitespace", .hint = "" },
     .{ .id = "toggle_final_newline", .title = "Toggle Insert Final Newline", .hint = "" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
@@ -1111,6 +1129,14 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 convertIndent(model, false);
             } else if (std.mem.eql(u8, id, "transform_sort_unique")) {
                 runTextTransform(model, .sort_unique);
+            } else if (std.mem.eql(u8, id, "convert_to_lf")) {
+                convertLineEndings(model, true);
+            } else if (std.mem.eql(u8, id, "convert_to_crlf")) {
+                convertLineEndings(model, false);
+            } else if (std.mem.eql(u8, id, "toggle_find_whole_word")) {
+                toggleFindWholeWord(model);
+            } else if (std.mem.eql(u8, id, "duplicate_selected_file")) {
+                duplicateSelectedFile(model);
             } else if (std.mem.eql(u8, id, "toggle_trim_trailing")) {
                 toggleTrimTrailing(model);
             } else if (std.mem.eql(u8, id, "toggle_final_newline")) {
@@ -1261,6 +1287,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .convert_tabs_to_spaces => convertIndent(model, true),
         .convert_spaces_to_tabs => convertIndent(model, false),
         .transform_sort_unique => runTextTransform(model, .sort_unique),
+        .convert_to_lf => convertLineEndings(model, true),
+        .convert_to_crlf => convertLineEndings(model, false),
+        .toggle_find_whole_word => toggleFindWholeWord(model),
+        .duplicate_selected_file => duplicateSelectedFile(model),
         .select_tab => |id| {
             model.active_tab_id = id;
             if (model.workspace_from_disk) {
@@ -2595,7 +2625,7 @@ fn runFindInDocument(model: *Model) void {
         model.toast = "Find alloc failed";
         return;
     };
-    bufs.findWithOptions(model.document.text(), model.find_query.text(), model.find_case_sensitive);
+    bufs.findWithFullOptions(model.document.text(), model.find_query.text(), model.find_case_sensitive, model.find_whole_word);
     model.find_matches = bufs.matchesSlice();
     model.find_status = bufs.status;
     updateFindLabel(model);
@@ -2621,6 +2651,84 @@ fn toggleFindCase(model: *Model) void {
     } else {
         model.toast = if (model.find_case_sensitive) "Find: case sensitive" else "Find: ignore case";
     }
+}
+
+fn toggleFindWholeWord(model: *Model) void {
+    model.find_whole_word = !model.find_whole_word;
+    persistPrefs(model);
+    if (model.find_query.text().len > 0) {
+        runFindInDocument(model);
+    } else {
+        model.toast = if (model.find_whole_word) "Find: whole word" else "Find: substring";
+    }
+}
+
+fn convertLineEndings(model: *Model, to_lf: bool) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = if (to_lf)
+        edit_transforms.crlfToLf(model.document.text(), &out)
+    else
+        edit_transforms.lfToCrlf(model.document.text(), &out);
+    const len = n orelse {
+        model.toast = "EOL convert failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..len], if (to_lf) "Converted to LF" else "Converted to CRLF");
+}
+
+fn duplicateSelectedFile(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const id = model.selected_file_id;
+    const node = ws.findNode(id) orelse {
+        model.toast = "No file selected";
+        return;
+    };
+    if (node.is_dir) {
+        model.toast = "Cannot duplicate directories yet";
+        return;
+    }
+    var path_buf: [260]u8 = undefined;
+    const n = edit_transforms.duplicatePathName(node.path, &path_buf) orelse {
+        model.toast = "Duplicate path failed";
+        return;
+    };
+    const seed = if (model.active_tab_id == id) model.document.text() else "";
+    // Prefer disk contents when not the active dirty buffer.
+    const new_id = blk: {
+        if (model.active_tab_id == id) {
+            break :blk ws.createFile(modelIo(model), path_buf[0..n], seed) catch {
+                model.toast = "Duplicate failed";
+                return;
+            };
+        }
+        // Read via open then create with current editor text of that file.
+        ws.openFileById(modelIo(model), id) catch {
+            model.toast = "Duplicate read failed";
+            return;
+        };
+        const body = ws.editorText();
+        break :blk ws.createFile(modelIo(model), path_buf[0..n], body) catch {
+            model.toast = "Duplicate failed";
+            return;
+        };
+    };
+    model.file_nodes = ws.fileNodesSlice();
+    model.open_tabs = ws.tabsSlice();
+    model.workspace_node_count = ws.file_node_count;
+    refreshWorkspaceFileCount(model);
+    applyExplorerFilter(model);
+    model.selected_file_id = new_id;
+    model.active_tab_id = new_id;
+    model.status_language = workspace_store.scannerLanguage(path_buf[0..n]);
+    syncDocumentFromWorkspace(model);
+    model.toast = "File duplicated";
 }
 
 fn findNavigate(model: *Model, forward: bool) void {
@@ -3020,6 +3128,7 @@ fn applyPrefsToModel(model: *Model) void {
     model.show_agent_panel = model.prefs.show_agent;
     model.auto_save = model.prefs.auto_save;
     model.find_case_sensitive = model.prefs.find_case_sensitive;
+    model.find_whole_word = model.prefs.find_whole_word;
     model.trim_trailing_ws = model.prefs.trim_trailing_ws;
     model.insert_final_newline = model.prefs.insert_final_newline;
     model.indent_size = if (model.prefs.indent_size == 4) 4 else 2;
@@ -3047,6 +3156,7 @@ fn persistPrefs(model: *Model) void {
     model.prefs.show_agent = model.show_agent_panel;
     model.prefs.auto_save = model.auto_save;
     model.prefs.find_case_sensitive = model.find_case_sensitive;
+    model.prefs.find_whole_word = model.find_whole_word;
     model.prefs.trim_trailing_ws = model.trim_trailing_ws;
     model.prefs.insert_final_newline = model.insert_final_newline;
     model.prefs.indent_size = model.indent_size;

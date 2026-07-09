@@ -711,3 +711,33 @@ test "indent size cycle and tabs to spaces" {
     model_mod.refreshDocStats(&model);
     try testing.expect(std.mem.indexOf(u8, model.doc_stats, "ASCII") != null);
 }
+
+test "eol convert and find whole word" {
+    var model = main.initialModel();
+    model.document.set("a\r\nb\r\n");
+    main.update(&model, .convert_to_lf);
+    try testing.expectEqualStrings("a\nb\n", model.document.text());
+    main.update(&model, .convert_to_crlf);
+    try testing.expectEqualStrings("a\r\nb\r\n", model.document.text());
+    model.document.set("cat catalog cat");
+    model.find_query.set("cat");
+    model.find_whole_word = true;
+    main.update(&model, .run_find);
+    try testing.expectEqual(@as(usize, 2), model.find_matches.len);
+}
+
+test "duplicate selected file" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    // Select auth.ts via quick open
+    model.quick_query.set("auth");
+    main.update(&model, .run_quick_open);
+    try testing.expect(model.quick_items.len > 0);
+    main.update(&model, .{ .open_quick_item = model.quick_items[0].id });
+    model.selected_file_id = model.active_tab_id;
+    main.update(&model, .duplicate_selected_file);
+    try testing.expect(std.mem.indexOf(u8, model.toast, "duplicated") != null);
+    // Soft-confirm delete the copy
+    main.update(&model, .delete_selected_file);
+    main.update(&model, .delete_selected_file);
+}

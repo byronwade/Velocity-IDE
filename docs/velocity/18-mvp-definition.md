@@ -62,6 +62,9 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Tabs ↔ spaces | Convert leading indent using current indent size. |
 | Sort unique | Sort lines and drop exact duplicates. |
 | Encoding label | Status shows ASCII vs UTF-8 (byte heuristic). |
+| CRLF ↔ LF | Convert document line endings. |
+| Find whole word | Prefs toggle; match only at word boundaries. |
+| Duplicate file | Explorer Dup creates `name_copy.ext` beside selection. |
 | Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |
 | Agent panel | Local task board only — no network AI. |

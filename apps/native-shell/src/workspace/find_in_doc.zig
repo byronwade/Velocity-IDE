@@ -37,6 +37,10 @@ pub const FindBuffers = struct {
     }
 
     pub fn findWithOptions(self: *FindBuffers, text: []const u8, query: []const u8, case_sensitive: bool) void {
+        self.findWithFullOptions(text, query, case_sensitive, false);
+    }
+
+    pub fn findWithFullOptions(self: *FindBuffers, text: []const u8, query: []const u8, case_sensitive: bool, whole_word: bool) void {
         self.clear();
         self.case_sensitive = case_sensitive;
         if (query.len == 0) {
@@ -57,7 +61,9 @@ pub const FindBuffers = struct {
                         std.ascii.indexOfIgnoreCase(line[search_from..], query);
                     if (rel_opt) |rel| {
                         const col = search_from + rel;
-                        self.pushMatch(line_no, @intCast(col + 1), line);
+                        const end = col + query.len;
+                        const ok = if (!whole_word) true else isWholeWord(line, col, end);
+                        if (ok) self.pushMatch(line_no, @intCast(col + 1), line);
                         search_from = col + query.len;
                         if (query.len == 0) break;
                     } else break;
@@ -68,6 +74,16 @@ pub const FindBuffers = struct {
         }
         self.status = if (self.match_count == 0) "no matches" else "done";
         self.active_index = 0;
+    }
+
+    fn isWordChar(c: u8) bool {
+        return std.ascii.isAlphanumeric(c) or c == '_';
+    }
+
+    fn isWholeWord(line: []const u8, start: usize, end: usize) bool {
+        if (start > 0 and isWordChar(line[start - 1])) return false;
+        if (end < line.len and isWordChar(line[end])) return false;
+        return true;
     }
 
     pub fn next(self: *FindBuffers) void {
@@ -116,4 +132,12 @@ test "find case sensitive vs ignore" {
     f.findWithOptions("Foo foo FOO", "foo", true);
     try std.testing.expect(f.match_count == 1);
     try std.testing.expect(f.matches[0].column == 5);
+}
+
+test "find whole word" {
+    var f: FindBuffers = .{};
+    f.findWithFullOptions("cat catalog cat", "cat", true, true);
+    try std.testing.expect(f.match_count == 2);
+    f.findWithFullOptions("cat catalog cat", "cat", true, false);
+    try std.testing.expect(f.match_count == 3);
 }

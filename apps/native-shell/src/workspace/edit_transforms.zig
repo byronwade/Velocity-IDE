@@ -640,6 +640,82 @@ pub fn encodingLabel(text: []const u8) []const u8 {
     return "ASCII";
 }
 
+pub fn crlfToLf(text: []const u8, out: []u8) ?usize {
+    var dst: usize = 0;
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        if (text[i] == '\r' and i + 1 < text.len and text[i + 1] == '\n') {
+            if (dst + 1 > out.len) return null;
+            out[dst] = '\n';
+            dst += 1;
+            i += 1;
+        } else {
+            if (dst + 1 > out.len) return null;
+            out[dst] = text[i];
+            dst += 1;
+        }
+    }
+    return dst;
+}
+
+pub fn lfToCrlf(text: []const u8, out: []u8) ?usize {
+    var dst: usize = 0;
+    for (text) |c| {
+        if (c == '\n') {
+            if (dst + 2 > out.len) return null;
+            out[dst] = '\r';
+            out[dst + 1] = '\n';
+            dst += 2;
+        } else if (c == '\r') {
+            // Drop lone CR; paired CRLF handled by skipping when we see LF after.
+            continue;
+        } else {
+            if (dst + 1 > out.len) return null;
+            out[dst] = c;
+            dst += 1;
+        }
+    }
+    return dst;
+}
+
+/// Suggest `name_copy.ext` for a relative path.
+pub fn duplicatePathName(path: []const u8, out: []u8) ?usize {
+    if (path.len == 0 or path.len + 5 > out.len) return null;
+    var slash: usize = 0;
+    var i: usize = 0;
+    while (i < path.len) : (i += 1) {
+        if (path[i] == '/' or path[i] == '\\') slash = i + 1;
+    }
+    const dir = path[0..slash];
+    const base = path[slash..];
+    var dot: ?usize = null;
+    var j: usize = 0;
+    while (j < base.len) : (j += 1) {
+        if (base[j] == '.') dot = j;
+    }
+    var dst: usize = 0;
+    @memcpy(out[dst..][0..dir.len], dir);
+    dst += dir.len;
+    if (dot) |d| {
+        const stem = base[0..d];
+        const ext = base[d..];
+        if (dst + stem.len + 5 + ext.len > out.len) return null;
+        @memcpy(out[dst..][0..stem.len], stem);
+        dst += stem.len;
+        @memcpy(out[dst..][0..5], "_copy");
+        dst += 5;
+        @memcpy(out[dst..][0..ext.len], ext);
+        dst += ext.len;
+    } else {
+        if (dst + base.len + 5 > out.len) return null;
+        @memcpy(out[dst..][0..base.len], base);
+        dst += base.len;
+        @memcpy(out[dst..][0..5], "_copy");
+        dst += 5;
+    }
+    return dst;
+}
+
 test "case and sort transforms" {
     var out: [128]u8 = undefined;
     const u = toUpperCase("AbC", &out).?;
@@ -691,4 +767,14 @@ test "tabs spaces unique sort encoding" {
     const u = sortUniqueLines("b\na\nb\nc\n", &out).?;
     try std.testing.expectEqualStrings("a\nb\nc\n", out[0..u]);
     try std.testing.expectEqualStrings("ASCII", encodingLabel("hi"));
+}
+
+test "eol convert and duplicate path" {
+    var out: [128]u8 = undefined;
+    const a = crlfToLf("a\r\nb\r\n", &out).?;
+    try std.testing.expectEqualStrings("a\nb\n", out[0..a]);
+    const b = lfToCrlf("a\nb\n", &out).?;
+    try std.testing.expectEqualStrings("a\r\nb\r\n", out[0..b]);
+    const p = duplicatePathName("src/app.tsx", &out).?;
+    try std.testing.expectEqualStrings("src/app_copy.tsx", out[0..p]);
 }

@@ -14,6 +14,7 @@ pub const Prefs = struct {
     show_agent: bool = true,
     auto_save: bool = false,
     find_case_sensitive: bool = false,
+    find_whole_word: bool = false,
     trim_trailing_ws: bool = false,
     insert_final_newline: bool = true,
     indent_size: u8 = 2,
@@ -109,6 +110,7 @@ pub const Prefs = struct {
             if (std.mem.eql(u8, key, "show_agent")) self.show_agent = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "auto_save")) self.auto_save = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "find_case_sensitive")) self.find_case_sensitive = std.mem.eql(u8, val, "1");
+            if (std.mem.eql(u8, key, "find_whole_word")) self.find_whole_word = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "trim_trailing_ws")) self.trim_trailing_ws = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "insert_final_newline")) self.insert_final_newline = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "indent_size")) {
@@ -143,6 +145,8 @@ pub const Prefs = struct {
         append(&out, &len, if (self.auto_save) "1" else "0");
         append(&out, &len, "\nfind_case_sensitive=");
         append(&out, &len, if (self.find_case_sensitive) "1" else "0");
+        append(&out, &len, "\nfind_whole_word=");
+        append(&out, &len, if (self.find_whole_word) "1" else "0");
         append(&out, &len, "\ntrim_trailing_ws=");
         append(&out, &len, if (self.trim_trailing_ws) "1" else "0");
         append(&out, &len, "\ninsert_final_newline=");
@@ -170,6 +174,7 @@ test "prefs roundtrip theme and recent" {
     p.show_terminal = false;
     p.auto_save = true;
     p.find_case_sensitive = true;
+    p.find_whole_word = true;
     p.trim_trailing_ws = true;
     p.insert_final_newline = false;
     p.indent_size = 4;
@@ -181,6 +186,7 @@ test "prefs roundtrip theme and recent" {
     try std.testing.expect(!p2.show_terminal);
     try std.testing.expect(p2.auto_save);
     try std.testing.expect(p2.find_case_sensitive);
+    try std.testing.expect(p2.find_whole_word);
     try std.testing.expect(p2.trim_trailing_ws);
     try std.testing.expect(!p2.insert_final_newline);
     try std.testing.expectEqual(@as(u8, 4), p2.indent_size);
