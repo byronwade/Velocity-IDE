@@ -208,17 +208,17 @@ pub const WorkspaceBuffers = struct {
         var saved_text_lens: [max_open_tabs]usize = [_]usize{0} ** max_open_tabs;
         var saved_fingerprints: [max_open_tabs]file_fingerprint.Fingerprint = [_]file_fingerprint.Fingerprint{.{}} ** max_open_tabs;
         var saved_count: u32 = 0;
-        for (self.tabsSlice()) |tab| {
+        for (self.tabsSlice(), 0..) |tab, source_idx| {
             if (saved_count >= max_open_tabs) break;
             const n = @min(tab.path.len, saved_paths[saved_count].len);
             @memcpy(saved_paths[saved_count][0..n], tab.path[0..n]);
             saved_lens[saved_count] = n;
             saved_dirty[saved_count] = tab.dirty;
             if (tab.dirty) {
-                const text_len = self.tab_text_lens[saved_count];
-                @memcpy(saved_text[saved_count][0..text_len], self.tab_text_pool[saved_count][0..text_len]);
+                const text_len = self.tab_text_lens[source_idx];
+                @memcpy(saved_text[saved_count][0..text_len], self.tab_text_pool[source_idx][0..text_len]);
                 saved_text_lens[saved_count] = text_len;
-                saved_fingerprints[saved_count] = self.tab_disk_fingerprints[saved_count];
+                saved_fingerprints[saved_count] = self.tab_disk_fingerprints[source_idx];
             }
             saved_count += 1;
         }
@@ -434,22 +434,7 @@ pub const WorkspaceBuffers = struct {
         var i: u32 = 0;
         while (i < self.tab_count) : (i += 1) {
             if (self.tabs[i].id == id) {
-                var j = i;
-                while (j + 1 < self.tab_count) : (j += 1) {
-                    self.tabs[j] = self.tabs[j + 1];
-                    self.tab_path_lens[j] = self.tab_path_lens[j + 1];
-                    self.tab_title_lens[j] = self.tab_title_lens[j + 1];
-                    self.tab_text_lens[j] = self.tab_text_lens[j + 1];
-                    self.tab_text_loaded[j] = self.tab_text_loaded[j + 1];
-                    self.tab_disk_fingerprints[j] = self.tab_disk_fingerprints[j + 1];
-                    @memcpy(self.tab_path_pool[j][0..self.tab_path_lens[j]], self.tab_path_pool[j + 1][0..self.tab_path_lens[j]]);
-                    @memcpy(self.tab_title_pool[j][0..self.tab_title_lens[j]], self.tab_title_pool[j + 1][0..self.tab_title_lens[j]]);
-                    @memcpy(self.tab_text_pool[j][0..self.tab_text_lens[j]], self.tab_text_pool[j + 1][0..self.tab_text_lens[j]]);
-                    // Re-bind slices after move
-                    self.tabs[j].path = self.tab_path_pool[j][0..self.tab_path_lens[j]];
-                    self.tabs[j].title = self.tab_title_pool[j][0..self.tab_title_lens[j]];
-                }
-                self.tab_count -= 1;
+                self.removeTabAt(i);
                 return;
             }
         }
@@ -458,6 +443,7 @@ pub const WorkspaceBuffers = struct {
     pub fn openFileById(self: *WorkspaceBuffers, io: std.Io, id: u32) !void {
         const node = self.findNode(id) orelse return error.NotFound;
         if (node.is_dir) return;
+        const idx = try self.ensureTab(node);
 
         // Copy path into editor path buf
         if (node.path.len > self.editor_path_buf.len) return error.PathTooLong;
@@ -466,11 +452,9 @@ pub const WorkspaceBuffers = struct {
         self.editor_truncated = false;
         self.editor_len = 0;
 
-        if (self.tabIndexById(id)) |existing_idx| {
-            if (self.tab_text_loaded[existing_idx]) {
-                self.setEditorText(self.tab_text_pool[existing_idx][0..self.tab_text_lens[existing_idx]]);
-                return;
-            }
+        if (self.tab_text_loaded[idx]) {
+            self.setEditorText(self.tab_text_pool[idx][0..self.tab_text_lens[idx]]);
+            return;
         }
 
         const n = scanner.readTextFile(io, self.rootPath(), node.path, self.editor_buf[0..]) catch |err| {
@@ -482,12 +466,10 @@ pub const WorkspaceBuffers = struct {
                 @memcpy(self.editor_buf[0..msg.len], msg);
                 self.editor_len = msg.len;
             }
-            const idx = try self.ensureTab(node);
             self.tab_text_loaded[idx] = false;
             return;
         };
         self.editor_len = n;
-        const idx = try self.ensureTab(node);
         @memcpy(self.tab_text_pool[idx][0..n], self.editor_buf[0..n]);
         self.tab_text_lens[idx] = n;
         self.tab_text_loaded[idx] = true;
@@ -537,20 +519,14 @@ pub const WorkspaceBuffers = struct {
             }
         }
         if (self.tab_count >= max_open_tabs) {
-            // Drop oldest
-            var j: u32 = 0;
-            while (j + 1 < self.tab_count) : (j += 1) {
-                self.tabs[j] = self.tabs[j + 1];
-                self.tab_path_lens[j] = self.tab_path_lens[j + 1];
-                self.tab_title_lens[j] = self.tab_title_lens[j + 1];
-                self.tab_text_lens[j] = self.tab_text_lens[j + 1];
-                self.tab_text_loaded[j] = self.tab_text_loaded[j + 1];
-                self.tab_disk_fingerprints[j] = self.tab_disk_fingerprints[j + 1];
-                @memcpy(self.tab_path_pool[j][0..self.tab_path_lens[j]], self.tab_path_pool[j + 1][0..self.tab_path_lens[j]]);
-                @memcpy(self.tab_title_pool[j][0..self.tab_title_lens[j]], self.tab_title_pool[j + 1][0..self.tab_title_lens[j]]);
-                @memcpy(self.tab_text_pool[j][0..self.tab_text_lens[j]], self.tab_text_pool[j + 1][0..self.tab_text_lens[j]]);
+            var clean_idx: ?usize = null;
+            for (self.tabs[0..self.tab_count], 0..) |tab, tab_idx| {
+                if (!tab.dirty) {
+                    clean_idx = tab_idx;
+                    break;
+                }
             }
-            self.tab_count -= 1;
+            self.removeTabAt(clean_idx orelse return error.AllTabsDirty);
         }
         const idx = self.tab_count;
         const plen = @min(node.path.len, self.tab_path_pool[idx].len);
@@ -572,6 +548,24 @@ pub const WorkspaceBuffers = struct {
         self.tab_disk_fingerprints[idx] = .{};
         self.tab_count += 1;
         return idx;
+    }
+
+    fn removeTabAt(self: *WorkspaceBuffers, index: usize) void {
+        var j = index;
+        while (j + 1 < self.tab_count) : (j += 1) {
+            self.tabs[j] = self.tabs[j + 1];
+            self.tab_path_lens[j] = self.tab_path_lens[j + 1];
+            self.tab_title_lens[j] = self.tab_title_lens[j + 1];
+            self.tab_text_lens[j] = self.tab_text_lens[j + 1];
+            self.tab_text_loaded[j] = self.tab_text_loaded[j + 1];
+            self.tab_disk_fingerprints[j] = self.tab_disk_fingerprints[j + 1];
+            @memcpy(self.tab_path_pool[j][0..self.tab_path_lens[j]], self.tab_path_pool[j + 1][0..self.tab_path_lens[j]]);
+            @memcpy(self.tab_title_pool[j][0..self.tab_title_lens[j]], self.tab_title_pool[j + 1][0..self.tab_title_lens[j]]);
+            @memcpy(self.tab_text_pool[j][0..self.tab_text_lens[j]], self.tab_text_pool[j + 1][0..self.tab_text_lens[j]]);
+            self.tabs[j].path = self.tab_path_pool[j][0..self.tab_path_lens[j]];
+            self.tabs[j].title = self.tab_title_pool[j][0..self.tab_title_lens[j]];
+        }
+        self.tab_count -= 1;
     }
 
     fn activeTabIndex(self: *const WorkspaceBuffers) ?usize {
@@ -651,4 +645,72 @@ test "tab working copies survive switches and save independently" {
     try std.testing.expectEqualStrings("a edited\n", a_disk);
     const b_disk = try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/b.txt", &out);
     try std.testing.expectEqualStrings("b edited\n", b_disk);
+}
+
+test "tab overflow evicts oldest clean tab and rescan keeps shifted dirty text" {
+    const root = "zig-out/test-tab-clean-eviction";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    const names = [_][]const u8{
+        "a.txt", "b.txt", "c.txt", "d.txt", "e.txt",
+        "f.txt", "g.txt", "h.txt", "i.txt",
+    };
+    for (names) |name| {
+        var path_buf: [128]u8 = undefined;
+        const path = try std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ root, name });
+        try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = path, .data = name });
+    }
+
+    const ws = try std.testing.allocator.create(WorkspaceBuffers);
+    defer std.testing.allocator.destroy(ws);
+    ws.* = .{};
+    _ = try ws.openPath(std.testing.io, root);
+
+    const b = ws.findNodeByPath("b.txt").?;
+    try ws.openFileById(std.testing.io, b.id);
+    ws.cacheActiveText("dirty b working copy");
+    ws.setTabDirty(b.id, true);
+    for (names[2..8]) |name| {
+        try ws.openFileById(std.testing.io, ws.findNodeByPath(name).?.id);
+    }
+    try std.testing.expectEqual(max_open_tabs, ws.tabsSlice().len);
+
+    const i = ws.findNodeByPath("i.txt").?;
+    try ws.openFileById(std.testing.io, i.id);
+    try std.testing.expect(ws.findNodeByPath("a.txt") != null);
+    try std.testing.expect(ws.tabIndexById(ws.findNodeByPath("a.txt").?.id) == null);
+    try std.testing.expectEqualStrings("b.txt", ws.tabs[0].path);
+    try std.testing.expect(ws.tabs[0].dirty);
+
+    _ = try ws.rescanPreserveTabs(std.testing.io, "i.txt");
+    const rescanned_b = ws.findNodeByPath("b.txt").?;
+    try ws.openFileById(std.testing.io, rescanned_b.id);
+    try std.testing.expectEqualStrings("dirty b working copy", ws.editorText());
+    try std.testing.expect(ws.activeTabDirty());
+}
+
+test "tab overflow returns AllTabsDirty without changing active editor" {
+    const ws = try std.testing.allocator.create(WorkspaceBuffers);
+    defer std.testing.allocator.destroy(ws);
+    ws.* = .{};
+
+    var path_storage: [max_open_tabs][8]u8 = undefined;
+    var i: usize = 0;
+    while (i < max_open_tabs) : (i += 1) {
+        const path = try std.fmt.bufPrint(&path_storage[i], "{d}.txt", .{i});
+        const idx = try ws.ensureTab(.{ .id = @intCast(i + 1), .path = path });
+        ws.tabs[idx].dirty = true;
+    }
+    @memcpy(ws.editor_path_buf[0..5], "0.txt");
+    ws.editor_path_len = 5;
+    ws.setEditorText("unchanged");
+
+    try std.testing.expectError(
+        error.AllTabsDirty,
+        ws.ensureTab(.{ .id = 99, .path = "new.txt" }),
+    );
+    try std.testing.expectEqual(max_open_tabs, ws.tabsSlice().len);
+    try std.testing.expectEqualStrings("0.txt", ws.editorPath());
+    try std.testing.expectEqualStrings("unchanged", ws.editorText());
 }

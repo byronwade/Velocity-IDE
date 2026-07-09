@@ -15,10 +15,10 @@ pub const max_file_bytes: usize = 16 * 1024;
 pub const SkipSet = struct {
     pub fn shouldSkipName(name: []const u8) bool {
         const skipped = [_][]const u8{
-            ".git",         "node_modules", "vendor",   "dist",
-            "build",        ".next",        "target",   "__pycache__",
-            ".turbo",       ".cache",       "zig-out",  ".native",
-            ".zig-cache",   ".DS_Store",
+            ".git",       "node_modules", "vendor",  "dist",
+            "build",      ".next",        "target",  "__pycache__",
+            ".turbo",     ".cache",       "zig-out", ".native",
+            ".zig-cache", ".DS_Store",
         };
         for (skipped) |s| {
             if (std.mem.eql(u8, name, s)) return true;
@@ -58,6 +58,13 @@ pub const ScanError = error{
     PathTooLong,
     NameTooLong,
     PoolExhausted,
+    BinaryFile,
+};
+
+pub const ReadTextFileError = error{
+    FileNotFound,
+    AccessDenied,
+    FileTooLarge,
     BinaryFile,
 };
 
@@ -198,16 +205,31 @@ pub fn nodePath(bufs: *const ScanBuffers, node: ScanNode) []const u8 {
     return bufs.path_pool[node.path_off..][0..node.path_len];
 }
 
-pub fn readTextFile(io: Io, root_path: []const u8, rel_path: []const u8, out: []u8) !usize {
-    var root = try Io.Dir.cwd().openDir(io, root_path, .{});
+pub fn readTextFile(io: Io, root_path: []const u8, rel_path: []const u8, out: []u8) ReadTextFileError!usize {
+    var root = Io.Dir.cwd().openDir(io, root_path, .{}) catch return error.AccessDenied;
     defer root.close(io);
-    const slice = root.readFile(io, rel_path, out) catch |err| {
+    var file = root.openFile(io, rel_path, .{}) catch |err| {
         return switch (err) {
             error.FileNotFound => error.FileNotFound,
             error.AccessDenied, error.PermissionDenied => error.AccessDenied,
             else => error.AccessDenied,
         };
     };
+    defer file.close(io);
+    const stat = file.stat(io) catch return error.AccessDenied;
+    if (stat.size > max_file_bytes or stat.size > out.len) return error.FileTooLarge;
+
+    var reader_buf: [1]u8 = undefined;
+    var reader = file.reader(io, &reader_buf);
+    const len: usize = @intCast(stat.size);
+    reader.interface.readSliceAll(out[0..len]) catch return error.AccessDenied;
+    if (reader.interface.takeByte()) |_| {
+        return error.FileTooLarge;
+    } else |err| switch (err) {
+        error.EndOfStream => {},
+        error.ReadFailed => return error.AccessDenied,
+    }
+    const slice = out[0..len];
     const check_len = @min(slice.len, @as(usize, 512));
     if (std.mem.indexOfScalar(u8, slice[0..check_len], 0) != null) return error.BinaryFile;
     return slice.len;
@@ -308,4 +330,34 @@ test "scan fixture with testing.io" {
         const name = nodeName(&bufs, bufs.nodes[i]);
         try std.testing.expect(!std.mem.eql(u8, name, "node_modules"));
     }
+}
+
+test "readTextFile rejects oversized files without truncating" {
+    const root = "zig-out/test-scanner-oversized";
+    Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try Io.Dir.cwd().createDirPath(std.testing.io, root);
+
+    var oversized: [max_file_bytes + 1]u8 = undefined;
+    @memset(&oversized, 'x');
+    try Io.Dir.cwd().writeFile(std.testing.io, .{
+        .sub_path = root ++ "/large.txt",
+        .data = &oversized,
+    });
+    try Io.Dir.cwd().writeFile(std.testing.io, .{
+        .sub_path = root ++ "/exact.txt",
+        .data = oversized[0..max_file_bytes],
+    });
+
+    var out: [max_file_bytes]u8 = undefined;
+    @memset(&out, 0xa5);
+    try std.testing.expectError(
+        error.FileTooLarge,
+        readTextFile(std.testing.io, root, "large.txt", &out),
+    );
+    try std.testing.expectEqual(@as(u8, 0xa5), out[0]);
+    try std.testing.expectEqual(
+        max_file_bytes,
+        try readTextFile(std.testing.io, root, "exact.txt", &out),
+    );
 }
