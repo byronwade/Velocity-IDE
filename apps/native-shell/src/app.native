@@ -9,7 +9,11 @@
       <text size="sm" foreground="text_muted" wrap="false">native ide</text>
       <spacer grow="1" />
       <button size="sm" variant="ghost" on-press="open_command_palette" label="Command palette">Cmd+K</button>
+      <button size="sm" variant="ghost" on-press="toggle_notifications_panel" label="Notifications">Bell</button>
       <button size="sm" variant="ghost" on-press="switch_theme" label="Switch theme">{themeLabel}</button>
+      <button size="sm" variant="ghost" on-press="minimize_window" label="Minimize">_</button>
+      <button size="sm" variant="ghost" on-press="close_window" label="Close">x</button>
+      <spacer width="{chrome_trailing}" />
     </row>
     <separator />
 
@@ -94,8 +98,9 @@
             <scroll grow="1" label="File explorer">
               <column gap="1">
                 <for each="file_nodes" key="id" as="n">
-                  <list-item on-press="select_file:{n.id}" selected="{n.id == selected_file_id}" padding="6" gap="6" cross="center" label="{n.name}">
-                    <text size="sm" foreground="text_muted">{n.depth}</text>
+                  <list-item on-press="select_file:{n.id}" selected="{n.id == selected_file_id}" padding="4" gap="4" cross="center" label="{n.name}">
+                    <text size="sm" foreground="text_muted" wrap="false">{n.indent}</text>
+                    <text size="sm" foreground="text_muted" wrap="false">{n.kind_mark}</text>
                     <text grow="1" wrap="false">{n.name}</text>
                   </list-item>
                 </for>
@@ -198,7 +203,6 @@
                 </row>
                 <column grow="1" gap="4" padding="8" background="surface_subtle">
                   <textarea text="{documentText}" placeholder="Open a file to edit..." on-input="edit_document" grow="1" label="Editor" />
-                  <text size="sm" foreground="text_muted">{toast}</text>
                 </column>
               </column>
 
@@ -421,27 +425,69 @@
             </column>
           </if>
 
-          <!-- Settings -->
+          <!-- Settings (Cursor-like grouped sections) -->
           <if test="{isSettings}">
-            <column grow="1" gap="10" padding="16">
-              <text>Settings</text>
-              <text foreground="text_muted">Telemetry off / Surveys off / Plugins locked until trusted</text>
-              <button variant="secondary" on-press="switch_theme">Theme: {themeLabel}</button>
-              <button variant="ghost" on-press="toggle_terminal">{terminalPanelLabel}</button>
-              <button variant="ghost" on-press="toggle_agent_panel">{agentPanelLabel}</button>
-              <button variant="ghost" on-press="toggle_auto_save">{autoSaveLabel}</button>
-              <button variant="ghost" on-press="toggle_find_case">Find {findCaseLabel}</button>
-              <button variant="ghost" on-press="toggle_trim_trailing">{trimTrailingLabel}</button>
-              <button variant="ghost" on-press="toggle_final_newline">{finalNewlineLabel}</button>
-              <button variant="ghost" on-press="cycle_indent_size">{indentSizeLabel}</button>
-              <button variant="ghost" on-press="toggle_sidebar">{sidebarLabel}</button>
-              <button variant="ghost" on-press="toggle_word_wrap">{wordWrapLabel}</button>
-              <button variant="ghost" on-press="toggle_focus_mode">{focusModeLabel}</button>
-              <button variant="ghost" on-press="save_prefs">Save Preferences</button>
-              <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
-              <button variant="ghost" on-press="open_process_governor">Process Governor</button>
-              <button variant="ghost" on-press="run_perf_check_placeholder">Run Performance Check</button>
-              <button variant="ghost" on-press="go_launch">Back to Launch</button>
+            <column grow="1" gap="12" padding="16">
+              <row gap="8" cross="center">
+                <text grow="1">Settings</text>
+                <text size="sm" foreground="text_muted">{app_version_label}</text>
+              </row>
+              <text-field text="{settingsQueryText}" placeholder="Search settings..." on-input="update_settings_query" label="Settings search" />
+              <scroll grow="1" label="Settings sections">
+                <column gap="14">
+                  <if test="{showSettingsAppearance}">
+                    <column gap="6" padding="10" background="surface_subtle">
+                      <text>Appearance</text>
+                      <text size="sm" foreground="text_muted">Theme and visual density</text>
+                      <button variant="secondary" on-press="switch_theme">Theme: {themeLabel}</button>
+                      <text size="sm" foreground="text_muted">Window: {windowStatusLabel}</text>
+                    </column>
+                  </if>
+                  <if test="{showSettingsEditor}">
+                    <column gap="6" padding="10" background="surface_subtle">
+                      <text>Editor</text>
+                      <text size="sm" foreground="text_muted">Editing defaults for the active buffer</text>
+                      <button variant="ghost" on-press="toggle_find_case">Find {findCaseLabel}</button>
+                      <button variant="ghost" on-press="toggle_trim_trailing">{trimTrailingLabel}</button>
+                      <button variant="ghost" on-press="toggle_final_newline">{finalNewlineLabel}</button>
+                      <button variant="ghost" on-press="cycle_indent_size">{indentSizeLabel}</button>
+                      <button variant="ghost" on-press="toggle_word_wrap">{wordWrapLabel}</button>
+                      <button variant="ghost" on-press="format_document">Format Document</button>
+                    </column>
+                  </if>
+                  <if test="{showSettingsWorkspace}">
+                    <column gap="6" padding="10" background="surface_subtle">
+                      <text>Workspace</text>
+                      <text size="sm" foreground="text_muted">Panels and session behavior</text>
+                      <button variant="ghost" on-press="toggle_terminal">{terminalPanelLabel}</button>
+                      <button variant="ghost" on-press="toggle_agent_panel">{agentPanelLabel}</button>
+                      <button variant="ghost" on-press="toggle_auto_save">{autoSaveLabel}</button>
+                      <button variant="ghost" on-press="toggle_sidebar">{sidebarLabel}</button>
+                      <button variant="ghost" on-press="toggle_focus_mode">{focusModeLabel}</button>
+                      <button variant="ghost" on-press="save_prefs">Save Preferences</button>
+                    </column>
+                  </if>
+                  <if test="{showSettingsFeatures}">
+                    <column gap="6" padding="10" background="surface_subtle">
+                      <text>Features</text>
+                      <text size="sm" foreground="text_muted">Optional surfaces and governors</text>
+                      <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
+                      <button variant="ghost" on-press="open_process_governor">Process Governor</button>
+                      <button variant="ghost" on-press="run_perf_check_placeholder">Run Performance Check</button>
+                    </column>
+                  </if>
+                  <if test="{showSettingsAbout}">
+                    <column gap="6" padding="10" background="surface_subtle">
+                      <text>About</text>
+                      <text size="sm" foreground="text_muted">Telemetry off · Surveys off · Plugins locked until trusted</text>
+                      <text size="sm" foreground="text_muted">{app_version_label} · no network updater in MVP</text>
+                      <button variant="secondary" on-press="check_for_updates">Check for Updates</button>
+                      <button variant="ghost" on-press="toggle_notifications_panel">Notification History</button>
+                      <button variant="ghost" on-press="go_launch">Back to Launch</button>
+                    </column>
+                  </if>
+                </column>
+              </scroll>
             </column>
           </if>
 
@@ -462,8 +508,43 @@
     </if>
 
     <separator />
+    <if test="{hasUpdateBanner}">
+      <row gap="8" padding="8" background="surface_subtle" cross="center" label="Update banner">
+        <text size="sm" grow="1" wrap="true">{updateBannerText}</text>
+        <button size="sm" variant="ghost" on-press="check_for_updates">Recheck</button>
+        <button size="sm" variant="ghost" on-press="dismiss_update_banner">Dismiss</button>
+      </row>
+    </if>
+    <if test="{hasToast}">
+      <row gap="8" padding="8" background="surface" cross="center" label="Notification toast">
+        <text size="sm" grow="1" wrap="true">{toast}</text>
+        <button size="sm" variant="ghost" on-press="clear_toast">Dismiss</button>
+      </row>
+    </if>
     <status-bar>{project_branch} / {status_language} / {documentStats} / {workspaceFilesLabel} / Native Shell / {status_plugins} / {status_agent}</status-bar>
   </column>
+
+  <!-- Notifications history panel -->
+  <if test="{notificationsOpen}">
+    <column grow="1" main="start" cross="end" padding="24" background="surface_pressed">
+      <column width="360" gap="8" padding="12" background="surface">
+        <row gap="8" cross="center">
+          <text grow="1">Notifications</text>
+          <button size="sm" variant="ghost" on-press="toggle_notifications_panel">Close</button>
+        </row>
+        <text size="sm" foreground="text_muted">Recent toasts (bounded)</text>
+        <scroll height="280" label="Notification history">
+          <column gap="4">
+            <for each="notifications" key="id" as="n">
+              <column gap="2" padding="8" background="surface_subtle">
+                <text size="sm" wrap="true">{n.text}</text>
+              </column>
+            </for>
+          </column>
+        </scroll>
+      </column>
+    </column>
+  </if>
 
   <!-- Command palette overlay -->
   <if test="{command_palette_open}">

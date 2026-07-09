@@ -909,3 +909,54 @@ test "create folder file size word wrap close tab shortcut" {
     // Cmd+W maps to close_active_tab via onCommand.
     try testing.expect(main.onCommand("close_active_tab") != null);
 }
+
+test "toast notification history and update check" {
+    var model = main.initialModel();
+    main.update(&model, .check_for_updates);
+    try testing.expect(model.update_banner_visible);
+    try testing.expect(std.mem.indexOf(u8, model.update_banner, "up to date") != null);
+    try testing.expect(model.hasToast());
+    try testing.expect(model.notification_count >= 1);
+    main.update(&model, .clear_toast);
+    try testing.expect(!model.hasToast());
+    main.update(&model, .dismiss_update_banner);
+    try testing.expect(!model.hasUpdateBanner());
+    main.update(&model, .toggle_notifications_panel);
+    try testing.expect(model.notifications_panel_open);
+}
+
+test "file tree indent marks and folder select" {
+    var model = main.initialModel();
+    try testing.expectEqualStrings(">", model.file_nodes[0].kind_mark);
+    try testing.expectEqualStrings("-", model.file_nodes[1].kind_mark);
+    try testing.expect(model.file_nodes[1].indent.len > 0);
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    // Select a directory node — should not open as editor.
+    var dir_id: u32 = 0;
+    for (model.file_nodes) |n| {
+        if (n.is_dir) {
+            dir_id = n.id;
+            break;
+        }
+    }
+    try testing.expect(dir_id != 0);
+    main.update(&model, .{ .select_file = dir_id });
+    try testing.expectEqualStrings("Folder selected", model.toast);
+}
+
+test "settings sections and chrome trailing" {
+    var model = main.initialModel();
+    main.update(&model, .open_settings);
+    try testing.expect(model.isSettings());
+    try testing.expect(model.showSettingsAppearance());
+    model.settings_query.set("editor");
+    try testing.expect(model.showSettingsEditor());
+    try testing.expect(!model.showSettingsAppearance());
+    main.update(&model, .{ .chrome_changed = .{ .insets = .{ .left = 78, .top = 52, .right = 12 } } });
+    try testing.expect(model.chrome_leading == 78);
+    try testing.expect(model.chrome_trailing == 12);
+    try testing.expect(model.chrome_seen_insets);
+    main.update(&model, .{ .chrome_changed = .{ .insets = .{} } });
+    try testing.expect(model.window_fullscreen);
+    try testing.expectEqualStrings("Entered fullscreen", model.toast);
+}

@@ -15,7 +15,30 @@ pub const FileNode = struct {
     path: []const u8 = "",
     depth: u8 = 0,
     is_dir: bool = false,
+    /// Visual indent spacer for the explorer tree (spaces, not a depth digit).
+    indent: []const u8 = "",
+    /// Folder/file marker shown before the name (`>` dir, `·` file).
+    kind_mark: []const u8 = "",
 };
+
+const indent_steps = [_][]const u8{
+    "",
+    "  ",
+    "    ",
+    "      ",
+    "        ",
+    "          ",
+    "            ",
+    "              ",
+    "                ",
+};
+
+pub fn decorateFileNode(node: FileNode) FileNode {
+    var out = node;
+    out.indent = indent_steps[@min(node.depth, indent_steps.len - 1)];
+    out.kind_mark = if (node.is_dir) ">" else "-";
+    return out;
+}
 
 pub const Tab = struct {
     id: u32 = 0,
@@ -256,13 +279,13 @@ pub const WorkspaceBuffers = struct {
         var i: u32 = 0;
         while (i < self.scan_count) : (i += 1) {
             const sn = self.scan_nodes[i];
-            self.file_nodes[i] = .{
+            self.file_nodes[i] = decorateFileNode(.{
                 .id = sn.id,
                 .name = scanner.nodeName(&bufs, sn),
                 .path = scanner.nodePath(&bufs, sn),
                 .depth = sn.depth,
                 .is_dir = sn.is_dir,
-            };
+            });
         }
     }
 

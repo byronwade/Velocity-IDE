@@ -212,6 +212,14 @@ pub const Msg = union(enum) {
     create_folder,
     show_file_size,
     toggle_word_wrap,
+    clear_toast,
+    toast_timer: native_sdk.EffectTimer,
+    dismiss_update_banner,
+    check_for_updates,
+    minimize_window,
+    close_window,
+    toggle_notifications_panel,
+    update_settings_query: canvas.TextInputEvent,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -220,6 +228,13 @@ pub const Msg = union(enum) {
     pub const view_unbound = .{
         "chrome_changed",
         "set_appearance",
+        "clear_toast",
+        "toast_timer",
+        "dismiss_update_banner",
+        "check_for_updates",
+        "minimize_window",
+        "close_window",
+        "toggle_notifications_panel",
         "open_tab",
         "close_tab",
         "open_plugin_registry",
@@ -322,9 +337,23 @@ pub const Msg = union(enum) {
         "create_folder",
         "show_file_size",
         "toggle_word_wrap",
+        "update_settings_query",
         "terminal_line",
         "terminal_exit",
     };
+};
+
+pub const app_version = "0.1.0";
+pub const toast_timer_key: u64 = 0x746f617374_01;
+pub const toast_auto_clear_ms: u64 = 3200;
+pub const max_notification_history: usize = 8;
+pub const max_notification_text: usize = 96;
+pub const max_toast_text: usize = 520;
+pub const max_settings_query = 48;
+
+pub const NotificationItem = struct {
+    id: u32 = 0,
+    text: []const u8 = "",
 };
 
 pub const Effects = native_sdk.Effects(Msg);
@@ -438,11 +467,32 @@ pub const Model = struct {
     terminal_async: bool = false,
     governor: process_governor.Governor = .{},
     toast: []const u8 = "",
+    toast_buf: [max_toast_text]u8 = undefined,
+    toast_len: usize = 0,
+    toast_visible: bool = false,
+    toast_sticky: bool = false,
+    toast_seq: u32 = 0,
+    notification_history: [max_notification_history]NotificationItem = [_]NotificationItem{.{}} ** max_notification_history,
+    notification_text_pool: [max_notification_history][max_notification_text]u8 = undefined,
+    notification_text_lens: [max_notification_history]usize = [_]usize{0} ** max_notification_history,
+    notification_count: u32 = 0,
+    notification_next_id: u32 = 1,
+    notifications: []const NotificationItem = &.{},
+    notifications_panel_open: bool = false,
+    update_banner: []const u8 = "",
+    update_banner_buf: [120]u8 = undefined,
+    update_banner_visible: bool = false,
+    update_checked: bool = false,
+    settings_query: canvas.TextBuffer(max_settings_query) = .{},
+    app_version_label: []const u8 = "Velocity " ++ app_version,
     editor_mode_label: []const u8 = "read-only mock",
     theme_preference: theme.ThemePreference = .dark,
     appearance: native_sdk.Appearance = .{},
     chrome_leading: f32 = 0,
+    chrome_trailing: f32 = 0,
     header_height: f32 = header_natural_height,
+    window_fullscreen: bool = false,
+    chrome_seen_insets: bool = false,
     active_tab_id: u32 = 1,
     selected_file_id: u32 = 2,
     project_name: []const u8 = "acme-dashboard",
@@ -575,6 +625,26 @@ pub const Model = struct {
         "path_toast_buf",
         "action_toast_buf",
         "pathToast",
+        "toast_buf",
+        "toast_len",
+        "toast_visible",
+        "toast_sticky",
+        "toast_seq",
+        "notification_history",
+        "notification_text_pool",
+        "notification_text_lens",
+        "notification_count",
+        "notification_next_id",
+        "notifications_panel_open",
+        "update_banner",
+        "update_banner_buf",
+        "update_banner_visible",
+        "update_checked",
+        "settings_query",
+        "app_version_label",
+        "chrome_trailing",
+        "window_fullscreen",
+        "chrome_seen_insets",
         "recent_dynamic",
         "recent_name_pool",
         "recent_path_pool",
@@ -809,6 +879,54 @@ pub const Model = struct {
         return model.path_toast;
     }
 
+    pub fn hasToast(model: *const Model) bool {
+        return model.toast_visible and model.toast.len > 0;
+    }
+
+    pub fn hasUpdateBanner(model: *const Model) bool {
+        return model.update_banner_visible and model.update_banner.len > 0;
+    }
+
+    pub fn updateBannerText(model: *const Model) []const u8 {
+        return model.update_banner;
+    }
+
+    pub fn settingsQueryText(model: *const Model) []const u8 {
+        return model.settings_query.text();
+    }
+
+    pub fn showSettingsAppearance(model: *const Model) bool {
+        return settingsSectionVisible(model, "appearance theme dark light contrast");
+    }
+
+    pub fn showSettingsEditor(model: *const Model) bool {
+        return settingsSectionVisible(model, "editor find indent trim newline wrap format");
+    }
+
+    pub fn showSettingsWorkspace(model: *const Model) bool {
+        return settingsSectionVisible(model, "workspace sidebar terminal agent panel auto save");
+    }
+
+    pub fn showSettingsFeatures(model: *const Model) bool {
+        return settingsSectionVisible(model, "features process governor performance matrix");
+    }
+
+    pub fn showSettingsAbout(model: *const Model) bool {
+        return settingsSectionVisible(model, "about version update telemetry notifications");
+    }
+
+    pub fn notificationsOpen(model: *const Model) bool {
+        return model.notifications_panel_open;
+    }
+
+    pub fn notificationItems(model: *const Model) []const NotificationItem {
+        return model.notifications;
+    }
+
+    pub fn windowStatusLabel(model: *const Model) []const u8 {
+        return if (model.window_fullscreen) "Fullscreen" else "Windowed";
+    }
+
     pub fn breadcrumbText(model: *const Model) []const u8 {
         return model.breadcrumb;
     }
@@ -935,18 +1053,18 @@ pub const recent_projects = [_]RecentProject{
 };
 
 pub const file_tree = [_]FileNode{
-    .{ .id = 1, .name = "src", .path = "src", .depth = 0, .is_dir = true },
-    .{ .id = 2, .name = "app.tsx", .path = "src/app.tsx", .depth = 1, .is_dir = false },
-    .{ .id = 3, .name = "components", .path = "src/components", .depth = 1, .is_dir = true },
-    .{ .id = 4, .name = "Chart.tsx", .path = "src/components/Chart.tsx", .depth = 2, .is_dir = false },
-    .{ .id = 5, .name = "server", .path = "src/server", .depth = 1, .is_dir = true },
-    .{ .id = 6, .name = "auth.ts", .path = "src/server/auth.ts", .depth = 2, .is_dir = false },
-    .{ .id = 11, .name = "lib", .path = "src/lib", .depth = 1, .is_dir = true },
-    .{ .id = 12, .name = "db.ts", .path = "src/lib/db.ts", .depth = 2, .is_dir = false },
-    .{ .id = 7, .name = "package.json", .path = "package.json", .depth = 0, .is_dir = false },
-    .{ .id = 8, .name = "README.md", .path = "README.md", .depth = 0, .is_dir = false },
-    .{ .id = 9, .name = "tests", .path = "tests", .depth = 0, .is_dir = true },
-    .{ .id = 10, .name = "app.test.ts", .path = "tests/app.test.ts", .depth = 1, .is_dir = false },
+    workspace_store.decorateFileNode(.{ .id = 1, .name = "src", .path = "src", .depth = 0, .is_dir = true }),
+    workspace_store.decorateFileNode(.{ .id = 2, .name = "app.tsx", .path = "src/app.tsx", .depth = 1, .is_dir = false }),
+    workspace_store.decorateFileNode(.{ .id = 3, .name = "components", .path = "src/components", .depth = 1, .is_dir = true }),
+    workspace_store.decorateFileNode(.{ .id = 4, .name = "Chart.tsx", .path = "src/components/Chart.tsx", .depth = 2, .is_dir = false }),
+    workspace_store.decorateFileNode(.{ .id = 5, .name = "server", .path = "src/server", .depth = 1, .is_dir = true }),
+    workspace_store.decorateFileNode(.{ .id = 6, .name = "auth.ts", .path = "src/server/auth.ts", .depth = 2, .is_dir = false }),
+    workspace_store.decorateFileNode(.{ .id = 11, .name = "lib", .path = "src/lib", .depth = 1, .is_dir = true }),
+    workspace_store.decorateFileNode(.{ .id = 12, .name = "db.ts", .path = "src/lib/db.ts", .depth = 2, .is_dir = false }),
+    workspace_store.decorateFileNode(.{ .id = 7, .name = "package.json", .path = "package.json", .depth = 0, .is_dir = false }),
+    workspace_store.decorateFileNode(.{ .id = 8, .name = "README.md", .path = "README.md", .depth = 0, .is_dir = false }),
+    workspace_store.decorateFileNode(.{ .id = 9, .name = "tests", .path = "tests", .depth = 0, .is_dir = true }),
+    workspace_store.decorateFileNode(.{ .id = 10, .name = "app.test.ts", .path = "tests/app.test.ts", .depth = 1, .is_dir = false }),
 };
 
 pub const tabs = [_]Tab{
@@ -1056,6 +1174,10 @@ pub const commands = [_]CommandItem{
     .{ .id = "create_folder", .title = "New Folder", .hint = "" },
     .{ .id = "show_file_size", .title = "Show File Size", .hint = "" },
     .{ .id = "toggle_word_wrap", .title = "Toggle Word Wrap", .hint = "Alt+Z" },
+    .{ .id = "check_for_updates", .title = "Check for Updates", .hint = "" },
+    .{ .id = "toggle_notifications_panel", .title = "Toggle Notifications", .hint = "" },
+    .{ .id = "minimize_window", .title = "Minimize Window", .hint = "" },
+    .{ .id = "close_window", .title = "Close Window", .hint = "" },
     .{ .id = "reopen_last_workspace", .title = "Reopen Last Workspace", .hint = "" },
     .{ .id = "clear_find", .title = "Clear Find", .hint = "" },
     .{ .id = "duplicate_line", .title = "Duplicate Last Line", .hint = "" },
@@ -1097,11 +1219,147 @@ pub fn initialModel() Model {
 /// Sync update used by unit tests (no effects channel).
 pub fn update(model: *Model, msg: Msg) void {
     updateInner(model, msg, null);
+    normalizeToastState(model);
 }
 
 /// Runtime update with Native SDK effects (async terminal spawn).
 pub fn updateFx(model: *Model, msg: Msg, fx: *Effects) void {
+    var prev_buf: [max_toast_text]u8 = undefined;
+    const prev_n = @min(model.toast.len, prev_buf.len);
+    if (prev_n > 0) @memcpy(prev_buf[0..prev_n], model.toast[0..prev_n]);
+    const prev_toast = prev_buf[0..prev_n];
+
     updateInner(model, msg, fx);
+    normalizeToastState(model);
+
+    if (!std.mem.eql(u8, model.toast, prev_toast)) {
+        armToastClearTimer(model, fx);
+    }
+    handleWindowActions(model, msg, fx);
+}
+
+fn settingsSectionVisible(model: *const Model, keywords: []const u8) bool {
+    const q = model.settings_query.text();
+    if (q.len == 0) return true;
+    return std.ascii.indexOfIgnoreCase(keywords, q) != null;
+}
+
+fn isStickyToast(text: []const u8) bool {
+    if (text.len == 0) return false;
+    if (std.mem.indexOf(u8, text, "Confirm again") != null) return true;
+    if (std.mem.indexOf(u8, text, "again to confirm") != null) return true;
+    if (std.mem.indexOf(u8, text, "Close again") != null) return true;
+    if (std.mem.startsWith(u8, text, "Delete ")) return true;
+    if (std.mem.startsWith(u8, text, "Close all")) return true;
+    if (std.mem.startsWith(u8, text, "Unsaved")) return true;
+    if (std.mem.startsWith(u8, text, "Discard")) return true;
+    if (std.mem.startsWith(u8, text, "Clear recent")) return true;
+    return false;
+}
+
+fn normalizeToastState(model: *Model) void {
+    const text = model.toast;
+    if (text.len == 0) {
+        model.toast_len = 0;
+        model.toast = "";
+        model.toast_visible = false;
+        model.toast_sticky = false;
+        return;
+    }
+    // Already owned by toast_buf with identical content — refresh flags only.
+    if (model.toast_len == text.len and std.mem.eql(u8, model.toast_buf[0..model.toast_len], text)) {
+        model.toast = model.toast_buf[0..model.toast_len];
+        model.toast_visible = true;
+        model.toast_sticky = isStickyToast(model.toast);
+        return;
+    }
+    const n = @min(text.len, model.toast_buf.len);
+    @memcpy(model.toast_buf[0..n], text[0..n]);
+    model.toast_len = n;
+    model.toast = model.toast_buf[0..n];
+    model.toast_visible = true;
+    model.toast_sticky = isStickyToast(model.toast);
+    model.toast_seq +%= 1;
+    pushNotificationHistory(model, model.toast);
+}
+
+fn pushNotificationHistory(model: *Model, text: []const u8) void {
+    if (text.len == 0) return;
+    // Shift older entries down; newest at index 0.
+    var i: usize = max_notification_history;
+    while (i > 1) : (i -= 1) {
+        const dst = i - 1;
+        const src = i - 2;
+        if (src >= model.notification_count) continue;
+        const len = model.notification_text_lens[src];
+        @memcpy(model.notification_text_pool[dst][0..len], model.notification_text_pool[src][0..len]);
+        model.notification_text_lens[dst] = len;
+        model.notification_history[dst] = .{
+            .id = model.notification_history[src].id,
+            .text = model.notification_text_pool[dst][0..len],
+        };
+    }
+    const n = @min(text.len, max_notification_text);
+    @memcpy(model.notification_text_pool[0][0..n], text[0..n]);
+    model.notification_text_lens[0] = n;
+    model.notification_history[0] = .{
+        .id = model.notification_next_id,
+        .text = model.notification_text_pool[0][0..n],
+    };
+    model.notification_next_id +%= 1;
+    if (model.notification_count < max_notification_history) model.notification_count += 1;
+    model.notifications = model.notification_history[0..model.notification_count];
+}
+
+fn armToastClearTimer(model: *Model, fx: *Effects) void {
+    fx.cancelTimer(toast_timer_key);
+    if (!model.toast_visible or model.toast_sticky or model.toast.len == 0) return;
+    fx.startTimer(.{
+        .key = toast_timer_key,
+        .interval_ms = toast_auto_clear_ms,
+        .mode = .one_shot,
+        .on_fire = Effects.timerMsg(.toast_timer),
+    });
+}
+
+fn handleWindowActions(model: *Model, msg: Msg, fx: *Effects) void {
+    _ = model;
+    switch (msg) {
+        .minimize_window => fx.minimizeWindow("main"),
+        .close_window => fx.closeWindow("main"),
+        .run_command => |id| {
+            if (std.mem.eql(u8, id, "minimize_window")) fx.minimizeWindow("main");
+            if (std.mem.eql(u8, id, "close_window")) fx.closeWindow("main");
+        },
+        else => {},
+    }
+}
+
+fn clearToastNow(model: *Model) void {
+    model.toast = "";
+    model.toast_len = 0;
+    model.toast_visible = false;
+    model.toast_sticky = false;
+}
+
+fn setUpdateBanner(model: *Model, text: []const u8) void {
+    const n = @min(text.len, model.update_banner_buf.len);
+    @memcpy(model.update_banner_buf[0..n], text[0..n]);
+    model.update_banner = model.update_banner_buf[0..n];
+    model.update_banner_visible = n > 0;
+}
+
+fn runUpdateCheck(model: *Model) void {
+    model.update_checked = true;
+    const msg = std.fmt.bufPrint(
+        &model.update_banner_buf,
+        "Velocity {s} — update check (dev): you're up to date",
+        .{app_version},
+    ) catch "Velocity — you're up to date";
+    const n = @min(msg.len, model.update_banner_buf.len);
+    model.update_banner = model.update_banner_buf[0..n];
+    model.update_banner_visible = true;
+    model.toast = model.update_banner;
 }
 
 fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
@@ -1305,6 +1563,14 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 showFileSize(model);
             } else if (std.mem.eql(u8, id, "toggle_word_wrap")) {
                 toggleWordWrap(model);
+            } else if (std.mem.eql(u8, id, "check_for_updates")) {
+                runUpdateCheck(model);
+            } else if (std.mem.eql(u8, id, "toggle_notifications_panel")) {
+                model.notifications_panel_open = !model.notifications_panel_open;
+            } else if (std.mem.eql(u8, id, "minimize_window")) {
+                // Handled in updateFx via handleWindowActions when fx is present.
+            } else if (std.mem.eql(u8, id, "close_window")) {
+                // Handled in updateFx via handleWindowActions when fx is present.
             } else if (std.mem.eql(u8, id, "reopen_last_workspace")) {
                 reopenLastWorkspace(model);
             } else if (std.mem.eql(u8, id, "clear_find")) {
@@ -1388,16 +1654,29 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.selected_activity = .explorer;
             if (model.workspace_from_disk) {
                 if (model.workspace) |ws| {
+                    if (ws.findNode(id)) |node| {
+                        if (node.is_dir) {
+                            model.toast = "Folder selected";
+                            return;
+                        }
+                    }
                     ws.openFileById(modelIo(model), id) catch {};
                     model.active_tab_id = id;
                     model.open_tabs = ws.tabsSlice();
                     if (ws.findNode(id)) |node| {
-                        if (!node.is_dir) {
-                            model.status_language = workspace_store.scannerLanguage(node.path);
-                        }
+                        model.status_language = workspace_store.scannerLanguage(node.path);
                     }
                     syncDocumentFromWorkspace(model);
                     return;
+                }
+            }
+            for (file_tree) |node| {
+                if (node.id == id) {
+                    if (node.is_dir) {
+                        model.toast = "Folder selected";
+                        return;
+                    }
+                    break;
                 }
             }
             for (tabs) |tab| {
@@ -1647,9 +1926,34 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         },
         .chrome_changed => |chrome| {
             model.chrome_leading = chrome.insets.left;
+            model.chrome_trailing = chrome.insets.right;
             model.header_height = @max(header_natural_height, chrome.insets.top);
+            const has_insets = chrome.insets.left > 0 or chrome.insets.right > 0 or chrome.insets.top > 0;
+            if (has_insets) model.chrome_seen_insets = true;
+            if (model.chrome_seen_insets) {
+                const was_fs = model.window_fullscreen;
+                model.window_fullscreen = !has_insets;
+                if (model.window_fullscreen and !was_fs) {
+                    model.toast = "Entered fullscreen";
+                } else if (!model.window_fullscreen and was_fs) {
+                    model.toast = "Exited fullscreen";
+                }
+            }
         },
         .set_appearance => |appearance| model.appearance = appearance,
+        .clear_toast => clearToastNow(model),
+        .toast_timer => clearToastNow(model),
+        .dismiss_update_banner => {
+            model.update_banner_visible = false;
+            model.update_banner = "";
+        },
+        .check_for_updates => runUpdateCheck(model),
+        .minimize_window => {},
+        .close_window => {},
+        .toggle_notifications_panel => {
+            model.notifications_panel_open = !model.notifications_panel_open;
+        },
+        .update_settings_query => |edit| model.settings_query.apply(edit),
     }
 }
 
@@ -2717,6 +3021,8 @@ pub fn applyExplorerFilter(model: *Model) void {
         // Keep full tree slice from workspace / mock.
         if (model.workspace_from_disk) {
             if (model.workspace) |ws| model.file_nodes = ws.fileNodesSlice();
+        } else {
+            model.file_nodes = &file_tree;
         }
         return;
     }
@@ -2728,7 +3034,7 @@ pub fn applyExplorerFilter(model: *Model) void {
     for (source) |n| {
         if (count >= model.explorer_filtered.len) break;
         if (std.ascii.indexOfIgnoreCase(n.name, query) != null or std.ascii.indexOfIgnoreCase(n.path, query) != null) {
-            model.explorer_filtered[count] = n;
+            model.explorer_filtered[count] = workspace_store.decorateFileNode(n);
             count += 1;
         }
     }
@@ -3843,6 +4149,9 @@ pub fn ensurePrefsOnBoot(model: *Model) void {
     applyPrefsToModel(model);
     refreshDocStats(model);
     refreshBreadcrumb(model);
+    // Dev update notification on launch — mirrors Cursor's "you're up to date" toast.
+    runUpdateCheck(model);
+    normalizeToastState(model);
 }
 
 fn persistPrefs(model: *Model) void {
