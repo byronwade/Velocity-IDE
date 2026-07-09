@@ -158,7 +158,7 @@ pub const catalog = [_]Command{
     .{ .id = "toggle_agent", .title = "Toggle Agent Panel", .hint = "Cmd+Shift+A", .feature_id = "feature.agent-composer" },
     .{ .id = "open_plugins", .title = "Open Plugin Registry (Limited)", .availability = .limited, .feature_id = "feature.plugin-marketplace-ui" },
     .{ .id = "open_settings", .title = "Open Settings", .hint = "Cmd+,", .feature_id = "feature.settings" },
-    .{ .id = "run_perf", .title = "Run Performance Check (Limited)", .availability = .limited, .feature_id = "feature.performance-hud" },
+    .{ .id = "run_perf", .title = "Refresh Performance Metrics", .feature_id = "feature.performance-hud" },
     .{ .id = "open_feature_matrix", .title = "Open Feature Toggle Matrix", .feature_id = "feature.feature-toggle-matrix" },
     .{ .id = "open_process_governor", .title = "Open Process Governor", .feature_id = "feature.process-governor-ui" },
     .{ .id = "kill_all_workspace_processes", .title = "Kill All Workspace Processes", .feature_id = "feature.kill-all-workspace-processes" },

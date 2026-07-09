@@ -23,6 +23,13 @@ pub const Ownership = struct {
     debug: bool = false,
 };
 
+pub const OwnershipCounts = struct {
+    terminal: u32 = 0,
+    task: u32 = 0,
+    lsp: u32 = 0,
+    debug: u32 = 0,
+};
+
 pub const ProcessRecord = struct {
     id: u32 = 0,
     os_pid: u32 = 0,
@@ -159,6 +166,18 @@ pub const Governor = struct {
         };
         return n;
     }
+
+    pub fn aliveOwnershipCounts(self: *const Governor) OwnershipCounts {
+        var counts: OwnershipCounts = .{};
+        for (self.records[0..self.count]) |record| {
+            if (!record.alive) continue;
+            if (record.terminal_owned) counts.terminal += 1;
+            if (record.task_owned) counts.task += 1;
+            if (record.lsp_owned) counts.lsp += 1;
+            if (record.debug_owned) counts.debug += 1;
+        }
+        return counts;
+    }
 };
 
 test "governor tracks spawn without OS process" {
@@ -186,4 +205,17 @@ test "governor enforces terminal and task budgets and records effect outcome" {
     try std.testing.expect(!record.alive);
     try std.testing.expectEqual(ProcessStatus.cancelled, record.status);
     try std.testing.expectEqual(@as(i32, 130), record.exit_code);
+}
+
+test "governor reports live ownership counts" {
+    var g: Governor = .{};
+    _ = try g.spawnEffect("feature.terminal", "echo", 1, .{ .terminal = true, .task = true });
+    _ = try g.spawnEffect("feature.lsp", "server", 2, .{ .lsp = true });
+
+    const counts = g.aliveOwnershipCounts();
+    try std.testing.expectEqual(@as(u32, 1), counts.terminal);
+    try std.testing.expectEqual(@as(u32, 1), counts.task);
+    try std.testing.expectEqual(@as(u32, 1), counts.lsp);
+    g.closeEffect(1, .exited, 0);
+    try std.testing.expectEqual(@as(u32, 0), g.aliveOwnershipCounts().terminal);
 }

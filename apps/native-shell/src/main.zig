@@ -92,12 +92,29 @@ pub fn onCommand(shortcut_id: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "toggle_word_wrap")) return .toggle_word_wrap;
     if (std.mem.eql(u8, name, "escape")) return .dismiss_overlay;
     if (std.mem.eql(u8, name, "toggle_terminal")) return .toggle_terminal;
+    if (std.mem.eql(u8, name, "run_perf")) return .run_perf;
     if (std.mem.eql(u8, name, "save_file")) return .save_file;
     return null;
 }
 
 pub fn onChrome(chrome: native_sdk.WindowChrome) ?Msg {
     return .{ .chrome_changed = chrome };
+}
+
+pub fn onFrame(model: *const Model, frame: native_sdk.GpuFrame) ?Msg {
+    const needs_startup_mark =
+        (frame.nonblank and !model.perf_timer.marks.boot_to_first_observed_nonblank_ns.available) or
+        (frame.first_frame_latency_ns > 0 and !model.perf_timer.marks.sdk_first_frame_latency_ns.available);
+    const needs_palette_mark = model.command_palette_open and model.perf_timer.palette_pending_ns != null;
+    const needs_terminal_mark = model.bottom_panel_open and
+        model.bottom_panel_tab == .terminal and
+        model.perf_timer.terminal_pending_ns != null;
+    if (!needs_startup_mark and !needs_palette_mark and !needs_terminal_mark) return null;
+    return .{ .perf_frame = .{
+        .timestamp_ns = frame.timestamp_ns,
+        .first_frame_latency_ns = frame.first_frame_latency_ns,
+        .nonblank = frame.nonblank,
+    } };
 }
 
 pub fn onAppearance(appearance: native_sdk.Appearance) ?Msg {
@@ -122,6 +139,8 @@ pub fn initialModel() Model {
 }
 
 pub fn main(init: std.process.Init) !void {
+    const perf_clock: native_sdk.Clock = .system;
+    const boot_ns = perf_clock.monotonicNanoseconds();
     const app_state = try VelocityApp.create(std.heap.page_allocator, .{
         .name = "velocity-ide",
         .scene = shell_scene,
@@ -130,11 +149,12 @@ pub fn main(init: std.process.Init) !void {
         .tokens_fn = tokensFromModel,
         .on_appearance = onAppearance,
         .on_chrome = onChrome,
+        .on_frame = onFrame,
         .on_command = onCommand,
         .markup = .{ .source = app_markup, .watch_path = "src/app.native", .io = init.io },
     });
     defer app_state.destroy();
-    app_state.model = initialModel();
+    app_state.model = model_mod.initialModelAt(perf_clock, boot_ns);
     defer app_state.model.deinit();
     app_state.model.io = init.io;
     model_mod.ensurePrefsOnBoot(&app_state.model);
@@ -186,4 +206,6 @@ test {
     _ = @import("terminal/terminal_session.zig");
     _ = @import("terminal/pty_session.zig");
     _ = @import("scm/git_status.zig");
+    _ = @import("perf/perf_model.zig");
+    _ = @import("perf/startup_timer.zig");
 }

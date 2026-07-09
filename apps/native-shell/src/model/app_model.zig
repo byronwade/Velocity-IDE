@@ -31,6 +31,9 @@ const task_detector = @import("../workspace/task_detector.zig");
 const workspace_replace = @import("../workspace/workspace_replace.zig");
 const command_registry = @import("../core/command_registry.zig");
 const keybinding_registry = @import("../core/keybinding_registry.zig");
+const feature_registry = @import("../core/feature_registry.zig");
+const perf_model = @import("../perf/perf_model.zig");
+const startup_timer = @import("../perf/startup_timer.zig");
 
 pub const header_natural_height: f32 = 36;
 pub const max_command_query = 64;
@@ -55,6 +58,19 @@ pub const DefHit = go_to_def_mod.DefHit;
 pub const PeekLine = editor_view.PeekLine;
 pub const WorkspaceTask = task_detector.Task;
 pub const ReplacePreview = workspace_replace.FilePreview;
+
+pub const PerfFrame = struct {
+    timestamp_ns: u64,
+    first_frame_latency_ns: u64,
+    nonblank: bool,
+};
+
+pub const PerfRow = struct {
+    label: []const u8 = "",
+    value: []const u8 = "",
+    semantics: []const u8 = "",
+    available: bool = false,
+};
 
 pub const BreadcrumbSeg = struct {
     id: u32 = 0,
@@ -131,7 +147,7 @@ pub const Msg = union(enum) {
     open_settings,
     open_feature_matrix,
     open_process_governor,
-    run_perf_check_placeholder,
+    run_perf,
     kill_all_workspace_processes,
     instant_safe_mode,
     edit_document: canvas.TextInputEvent,
@@ -289,10 +305,12 @@ pub const Msg = union(enum) {
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
+    perf_frame: PerfFrame,
     set_appearance: native_sdk.Appearance,
 
     pub const view_unbound = .{
         "chrome_changed",
+        "perf_frame",
         "set_appearance",
         "toast_timer",
         "search_debounce_timer",
@@ -435,15 +453,14 @@ pub const Model = struct {
     show_perf_hud: bool = false,
     safe_mode: bool = false,
     runtime_mode_label: []const u8 = "Core",
-    features_registered: u32 = 200,
-    features_loaded: u32 = 8,
-    features_enabled: u32 = 0,
+    features_registered: u32 = feature_registry.registered_count,
+    features_loaded: u32 = feature_registry.countLoaded(&feature_registry.catalog),
+    features_enabled: u32 = feature_registry.countEnabled(&feature_registry.catalog),
     process_count: u32 = 0,
     process_leaked: u32 = 0,
     terminal_process_count: u32 = 0,
     lsp_process_count: u32 = 0,
     plugin_process_count: u32 = 0,
-    mock_label: []const u8 = "mock",
     workspace_from_disk: bool = false,
     workspace_node_count: u32 = 0,
     workspace_file_count: u32 = 0,
@@ -610,15 +627,13 @@ pub const Model = struct {
     project_path: []const u8 = "~/src/acme-dashboard",
     status_language: []const u8 = "TypeScript",
     status_agent: []const u8 = "Agent: idle",
-    status_memory: []const u8 = "Memory: -",
-    status_startup: []const u8 = "Startup: -",
-    perf_app_start_ms: u32 = 0,
-    perf_first_window_ms: u32 = 0,
-    perf_first_paint_ms: u32 = 0,
-    perf_palette_ms: u32 = 0,
-    perf_terminal_ms: u32 = 0,
-    perf_rss_mb: u32 = 0,
-    perf_plugins_loaded: u32 = 0,
+    perf_timer: startup_timer.Timer = .{},
+    perf_snapshot: perf_model.PerfSnapshot = .{},
+    perf_rows: []const PerfRow = &.{},
+    perf_row_storage: [18]PerfRow = [_]PerfRow{.{}} ** 18,
+    perf_value_storage: [18][64]u8 = undefined,
+    perf_value_lens: [18]usize = [_]usize{0} ** 18,
+    perf_row_count: usize = 0,
     next_task_id: u32 = 5,
 
     // Constant payloads for markup on-press bindings (literals are not allowed).
@@ -660,7 +675,6 @@ pub const Model = struct {
         "agent_prompt",
         "appearance",
         "safe_mode",
-        "mock_label",
         "editor_focus_label",
         "runtime_mode_label",
         "features_registered",
@@ -672,13 +686,12 @@ pub const Model = struct {
         "editor_mode_label",
         "project_path",
         "status_agent",
-        "perf_app_start_ms",
-        "perf_first_window_ms",
-        "perf_first_paint_ms",
-        "perf_palette_ms",
-        "perf_terminal_ms",
-        "perf_rss_mb",
-        "perf_plugins_loaded",
+        "perf_timer",
+        "perf_snapshot",
+        "perf_row_storage",
+        "perf_value_storage",
+        "perf_value_lens",
+        "perf_row_count",
         "isIde",
         "isPerf",
         "activeTabTitle",
@@ -692,8 +705,6 @@ pub const Model = struct {
         "workspace_file_count",
         "workspace_files_label",
         "workspace_files_buf",
-        "status_memory",
-        "status_startup",
         "io",
         "hot_exit_persist_failed",
         "document",
@@ -1271,11 +1282,6 @@ pub const Model = struct {
         return model.current_view == .ide or model.current_view == .perf;
     }
 
-    pub fn perfSummary(model: *const Model) []const u8 {
-        _ = model;
-        return "MOCK perf: startup 312ms / paint 184ms / palette 21ms / terminal panel 18ms / RSS 48MB / featuresLoaded 8 / processes 0";
-    }
-
     pub fn deinit(model: *Model) void {
         if (model.tab_histories) |store| {
             store.deinit();
@@ -1351,7 +1357,14 @@ pub const editor_placeholder =
 ;
 
 pub fn initialModel() Model {
-    return .{};
+    const clock: native_sdk.Clock = .system;
+    return initialModelAt(clock, clock.monotonicNanoseconds());
+}
+
+pub fn initialModelAt(clock: native_sdk.Clock, boot_ns: u64) Model {
+    var model: Model = .{};
+    model.perf_timer = startup_timer.Timer.init(clock, boot_ns);
+    return model;
 }
 
 /// Sync update used by unit tests (no effects channel).
@@ -1609,6 +1622,7 @@ fn runUpdateCheck(model: *Model) void {
 fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
     switch (msg) {
         .open_command_palette => {
+            model.perf_timer.requestCommandPalette();
             model.command_palette_open = true;
             model.command_query.clear();
             filterCommandPalette(model);
@@ -1640,7 +1654,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 model.current_view = .settings;
                 model.selected_activity = .settings;
             } else if (std.mem.eql(u8, id, "run_perf")) {
-                applyPerfPlaceholder(model);
+                refreshPerformanceMetrics(model);
             } else if (std.mem.eql(u8, id, "switch_theme")) {
                 cycleTheme(model);
                 persistPrefs(model);
@@ -1842,8 +1856,11 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 model.show_sidebar = true;
                 refreshOutline(model);
             } else if (std.mem.eql(u8, id, "toggle_bottom_panel")) {
+                if (!model.bottom_panel_open and model.bottom_panel_tab == .terminal) {
+                    model.perf_timer.requestTerminalPanel();
+                }
                 model.bottom_panel_open = !model.bottom_panel_open;
-                if (!model.bottom_panel_open) model.show_terminal = false;
+                model.show_terminal = model.bottom_panel_open and model.bottom_panel_tab == .terminal;
                 persistPrefs(model);
             } else if (std.mem.eql(u8, id, "clear_output")) {
                 model.output_count = 0;
@@ -1901,7 +1918,6 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 model.safe_mode = true;
                 model.runtime_mode_label = "Safe";
                 model.show_agent_panel = false;
-                model.features_loaded = 3;
             }
         },
         .select_activity => |activity| {
@@ -2113,8 +2129,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.current_view = .settings;
             model.selected_activity = .settings;
         },
-        .run_perf_check_placeholder => {
-            applyPerfPlaceholder(model);
+        .run_perf => {
+            refreshPerformanceMetrics(model);
         },
         .open_feature_matrix => {
             model.current_view = .features;
@@ -2140,7 +2156,6 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.safe_mode = true;
             model.runtime_mode_label = "Safe";
             model.show_agent_panel = false;
-            model.features_loaded = 3;
         },
         .edit_document => |edit| {
             refreshDiskSync(model, false);
@@ -2259,6 +2274,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             persistPrefs(model);
         },
         .toggle_bottom_panel => {
+            if (!model.bottom_panel_open and model.bottom_panel_tab == .terminal) {
+                model.perf_timer.requestTerminalPanel();
+            }
             model.bottom_panel_open = !model.bottom_panel_open;
             model.show_terminal = model.bottom_panel_open and model.bottom_panel_tab == .terminal;
             persistPrefs(model);
@@ -2403,6 +2421,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             }
         },
         .chrome_changed => |chrome| {
+            model.perf_timer.markChromeCallback();
             model.chrome_leading = chrome.insets.left;
             model.chrome_trailing = chrome.insets.right;
             model.header_height = @max(header_natural_height, chrome.insets.top);
@@ -2417,6 +2436,15 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                     model.toast = "Exited fullscreen";
                 }
             }
+            if (model.show_perf_hud) refreshPerformanceSnapshot(model);
+        },
+        .perf_frame => |frame| {
+            model.perf_timer.observeFrame(.{
+                .timestamp_ns = frame.timestamp_ns,
+                .first_frame_latency_ns = frame.first_frame_latency_ns,
+                .nonblank = frame.nonblank,
+            }, model.command_palette_open, model.bottom_panel_open and model.bottom_panel_tab == .terminal);
+            if (model.show_perf_hud) refreshPerformanceSnapshot(model);
         },
         .set_appearance => |appearance| model.appearance = appearance,
         .clear_toast => clearToastNow(model),
@@ -3214,7 +3242,6 @@ fn applyWorkspaceMeta(model: *Model, ws: *workspace_store.WorkspaceBuffers, meta
     applyExplorerFilter(model);
     model.current_view = .ide;
     model.selected_activity = .explorer;
-    model.features_loaded = @max(model.features_loaded, 9);
     model.open_path.set(ws.rootPath());
     ensurePrefsLoaded(model);
     model.prefs.setLastPath(ws.rootPath());
@@ -3745,11 +3772,16 @@ fn toggleTerminalPanel(model: *Model) void {
         model.show_terminal = false;
         persistPrefs(model);
     } else {
+        model.perf_timer.requestTerminalPanel();
         openBottomPanel(model, .terminal);
     }
 }
 
 fn openBottomPanel(model: *Model, tab: BottomPanelTab) void {
+    const terminal_was_present = model.bottom_panel_open and model.bottom_panel_tab == .terminal;
+    if (tab == .terminal and !terminal_was_present and model.perf_timer.terminal_pending_ns == null) {
+        model.perf_timer.requestTerminalPanel();
+    }
     model.bottom_panel_open = true;
     model.bottom_panel_tab = tab;
     model.show_terminal = tab == .terminal;
@@ -6258,27 +6290,64 @@ fn createTask(model: *Model) void {
     // Real task append lands when agent runtime exists.
 }
 
-fn applyPerfPlaceholder(model: *Model) void {
-    // Labeled mock values for HUD scaffolding — not measured.
-    model.perf_app_start_ms = 312;
-    model.perf_first_window_ms = 280;
-    model.perf_first_paint_ms = 184;
-    model.perf_palette_ms = 21;
-    model.perf_terminal_ms = 18;
-    model.perf_rss_mb = 48;
-    model.perf_plugins_loaded = 0;
-    model.features_registered = 200;
-    model.features_loaded = 8;
-    model.process_count = 0;
-    model.terminal_process_count = 0;
-    model.lsp_process_count = 0;
-    model.plugin_process_count = 0;
-    model.process_leaked = 0;
-    model.status_memory = "Memory: 48 MB (mock)";
-    model.status_startup = "Startup: 312 ms (mock)";
-    model.status_agent = "Agent: idle";
+fn refreshPerformanceMetrics(model: *Model) void {
+    refreshPerformanceSnapshot(model);
     model.show_perf_hud = true;
     model.current_view = .perf;
+}
+
+fn refreshPerformanceSnapshot(model: *Model) void {
+    model.perf_snapshot = perf_model.snapshot(model.perf_timer.marks, &model.governor);
+    model.features_registered = @intCast(model.perf_snapshot.features_registered.value);
+    model.features_enabled = @intCast(model.perf_snapshot.features_enabled.value);
+    model.features_loaded = @intCast(model.perf_snapshot.features_loaded.value);
+    model.process_count = @intCast(model.perf_snapshot.governor_process_total.value);
+    model.process_leaked = @intCast(model.perf_snapshot.governor_process_leaked.value);
+    model.terminal_process_count = @intCast(model.perf_snapshot.governor_terminal_owned.value);
+    model.lsp_process_count = @intCast(model.perf_snapshot.governor_lsp_owned.value);
+    model.plugin_process_count = 0;
+    model.perf_row_count = 0;
+    addPerfRow(model, "External launch to window", model.perf_snapshot.external_launch_to_window_ns, .nanoseconds, "Out-of-process launch timing; not captured by this in-process instrumentation.");
+    addPerfRow(model, "Boot to first observed nonblank paint", model.perf_snapshot.boot_to_first_observed_nonblank_ns, .nanoseconds, "In-process boot mark to the first nonblank presented frame observed after SDK installation.");
+    addPerfRow(model, "SDK first frame latency", model.perf_snapshot.sdk_first_frame_latency_ns, .nanoseconds, "Native SDK surface creation to its first presented frame.");
+    addPerfRow(model, "First chrome callback", model.perf_snapshot.boot_to_first_chrome_callback_ns, .nanoseconds, "In-process boot to first window chrome geometry callback; this does not assert window visibility.");
+    addPerfRow(model, "Command palette request to present", model.perf_snapshot.command_palette_request_to_present_ns, .nanoseconds, "Open request to a subsequent presented frame while the palette is visible.");
+    addPerfRow(model, "Terminal panel request to present", model.perf_snapshot.terminal_panel_request_to_present_ns, .nanoseconds, "Open request to a subsequent presented frame while the terminal panel is visible.");
+    addPerfRow(model, "Terminal process start latency", model.perf_snapshot.terminal_process_start_ns, .nanoseconds, "No process-ready signal is exposed.");
+    addPerfRow(model, "Resident memory", model.perf_snapshot.rss_bytes, .bytes, "Portable process RSS is not exposed by the Native SDK.");
+    addPerfRow(model, "Plugins loaded", model.perf_snapshot.plugins_loaded, .count, "No plugin runtime loads plugins in this shell.");
+    addPerfRow(model, "Features registered", model.perf_snapshot.features_registered, .count, "Entries in the authoritative feature registry.");
+    addPerfRow(model, "Features enabled", model.perf_snapshot.features_enabled, .count, "Registry entries configured as enabled; enabled does not mean loaded.");
+    addPerfRow(model, "Features loaded", model.perf_snapshot.features_loaded, .count, "Registry entries explicitly marked loaded.");
+    addPerfRow(model, "Governor live processes", model.perf_snapshot.governor_process_total, .count, "Live child-process records owned by the Process Governor.");
+    addPerfRow(model, "Governor leaked processes", model.perf_snapshot.governor_process_leaked, .count, "Leak records reported by the Process Governor.");
+    addPerfRow(model, "Governor terminal-owned processes", model.perf_snapshot.governor_terminal_owned, .count, "Live Governor records with terminal ownership.");
+    addPerfRow(model, "Governor task-owned processes", model.perf_snapshot.governor_task_owned, .count, "Live Governor records with task ownership.");
+    addPerfRow(model, "Governor LSP-owned processes", model.perf_snapshot.governor_lsp_owned, .count, "Live Governor records with LSP ownership.");
+    addPerfRow(model, "Plugin processes", model.perf_snapshot.plugin_process_total, .count, "Plugin process ownership is not represented by the Governor.");
+    model.perf_rows = model.perf_row_storage[0..model.perf_row_count];
+}
+
+const PerfUnit = enum { nanoseconds, bytes, count };
+
+fn addPerfRow(model: *Model, label: []const u8, metric: perf_model.Metric, unit: PerfUnit, semantics: []const u8) void {
+    const index = model.perf_row_count;
+    if (index >= model.perf_row_storage.len) return;
+    const value = if (!metric.available)
+        "n/a (unavailable)"
+    else switch (unit) {
+        .nanoseconds => std.fmt.bufPrint(&model.perf_value_storage[index], "{d} ns (measured)", .{metric.value}) catch "n/a (unavailable)",
+        .bytes => std.fmt.bufPrint(&model.perf_value_storage[index], "{d} bytes (measured)", .{metric.value}) catch "n/a (unavailable)",
+        .count => std.fmt.bufPrint(&model.perf_value_storage[index], "{d} (measured)", .{metric.value}) catch "n/a (unavailable)",
+    };
+    model.perf_value_lens[index] = value.len;
+    model.perf_row_storage[index] = .{
+        .label = label,
+        .value = value,
+        .semantics = semantics,
+        .available = metric.available,
+    };
+    model.perf_row_count += 1;
 }
 
 pub fn statusFor(task: AgentTask) []const u8 {

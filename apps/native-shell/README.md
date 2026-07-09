@@ -31,6 +31,10 @@ native build
 
 Use `native check --strict` after model or markup changes. The test suite also
 refreshes the model contract and checks command/shortcut registry integrity.
+`npm run perf-smoke` builds and boots an automation-enabled app, opens the
+command palette and terminal panel, then runs **Refresh Performance Metrics**.
+The HUD distinguishes Native SDK/in-process frame timings from external launch
+timing and displays `n/a` for unsupported RSS or process metrics.
 
 External file changes are checked with bounded polling during editing and safe
 save operations. Use **Refresh Files from Disk** from the command palette for an

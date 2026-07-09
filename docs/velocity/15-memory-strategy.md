@@ -12,4 +12,6 @@
 See `06-performance-budget.md` and per-feature `perf_budget.md`.
 
 ## Instrumentation
-Performance HUD + RAM Budget Dashboard (mock until samplers wired).
+Performance HUD + RAM Budget Dashboard. The HUD reports RSS as `n/a` until a
+portable process-memory sampler is wired; memory budgets are targets, not
+runtime measurements.

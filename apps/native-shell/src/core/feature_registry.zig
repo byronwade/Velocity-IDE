@@ -23,7 +23,6 @@ pub const FeatureEntry = struct {
     activation_reason: []const u8 = "none",
 };
 
-pub const registered_count: u32 = 200;
 pub const startup_critical_count: u32 = 11;
 
 pub const catalog = [_]FeatureEntry{
@@ -229,6 +228,8 @@ pub const catalog = [_]FeatureEntry{
     .{ .id = "feature.disable-heavy-features", .name = "Disable Heavy Features", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 2, .max_processes = 0, .enabled = true },
 };
 
+pub const registered_count: u32 = @intCast(catalog.len);
+
 pub fn countEnabled(entries: []const FeatureEntry) u32 {
     var n: u32 = 0;
     for (entries) |e| if (e.enabled) {
@@ -253,7 +254,7 @@ pub fn assertNoStartupNonCritical(entries: []const FeatureEntry) bool {
 }
 
 test "catalog size" {
-    try std.testing.expect(catalog.len == 200);
+    try std.testing.expectEqual(@as(usize, registered_count), catalog.len);
 }
 
 test "startup critical subset is small" {

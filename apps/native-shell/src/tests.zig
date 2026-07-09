@@ -101,12 +101,54 @@ test "command palette toggles" {
     try testing.expect(!model.command_palette_open);
 }
 
-test "perf check populates mock metrics" {
-    var model = main.initialModel();
-    main.update(&model, .run_perf_check_placeholder);
+test "performance refresh reports measured zeros and unavailable fields honestly" {
+    var test_clock: native_sdk.TestClock = .{};
+    test_clock.advanceMs(10);
+    var model = model_mod.initialModelAt(test_clock.clock(), test_clock.clock().monotonicNanoseconds());
+    main.update(&model, .run_perf);
     try testing.expect(model.show_perf_hud);
-    try testing.expect(model.perf_first_paint_ms > 0);
-    try testing.expect(model.perf_plugins_loaded == 0);
+    try testing.expect(model.perf_snapshot.plugins_loaded.available);
+    try testing.expectEqual(@as(u64, 0), model.perf_snapshot.plugins_loaded.value);
+    try testing.expect(!model.perf_snapshot.rss_bytes.available);
+    try testing.expect(!model.perf_snapshot.external_launch_to_window_ns.available);
+    try testing.expectEqual(feature_registry.registered_count, model.features_registered);
+    try testing.expectEqual(feature_registry.countLoaded(&feature_registry.catalog), model.features_loaded);
+}
+
+test "on_frame resolves palette and terminal request-to-present marks" {
+    var test_clock: native_sdk.TestClock = .{};
+    test_clock.advanceMs(20);
+    var model = model_mod.initialModelAt(test_clock.clock(), test_clock.clock().monotonicNanoseconds());
+
+    main.update(&model, .open_command_palette);
+    test_clock.advanceMs(4);
+    const palette_frame = native_sdk.GpuFrame{
+        .timestamp_ns = test_clock.clock().monotonicNanoseconds(),
+        .first_frame_latency_ns = 2 * std.time.ns_per_ms,
+        .nonblank = true,
+    };
+    main.update(&model, main.onFrame(&model, palette_frame).?);
+    try testing.expectEqual(@as(u64, 4 * std.time.ns_per_ms), model.perf_timer.marks.command_palette_request_to_present_ns.value_ns);
+
+    main.update(&model, .close_command_palette);
+    main.update(&model, .toggle_terminal);
+    test_clock.advanceMs(6);
+    const terminal_frame = native_sdk.GpuFrame{
+        .timestamp_ns = test_clock.clock().monotonicNanoseconds(),
+        .nonblank = true,
+    };
+    main.update(&model, main.onFrame(&model, terminal_frame).?);
+    try testing.expectEqual(@as(u64, 6 * std.time.ns_per_ms), model.perf_timer.marks.terminal_panel_request_to_present_ns.value_ns);
+}
+
+test "chrome callback semantics use monotonic boot origin" {
+    var test_clock: native_sdk.TestClock = .{};
+    test_clock.advanceMs(30);
+    var model = model_mod.initialModelAt(test_clock.clock(), test_clock.clock().monotonicNanoseconds());
+    test_clock.advanceMs(3);
+    main.update(&model, main.onChrome(.{}).?);
+
+    try testing.expectEqual(@as(u64, 3 * std.time.ns_per_ms), model.perf_timer.marks.boot_to_first_chrome_callback_ns.value_ns);
 }
 
 test "permissions default deny" {
@@ -1955,17 +1997,20 @@ test "command registry has unique IDs and explicit safe dispatch coverage" {
     }
 }
 
-test "palette projection hides no-op and labels limited mock commands" {
+test "palette projection hides no-op and labels limited commands" {
     try testing.expectEqual(command_registry.palette.len, model_mod.commands.len);
     for (model_mod.commands) |command| {
         try testing.expect(!std.mem.eql(u8, command.id, "new_agent_task"));
         if (std.mem.eql(u8, command.id, "open_plugins") or
-            std.mem.eql(u8, command.id, "run_perf") or
             std.mem.eql(u8, command.id, "check_for_updates"))
         {
             try testing.expectEqual(command_registry.Availability.limited, command.availability);
             try testing.expect(std.mem.indexOf(u8, command.title, "(Limited)") != null);
             try testing.expectEqualStrings("Limited", command.availability_label);
+        }
+        if (std.mem.eql(u8, command.id, "run_perf")) {
+            try testing.expectEqual(command_registry.Availability.available, command.availability);
+            try testing.expectEqualStrings("Refresh Performance Metrics", command.title);
         }
     }
 }

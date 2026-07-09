@@ -497,7 +497,7 @@
                       <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
                       <button variant="ghost" on-press="open_process_governor">Process Governor</button>
                       <button variant="ghost" on-press="open_plugin_registry">Plugins</button>
-                      <button variant="ghost" on-press="run_perf_check_placeholder">Performance Check</button>
+                      <button variant="ghost" on-press="run_perf">Refresh Performance Metrics</button>
                     </column>
                   </if>
                   <if test="{showSettingsAbout}">
@@ -522,9 +522,24 @@
           </if>
 
           <if test="{show_perf_hud}">
-            <column gap="6" padding="10" background="surface_subtle">
-              <text size="sm">Performance HUD</text>
-              <text size="sm" foreground="text_muted">{perfSummary}</text>
+            <column gap="8" padding="10" background="surface_subtle" label="Performance metrics">
+              <row gap="8" cross="center">
+                <text size="sm" grow="1">Performance HUD</text>
+                <button size="sm" variant="secondary" on-press="run_perf">Refresh Performance Metrics</button>
+              </row>
+              <scroll grow="1" label="Measured performance metrics">
+                <column gap="6">
+                  <for each="perf_rows" as="metric">
+                    <row gap="8" padding="6" background="surface" label="{metric.label}">
+                      <column grow="1" gap="2">
+                        <text size="sm">{metric.label}</text>
+                        <text size="sm" foreground="text_muted" wrap="true">{metric.semantics}</text>
+                      </column>
+                      <text size="sm" foreground="text_muted" wrap="false">{metric.value}</text>
+                    </row>
+                  </for>
+                </column>
+              </scroll>
             </column>
           </if>
         </column>
