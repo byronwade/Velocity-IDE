@@ -307,7 +307,7 @@
                     <button size="sm" variant="ghost" on-press="refresh_tasks">Refresh Tasks</button>
                     <button size="sm" variant="primary" on-press="run_selected_task">Run Selected Task</button>
                   </row>
-                  <scroll height="62" label="Detected workspace tasks">
+                  <scroll height="92" label="Detected workspace tasks">
                     <column gap="2">
                       <for each="workspace_tasks" key="id" as="task">
                         <button size="sm" variant="ghost" selected="{task.id == selected_task_id}" on-press="select_task:{task.id}" label="{task.command}">{task.name}</button>
