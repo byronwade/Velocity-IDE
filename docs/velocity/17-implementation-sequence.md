@@ -34,5 +34,7 @@
 
 - Typed path open on launch screen (`submit_open_path`)
 - Editable `<textarea>` bound to `document` TextBuffer; Save writes via `writeTextFile`
-- Terminal panel runs `/bin/sh -c` synchronously; governor records spawn/kill
+- Find + replace once/all in active document; status bar shows line/byte stats
+- Recent projects on launch from prefs (path open); Copy path command
+- Terminal panel runs `/bin/sh -c` via async `fx.spawn` at runtime; governor records spawn/kill
 - See `docs/velocity/18-mvp-definition.md`

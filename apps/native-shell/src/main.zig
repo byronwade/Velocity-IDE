@@ -148,6 +148,7 @@ test {
     _ = @import("workspace/search.zig");
     _ = @import("workspace/find_in_doc.zig");
     _ = @import("workspace/quick_open.zig");
+    _ = @import("workspace/replace.zig");
     _ = @import("terminal/terminal_session.zig");
     _ = @import("scm/git_status.zig");
 }

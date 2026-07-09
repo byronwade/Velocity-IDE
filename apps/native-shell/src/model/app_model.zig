@@ -10,6 +10,7 @@ const workspace_store = @import("../workspace/workspace_store.zig");
 const workspace_search = @import("../workspace/search.zig");
 const find_in_doc = @import("../workspace/find_in_doc.zig");
 const quick_open = @import("../workspace/quick_open.zig");
+const replace_mod = @import("../workspace/replace.zig");
 const terminal_session = @import("../terminal/terminal_session.zig");
 const process_governor = @import("../processes/process_governor.zig");
 const git_status = @import("../scm/git_status.zig");
@@ -26,6 +27,7 @@ pub const max_new_file_path = 160;
 pub const max_find_query = find_in_doc.max_query;
 pub const max_quick_query = quick_open.max_query;
 pub const max_goto_line = 12;
+pub const max_replace = 64;
 pub const SearchHit = workspace_search.SearchHit;
 pub const GitEntry = git_status.GitEntry;
 pub const DocMatch = find_in_doc.DocMatch;
@@ -118,6 +120,11 @@ pub const Msg = union(enum) {
     update_goto_line: canvas.TextInputEvent,
     goto_line,
     close_active_tab,
+    update_replace_text: canvas.TextInputEvent,
+    replace_once,
+    replace_all,
+    copy_active_path,
+    refresh_recent,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -151,6 +158,10 @@ pub const Msg = union(enum) {
         "save_prefs",
         "goto_line",
         "close_active_tab",
+        "replace_once",
+        "replace_all",
+        "copy_active_path",
+        "refresh_recent",
         "terminal_line",
         "terminal_exit",
     };
@@ -211,6 +222,17 @@ pub const Model = struct {
     goto_line_input: canvas.TextBuffer(max_goto_line) = .{},
     goto_line_label: []const u8 = "",
     goto_line_buf: [32]u8 = undefined,
+    replace_text: canvas.TextBuffer(max_replace) = .{},
+    doc_stats: []const u8 = "0 lines · 0 bytes",
+    doc_stats_buf: [48]u8 = undefined,
+    path_toast: []const u8 = "",
+    path_toast_buf: [260]u8 = undefined,
+    action_toast_buf: [48]u8 = undefined,
+    recent_dynamic: [prefs_mod.max_recent]RecentProject = [_]RecentProject{.{ .name = "", .path = "", .branch = "" }} ** prefs_mod.max_recent,
+    recent_name_pool: [prefs_mod.max_recent][64]u8 = undefined,
+    recent_path_pool: [prefs_mod.max_recent][prefs_mod.max_path]u8 = undefined,
+    recent_path_lens: [prefs_mod.max_recent]usize = [_]usize{0} ** prefs_mod.max_recent,
+    recent_name_lens: [prefs_mod.max_recent]usize = [_]usize{0} ** prefs_mod.max_recent,
     prefs: prefs_mod.Prefs = .{},
     prefs_loaded: bool = false,
     terminal_effect_key: u64 = 0,
@@ -305,6 +327,18 @@ pub const Model = struct {
         "goto_line_input",
         "goto_line_buf",
         "goto_line_label",
+        "replace_text",
+        "doc_stats",
+        "doc_stats_buf",
+        "path_toast",
+        "path_toast_buf",
+        "action_toast_buf",
+        "pathToast",
+        "recent_dynamic",
+        "recent_name_pool",
+        "recent_path_pool",
+        "recent_path_lens",
+        "recent_name_lens",
         "prefs",
         "prefs_loaded",
         "terminal_effect_key",
@@ -488,6 +522,18 @@ pub const Model = struct {
         return model.find_query.text();
     }
 
+    pub fn replaceText(model: *const Model) []const u8 {
+        return model.replace_text.text();
+    }
+
+    pub fn documentStats(model: *const Model) []const u8 {
+        return model.doc_stats;
+    }
+
+    pub fn pathToast(model: *const Model) []const u8 {
+        return model.path_toast;
+    }
+
     pub fn quickQueryText(model: *const Model) []const u8 {
         return model.quick_query.text();
     }
@@ -601,6 +647,9 @@ pub const commands = [_]CommandItem{
     .{ .id = "rename_selected_file", .title = "Rename Selected File", .hint = "" },
     .{ .id = "quick_open", .title = "Quick Open File", .hint = "Cmd+P" },
     .{ .id = "find_in_file", .title = "Find in File", .hint = "Cmd+F" },
+    .{ .id = "replace_once", .title = "Replace Once", .hint = "" },
+    .{ .id = "replace_all", .title = "Replace All", .hint = "" },
+    .{ .id = "copy_active_path", .title = "Copy Active Path", .hint = "" },
     .{ .id = "goto_line", .title = "Go to Line", .hint = "Cmd+G" },
     .{ .id = "close_active_tab", .title = "Close Active Tab", .hint = "" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
@@ -697,6 +746,12 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 showQuickOpen(model);
             } else if (std.mem.eql(u8, id, "find_in_file")) {
                 runFindInDocument(model);
+            } else if (std.mem.eql(u8, id, "replace_once")) {
+                replaceOnceInDocument(model);
+            } else if (std.mem.eql(u8, id, "replace_all")) {
+                replaceAllInDocument(model);
+            } else if (std.mem.eql(u8, id, "copy_active_path")) {
+                copyActivePath(model);
             } else if (std.mem.eql(u8, id, "goto_line")) {
                 runGotoLine(model);
             } else if (std.mem.eql(u8, id, "close_active_tab")) {
@@ -819,7 +874,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 openFixtureWorkspace(model, name);
             }
         },
-        .go_launch => model.current_view = .launch,
+        .go_launch => {
+            model.current_view = .launch;
+            syncRecentFromPrefs(model);
+        },
         .create_agent_task => createTask(model),
         .update_agent_prompt => |edit| model.agent_prompt.apply(edit),
         .switch_theme => {
@@ -866,6 +924,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.document.apply(edit);
             model.document_dirty = true;
             model.toast = "";
+            refreshDocStats(model);
         },
         .save_file => saveActiveDocument(model),
         .update_open_path => |edit| model.open_path.apply(edit),
@@ -896,6 +955,11 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .run_find => runFindInDocument(model),
         .find_next => findNavigate(model, true),
         .find_prev => findNavigate(model, false),
+        .update_replace_text => |edit| model.replace_text.apply(edit),
+        .replace_once => replaceOnceInDocument(model),
+        .replace_all => replaceAllInDocument(model),
+        .copy_active_path => copyActivePath(model),
+        .refresh_recent => syncRecentFromPrefs(model),
         .update_quick_query => |edit| {
             model.quick_query.apply(edit);
             filterQuickOpen(model);
@@ -986,7 +1050,117 @@ fn syncDocumentFromWorkspace(model: *Model) void {
         model.document_dirty = false;
         model.editor_mode_label = "editable";
         model.toast = "";
+        refreshDocStats(model);
     }
+}
+
+pub fn refreshDocStats(model: *Model) void {
+    const text = model.document.text();
+    var lines: u32 = if (text.len == 0) 0 else 1;
+    for (text) |c| {
+        if (c == '\n') lines += 1;
+    }
+    if (text.len == 0) lines = 0;
+    const label = std.fmt.bufPrint(&model.doc_stats_buf, "{d} lines · {d} bytes", .{ lines, text.len }) catch "stats";
+    model.doc_stats = label;
+}
+
+fn basenameOf(path: []const u8) []const u8 {
+    if (path.len == 0) return path;
+    var i = path.len;
+    while (i > 0) {
+        i -= 1;
+        if (path[i] == '/' or path[i] == '\\') {
+            return path[i + 1 ..];
+        }
+    }
+    return path;
+}
+
+fn syncRecentFromPrefs(model: *Model) void {
+    ensurePrefsLoaded(model);
+    const count = @min(model.prefs.recent_count, prefs_mod.max_recent);
+    if (count == 0) {
+        model.recent = &recent_projects;
+        return;
+    }
+    var i: u32 = 0;
+    while (i < count) : (i += 1) {
+        const path = model.prefs.recentPath(i);
+        const pn = @min(path.len, model.recent_path_pool[i].len);
+        @memcpy(model.recent_path_pool[i][0..pn], path[0..pn]);
+        model.recent_path_lens[i] = pn;
+        const path_slice = model.recent_path_pool[i][0..pn];
+
+        const base = basenameOf(path_slice);
+        const nn = @min(base.len, model.recent_name_pool[i].len);
+        if (nn == 0) {
+            const fallback = "project";
+            @memcpy(model.recent_name_pool[i][0..fallback.len], fallback);
+            model.recent_name_lens[i] = fallback.len;
+        } else {
+            @memcpy(model.recent_name_pool[i][0..nn], base[0..nn]);
+            model.recent_name_lens[i] = nn;
+        }
+        model.recent_dynamic[i] = .{
+            .name = model.recent_name_pool[i][0..model.recent_name_lens[i]],
+            .path = path_slice,
+            .branch = "—",
+        };
+    }
+    model.recent = model.recent_dynamic[0..count];
+}
+
+fn replaceOnceInDocument(model: *Model) void {
+    const find = model.find_query.text();
+    const repl = model.replace_text.text();
+    if (find.len == 0) {
+        model.toast = "Enter find text";
+        return;
+    }
+    var out: [replace_mod.max_out]u8 = undefined;
+    const result = replace_mod.replaceOnce(model.document.text(), find, repl, &out) orelse {
+        model.toast = "No match to replace";
+        return;
+    };
+    model.document.set(out[0..result.out_len]);
+    model.document_dirty = true;
+    refreshDocStats(model);
+    runFindInDocument(model);
+    model.toast = "Replaced 1";
+}
+
+fn replaceAllInDocument(model: *Model) void {
+    const find = model.find_query.text();
+    const repl = model.replace_text.text();
+    if (find.len == 0) {
+        model.toast = "Enter find text";
+        return;
+    }
+    var out: [replace_mod.max_out]u8 = undefined;
+    const result = replace_mod.replaceAll(model.document.text(), find, repl, &out) orelse {
+        model.toast = "No matches to replace";
+        return;
+    };
+    model.document.set(out[0..result.out_len]);
+    model.document_dirty = true;
+    refreshDocStats(model);
+    runFindInDocument(model);
+    const msg = std.fmt.bufPrint(&model.action_toast_buf, "Replaced {d}", .{result.count}) catch "Replaced";
+    model.toast = msg;
+}
+
+fn copyActivePath(model: *Model) void {
+    const path = Model.activeTabPath(model);
+    if (path.len == 0) {
+        model.toast = "No active path";
+        model.path_toast = "";
+        return;
+    }
+    const n = @min(path.len, model.path_toast_buf.len);
+    @memcpy(model.path_toast_buf[0..n], path[0..n]);
+    model.path_toast = model.path_toast_buf[0..n];
+    model.toast = model.path_toast;
 }
 
 fn applyWorkspaceMeta(model: *Model, ws: *workspace_store.WorkspaceBuffers, meta: workspace_store.Workspace) void {
@@ -1013,6 +1187,7 @@ fn applyWorkspaceMeta(model: *Model, ws: *workspace_store.WorkspaceBuffers, meta
     model.prefs.show_terminal = model.show_terminal;
     model.prefs.show_agent = model.show_agent_panel;
     persistPrefs(model);
+    syncRecentFromPrefs(model);
 }
 
 fn openWorkspacePath(model: *Model, path: []const u8) void {
@@ -1449,11 +1624,13 @@ fn applyPrefsToModel(model: *Model) void {
     if (model.prefs.last_path_len > 0 and model.open_path.text().len == 0) {
         model.open_path.set(model.prefs.lastPathSlice());
     }
+    syncRecentFromPrefs(model);
 }
 
 /// Called once from main after io is attached.
 pub fn ensurePrefsOnBoot(model: *Model) void {
     applyPrefsToModel(model);
+    refreshDocStats(model);
 }
 
 fn persistPrefs(model: *Model) void {

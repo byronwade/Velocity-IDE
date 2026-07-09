@@ -14,13 +14,15 @@ This repository contains:
 | Edit + Save (MVP) | Native textarea + disk write (Cmd+S) |
 | New / Rename / Delete | Explorer file ops + rescan |
 | Find + Quick Open | In-doc find; Cmd+P file filter |
-| Prefs | Theme / last path / panels in `.velocity/prefs.txt` |
+| Replace + Copy path | Replace once/all; copy active path to toast |
+| Prefs + Recent | Theme / last path / panels / recent under `.velocity/prefs.txt` |
+| Document stats | Status bar line + byte counts |
 | Search (MVP) | Bounded in-process workspace text search |
 | SCM (MVP) | Lazy `git status` / branch via governor |
 | Terminal (MVP) | Async `fx.spawn` pipe runner (sync fallback in tests) |
 | Feature modules | 200 stubs under `src/features/` |
 | Feature registry + activation policy | Scaffold |
-| Process Governor | Tracks terminal runs (no async spawn yet) |
+| Process Governor | Tracks terminal / search / scm runs |
 | Performance HUD / Feature Matrix | UI + mock metrics labeled **mock** |
 | Research docs | `docs/velocity/11-*.md` … `18-*.md` |
 

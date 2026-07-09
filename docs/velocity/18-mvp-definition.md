@@ -14,8 +14,12 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Delete file | Delete selected file from explorer (files only). |
 | Rename file | Rename selected file via New-path field. |
 | Find in file | Match list + next/prev in active document. |
+| Replace in file | Replace once / replace all using find + replace fields. |
 | Quick Open | Cmd+P filter workspace files by name/path. |
-| Prefs | Persist theme, last path, panel visibility under `.velocity/prefs.txt`. |
+| Prefs | Persist theme, last path, panel visibility, recent paths under `.velocity/prefs.txt`. |
+| Recent projects | Launch screen lists prefs recent paths (falls back to mock list). |
+| Document stats | Status bar shows line + byte counts for active document. |
+| Copy path | Command / button copies active tab path into toast. |
 | Go to line | Cmd+G jump label for active document line count. |
 | Close tab | Soft confirm when dirty; second close discards. |
 | Search | Bounded in-process text search over scanned files (no ripgrep). |

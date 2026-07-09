@@ -35,7 +35,7 @@
         <column gap="6" width="480" padding="12" background="surface_subtle">
           <text size="sm" foreground="text_muted">Recent projects</text>
           <for each="recent" as="p">
-            <list-item on-press="open_project:{p.name}" padding="8" gap="8" cross="center" label="{p.name}">
+            <list-item on-press="open_project:{p.path}" padding="8" gap="8" cross="center" label="{p.name}">
               <column gap="2" grow="1">
                 <text wrap="false">{p.name}</text>
                 <text size="sm" foreground="text_muted" wrap="false">{p.path} / {p.branch}</text>
@@ -130,6 +130,12 @@
                   <button size="sm" variant="ghost" on-press="find_prev">Prev</button>
                   <button size="sm" variant="ghost" on-press="find_next">Next</button>
                   <button size="sm" variant="secondary" on-press="run_find">Find</button>
+                </row>
+                <row gap="4" cross="center">
+                  <text-field text="{replaceText}" placeholder="Replace with..." on-input="update_replace_text" grow="1" label="Replace" />
+                  <button size="sm" variant="ghost" on-press="replace_once">Once</button>
+                  <button size="sm" variant="secondary" on-press="replace_all">All</button>
+                  <button size="sm" variant="ghost" on-press="copy_active_path">Copy path</button>
                 </row>
                 <column grow="1" gap="4" padding="8" background="surface_subtle">
                   <textarea text="{documentText}" placeholder="Open a file to edit..." on-input="edit_document" grow="1" label="Editor" />
@@ -340,7 +346,7 @@
     </if>
 
     <separator />
-    <status-bar>{project_branch} / {status_language} / Native Shell / {status_plugins} / {status_agent} / {status_memory} / {status_startup}</status-bar>
+    <status-bar>{project_branch} / {status_language} / {documentStats} / Native Shell / {status_plugins} / {status_agent} / {status_memory} / {status_startup}</status-bar>
   </column>
 
   <!-- Command palette overlay -->

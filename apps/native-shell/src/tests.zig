@@ -305,3 +305,46 @@ test "close tab soft-confirms dirty then discards" {
     main.update(&model, .close_active_tab);
     try testing.expect(!model.document_dirty);
 }
+
+test "replace once and all in document" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.document.set("alpha foo beta foo");
+    model.find_query.set("foo");
+    model.replace_text.set("bar");
+    main.update(&model, .replace_once);
+    try testing.expectEqualStrings("alpha bar beta foo", model.document.text());
+    try testing.expect(model.document_dirty);
+    main.update(&model, .replace_all);
+    try testing.expectEqualStrings("alpha bar beta bar", model.document.text());
+    try testing.expect(std.mem.indexOf(u8, model.toast, "Replaced") != null);
+}
+
+test "document stats update on edit" {
+    var model = main.initialModel();
+    model.document.set("a\nb\nc");
+    model_mod.refreshDocStats(&model);
+    try testing.expect(std.mem.indexOf(u8, model.doc_stats, "3 lines") != null);
+    try testing.expect(std.mem.indexOf(u8, model.doc_stats, "5 bytes") != null);
+}
+
+test "copy active path sets toast" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .copy_active_path);
+    try testing.expect(model.path_toast.len > 0);
+    try testing.expectEqualStrings(model.path_toast, model.toast);
+}
+
+test "recent projects sync from prefs" {
+    var model = main.initialModel();
+    model.io = std.testing.io;
+    model.prefs_loaded = false;
+    model.prefs = .{};
+    model.prefs.setLastPath("fixtures/acme-dashboard");
+    model.prefs.pushRecent("fixtures/empty");
+    main.update(&model, .refresh_recent);
+    try testing.expect(model.recent.len >= 1);
+    try testing.expect(std.mem.indexOf(u8, model.recent[0].path, "fixtures") != null);
+    std.Io.Dir.cwd().deleteTree(std.testing.io, ".velocity") catch {};
+}
