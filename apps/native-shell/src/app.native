@@ -293,6 +293,7 @@
                   <button size="sm" variant="ghost" selected="{showBottomOutput}" on-press="select_bottom_tab:{bottom_tab_output}">Output · {output_count}</button>
                   <button size="sm" variant="ghost" selected="{showBottomProblems}" on-press="select_bottom_tab:{bottom_tab_problems}">Problems · {problemsStatus}</button>
                   <spacer grow="1" />
+                  <badge variant="secondary">Tests: {test_status_label}</badge>
                   <if test="{showBottomTerminal}">
                     <badge variant="secondary">{terminalStatus}</badge>
                     <button size="sm" variant="ghost" on-press="stop_terminal_task">Stop Terminal/Task</button>
@@ -313,13 +314,15 @@
                     <text>Workspace Tasks</text>
                     <badge variant="secondary">{taskStatus}</badge>
                     <spacer grow="1" />
+                    <button size="sm" variant="primary" on-press="run_workspace_tests" label="Run workspace tests using the test or first test colon task">Run Workspace Tests</button>
+                    <button size="sm" variant="ghost" on-press="rerun_workspace_tests" label="Rerun the last workspace test task">Rerun Tests</button>
                     <button size="sm" variant="ghost" on-press="refresh_tasks">Refresh Tasks</button>
                     <button size="sm" variant="primary" on-press="run_selected_task">Run Selected Task</button>
                   </row>
                   <scroll height="92" label="Detected workspace tasks">
                     <column gap="2">
                       <for each="workspace_tasks" key="id" as="task">
-                        <button size="sm" variant="ghost" selected="{task.id == selected_task_id}" on-press="select_task:{task.id}" label="{task.command}">{task.name}</button>
+                        <button size="sm" variant="ghost" selected="{task.id == selected_task_id}" on-press="select_task:{task.id}" label="{task.command}">{task.display_label}</button>
                       </for>
                     </column>
                   </scroll>
@@ -341,12 +344,30 @@
                   <scroll grow="1" label="Output">
                     <column gap="1">
                       <for each="output_lines" key="id" as="oline">
-                        <text size="sm" wrap="false">{oline.text}</text>
+                        <row gap="5">
+                          <badge variant="secondary">{oline.channel_label}</badge>
+                          <text size="sm" foreground="text_muted">{oline.source_label}</text>
+                          <text size="sm" wrap="false">{oline.text}</text>
+                        </row>
                       </for>
                     </column>
                   </scroll>
                 </if>
                 <if test="{showBottomProblems}">
+                  <row gap="4" cross="center" label="Problem severity filters">
+                    <text size="sm">Filtered</text>
+                    <badge variant="secondary">{problem_filtered_count}</badge>
+                    <text size="sm">of</text>
+                    <badge variant="secondary">{problem_total_count}</badge>
+                    <text size="sm">Severity</text>
+                    <button size="sm" variant="ghost" selected="{problem_severity_filter == problem_severity_all}" on-press="set_problem_severity_filter:{problem_severity_all}" label="Show all problem severities">All</button>
+                    <button size="sm" variant="ghost" selected="{problem_severity_filter == problem_severity_errors}" on-press="set_problem_severity_filter:{problem_severity_errors}" label="Show error problems">Errors</button>
+                    <button size="sm" variant="ghost" selected="{problem_severity_filter == problem_severity_warnings}" on-press="set_problem_severity_filter:{problem_severity_warnings}" label="Show warning problems">Warnings</button>
+                    <text size="sm">Source</text>
+                    <button size="sm" variant="ghost" selected="{problem_source_filter == problem_source_all}" on-press="set_problem_source_filter:{problem_source_all}" label="Show all problem sources">All</button>
+                    <button size="sm" variant="ghost" selected="{problem_source_filter == problem_source_terminal}" on-press="set_problem_source_filter:{problem_source_terminal}" label="Show terminal problems">Terminal</button>
+                    <button size="sm" variant="ghost" selected="{problem_source_filter == problem_source_marker}" on-press="set_problem_source_filter:{problem_source_marker}" label="Show marker problems">Marker</button>
+                  </row>
                   <scroll grow="1" label="Problems list">
                     <column gap="2">
                       <for each="problems" key="id" as="p">

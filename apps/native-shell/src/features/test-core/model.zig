@@ -1,5 +1,5 @@
-//! Test Core feature model stub.
-//! Status: stub. Mode: dev. Startup allowed: False.
+//! Test Core lazy feature state.
+//! Status: working. Mode: dev. Startup allowed: False.
 
 pub const feature_id = "feature.test-core";
 pub const mode = "dev";

@@ -2,16 +2,12 @@
 
 - **id:** `feature.test-output`
 - **mode:** `dev`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `native`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `16`
 - **maxProcesses:** `0`
 - **activation:** `onTestRun`
 
-## Rules
-
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+Mirrors bounded test terminal lines into Output with test/source labels and
+turns supported assertion locations into clickable Problems on failed runs.

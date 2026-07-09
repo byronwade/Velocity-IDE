@@ -18,12 +18,14 @@ This repository contains:
 | Prefs + Recent | Theme / last path / panels / recent / auto-save / find-case |
 | Document stats | Status bar line + byte counts |
 | Breadcrumb | Active relative path in editor header |
-| Problems | TODO/FIXME/HACK/XXX marker scan panel |
+| Problems | Marker + terminal/test diagnostics, severity/source filters |
 | SCM diff | Bounded git diff preview on entry open |
 | Editor transforms | Toggle comment, indent/outdent, reopen closed tab |
 | Search (MVP) | Bounded in-process workspace text search |
 | SCM (MVP) | Lazy `git status` / branch via governor |
 | Terminal (MVP) | Async `fx.spawn` pipe runner (sync fallback in tests) |
+| Tasks / Tests (MVP) | npm + tasks.json + Make detection; governed run/stop/rerun |
+| Output (MVP) | Bounded labeled task/test terminal mirror |
 | Feature modules | 200 stubs under `src/features/` |
 | Feature registry + activation policy | Scaffold |
 | Process Governor | Tracks terminal / search / scm runs |

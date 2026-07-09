@@ -61,6 +61,8 @@ pub const BreadcrumbSeg = struct {
 
 pub const OutputLine = struct {
     id: u32 = 0,
+    channel_label: []const u8 = "system",
+    source_label: []const u8 = "velocity",
     text: []const u8 = "",
 };
 
@@ -72,6 +74,7 @@ pub const ClosedTab = struct {
 pub const ViewKind = enum { launch, ide, plugins, settings, perf, features, processes, search, scm, debug, testing, problems };
 pub const Activity = enum { explorer, search, scm, agents, terminal, plugins, settings, debug, testing, features, processes, problems, outline };
 pub const BottomPanelTab = enum { terminal, output, problems };
+pub const TestStatus = enum { idle, running, passed, failed, cancelled };
 pub const AgentStatus = enum { running, planning, ready_for_review, failed, completed };
 
 pub const FileNode = workspace_store.FileNode;
@@ -224,6 +227,8 @@ pub const Msg = union(enum) {
     refresh_tasks,
     select_task: u32,
     run_selected_task,
+    run_workspace_tests,
+    rerun_workspace_tests,
     toggle_line_comment,
     indent_document,
     outdent_document,
@@ -231,6 +236,8 @@ pub const Msg = union(enum) {
     scan_problems,
     parse_terminal_diagnostics,
     open_problem: u32,
+    set_problem_severity_filter: problems_mod.SeverityFilter,
+    set_problem_source_filter: problems_mod.SourceFilter,
     preview_git_diff: u32,
     update_commit_message: canvas.TextInputEvent,
     stage_all,
@@ -462,6 +469,10 @@ pub const Model = struct {
     selected_git_entry_id: u32 = 0,
     task_running: bool = false,
     task_status: []const u8 = "No tasks detected",
+    test_status: TestStatus = .idle,
+    test_status_label: []const u8 = "idle",
+    test_running: bool = false,
+    last_test_task_id: u32 = 0,
     replace_status: []const u8 = "Preview changes before applying",
     backup_restore_status: []const u8 = "",
     backup_status_buf: [160]u8 = undefined,
@@ -482,6 +493,11 @@ pub const Model = struct {
     matcher_bufs: ?*problem_matchers.MatcherBuffers = null,
     problems: []const Problem = &.{},
     problems_status: []const u8 = "idle",
+    problem_severity_filter: problems_mod.SeverityFilter = .all,
+    problem_source_filter: problems_mod.SourceFilter = .all,
+    problem_filtered_count: u32 = 0,
+    problem_total_count: u32 = 0,
+    problems_filter_status_buf: [96]u8 = undefined,
     git_diff_text: []const u8 = "",
     git_diff_status: []const u8 = "—",
     closed_tabs: [8]ClosedTab = [_]ClosedTab{.{}} ** 8,
@@ -595,6 +611,12 @@ pub const Model = struct {
     bottom_tab_terminal: BottomPanelTab = .terminal,
     bottom_tab_output: BottomPanelTab = .output,
     bottom_tab_problems: BottomPanelTab = .problems,
+    problem_severity_all: problems_mod.SeverityFilter = .all,
+    problem_severity_errors: problems_mod.SeverityFilter = .errors,
+    problem_severity_warnings: problems_mod.SeverityFilter = .warnings,
+    problem_source_all: problems_mod.SourceFilter = .all,
+    problem_source_terminal: problems_mod.SourceFilter = .terminal,
+    problem_source_marker: problems_mod.SourceFilter = .marker,
     project_acme: []const u8 = "acme-dashboard",
 
     // Static mock collections exposed for markup `for each=...`
@@ -670,6 +692,9 @@ pub const Model = struct {
         "search_query",
         "task_running",
         "task_status",
+        "test_status",
+        "test_running",
+        "last_test_task_id",
         "replace_status",
         "task_status_buf",
         "replace_status_buf",
@@ -685,6 +710,7 @@ pub const Model = struct {
         "problem_bufs",
         "matcher_bufs",
         "problems_status",
+        "problems_filter_status_buf",
         "git_diff_text",
         "closed_tabs",
         "closed_tab_count",
@@ -1324,6 +1350,8 @@ pub const commands = [_]CommandItem{
     .{ .id = "run_terminal", .title = "Run Terminal Command", .hint = "" },
     .{ .id = "stop_terminal_task", .title = "Stop Terminal/Task", .hint = "" },
     .{ .id = "run_selected_task", .title = "Run Selected Workspace Task", .hint = "Cmd+Shift+B" },
+    .{ .id = "run_workspace_tests", .title = "Run Workspace Tests", .hint = "" },
+    .{ .id = "rerun_workspace_tests", .title = "Rerun Workspace Tests", .hint = "" },
     .{ .id = "refresh_tasks", .title = "Refresh Workspace Tasks", .hint = "" },
     .{ .id = "run_search", .title = "Search Workspace", .hint = "Cmd+Shift+F" },
     .{ .id = "preview_workspace_replace", .title = "Preview Workspace Replace", .hint = "" },
@@ -1449,6 +1477,15 @@ fn clearActiveCommand(model: *Model, status: process_governor.ProcessStatus, exi
             ) catch "Task exited",
             .running => "Task running",
         };
+    }
+    if (model.test_running) {
+        model.test_running = false;
+        model.test_status = switch (status) {
+            .cancelled, .killed => .cancelled,
+            .exited => if (exit_code == 0) .passed else .failed,
+            else => .failed,
+        };
+        model.test_status_label = @tagName(model.test_status);
     }
 }
 
@@ -1803,6 +1840,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 stopTerminalTask(model, fx);
             } else if (std.mem.eql(u8, id, "run_selected_task")) {
                 runSelectedTask(model, fx);
+            } else if (std.mem.eql(u8, id, "run_workspace_tests")) {
+                runWorkspaceTests(model, fx, false);
+            } else if (std.mem.eql(u8, id, "rerun_workspace_tests")) {
+                runWorkspaceTests(model, fx, true);
             } else if (std.mem.eql(u8, id, "refresh_tasks")) {
                 refreshTasks(model);
             } else if (std.mem.eql(u8, id, "run_search")) {
@@ -1903,7 +1944,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             } else if (std.mem.eql(u8, id, "scan_problems")) {
                 scanProblems(model);
             } else if (std.mem.eql(u8, id, "parse_terminal_diagnostics")) {
-                parseTerminalDiagnostics(model, true);
+                parseTerminalDiagnostics(model, true, true);
             } else if (std.mem.eql(u8, id, "open_feature_matrix")) {
                 model.current_view = .features;
                 model.selected_activity = .features;
@@ -2334,14 +2375,18 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .outdent_document => indentDocument(model, false),
         .reopen_closed_tab => reopenClosedTab(model),
         .scan_problems => scanProblems(model),
-        .parse_terminal_diagnostics => parseTerminalDiagnostics(model, true),
+        .parse_terminal_diagnostics => parseTerminalDiagnostics(model, true, true),
         .open_problem => |id| openProblem(model, id),
+        .set_problem_severity_filter => |filter| setProblemFilters(model, filter, model.problem_source_filter),
+        .set_problem_source_filter => |filter| setProblemFilters(model, model.problem_severity_filter, filter),
         .preview_git_diff => |id| previewGitDiff(model, id),
         .terminal_history_older => terminalHistory(model, true),
         .terminal_history_newer => terminalHistory(model, false),
         .refresh_tasks => refreshTasks(model),
         .select_task => |id| selectTask(model, id),
         .run_selected_task => runSelectedTask(model, fx),
+        .run_workspace_tests => runWorkspaceTests(model, fx, false),
+        .rerun_workspace_tests => runWorkspaceTests(model, fx, true),
         .update_quick_query => |edit| {
             model.quick_query.apply(edit);
             filterQuickOpen(model);
@@ -2360,10 +2405,12 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 term.pushLine(line.line);
                 model.term_lines = term.linesSlice();
                 term.status = "running";
+                mirrorTaskOutput(model, line.line);
             } else |_| {}
         },
         .terminal_exit => |exit| {
             if (!model.terminal_async or exit.key != model.terminal_effect_key) return;
+            const was_test = model.test_running;
             if (ensureTerminalBuffers(model)) |term| {
                 term.running = false;
                 term.last_exit = exit.code;
@@ -2378,6 +2425,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 const exit_msg = std.fmt.bufPrint(&exit_buf, "[exit {d} / {s}]", .{ exit.code, @tagName(exit.reason) }) catch "[exit]";
                 term.pushLine(exit_msg);
                 model.term_lines = term.linesSlice();
+                mirrorTaskOutput(model, exit_msg);
             } else |_| {}
             clearActiveCommand(model, switch (exit.reason) {
                 .exited => .exited,
@@ -2386,7 +2434,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 .signaled => .signaled,
                 .spawn_failed => .spawn_failed,
             }, exit.code);
-            parseTerminalDiagnostics(model, false);
+            parseTerminalDiagnostics(model, false, !was_test or exit.code != 0 or exit.reason != .exited);
+            if (was_test and exit.reason == .exited and exit.code == 0) {
+                openBottomPanel(model, .terminal);
+            }
             if (model.problems.len == 0) {
                 model.toast = switch (exit.reason) {
                     .exited => if (exit.code == 0) "Command ok" else "Command exited",
@@ -3441,6 +3492,10 @@ fn refreshPeek(model: *Model) void {
 }
 
 fn appendOutput(model: *Model, text: []const u8) void {
+    appendOutputLabeled(model, "system", "velocity", text);
+}
+
+fn appendOutputLabeled(model: *Model, channel: []const u8, source: []const u8, text: []const u8) void {
     if (text.len == 0) return;
     var i: usize = 47;
     while (i > 0) : (i -= 1) {
@@ -3450,6 +3505,8 @@ fn appendOutput(model: *Model, text: []const u8) void {
         model.output_lens[i] = len;
         model.output_storage[i] = .{
             .id = model.output_storage[i - 1].id,
+            .channel_label = model.output_storage[i - 1].channel_label,
+            .source_label = model.output_storage[i - 1].source_label,
             .text = model.output_pool[i][0..len],
         };
     }
@@ -3458,6 +3515,8 @@ fn appendOutput(model: *Model, text: []const u8) void {
     model.output_lens[0] = n;
     model.output_storage[0] = .{
         .id = model.output_next_id,
+        .channel_label = channel,
+        .source_label = source,
         .text = model.output_pool[0][0..n],
     };
     model.output_next_id +%= 1;
@@ -3760,10 +3819,14 @@ fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
     }
 
     // Sync fallback for unit tests (no effects channel).
+    const first_new_line = term.line_count;
     term.runCommand(modelIo(model), cwd, cmd);
     model.term_lines = term.linesSlice();
+    for (term.linesSlice()[first_new_line..]) |line| mirrorTaskOutput(model, line);
+    const was_test = model.test_running;
     clearActiveCommand(model, .exited, term.last_exit);
-    parseTerminalDiagnostics(model, false);
+    parseTerminalDiagnostics(model, false, !was_test or term.last_exit != 0);
+    if (was_test and term.last_exit == 0) openBottomPanel(model, .terminal);
     if (model.problems.len == 0) {
         model.toast = if (term.last_exit == 0) "Command ok" else "Command exited";
     }
@@ -3786,13 +3849,14 @@ fn refreshTasks(model: *Model) void {
     const count = detector.discover(modelIo(model), model.project_path) catch |err| {
         detector.clear();
         model.task_status = switch (err) {
-            error.FileNotFound => "No package.json tasks",
-            error.PackageTooLarge => "package.json exceeds task detector limit",
+            error.FileNotFound => "No supported task files",
+            error.PackageTooLarge => "A task source exceeds the detector limit",
             error.InvalidPackage => "package.json is invalid",
-            error.TooManyTasks => "Too many npm scripts (limit 32)",
-            error.NameTooLong => "An npm script name is too long",
-            error.CommandTooLong => "An npm script command is too long",
-            else => "Unable to detect npm scripts",
+            error.InvalidTasks => ".vscode/tasks.json is invalid",
+            error.TooManyTasks => "Too many workspace tasks (limit 32)",
+            error.NameTooLong => "A workspace task name is too long",
+            error.CommandTooLong => "A workspace task command is too long",
+            else => "Unable to detect workspace tasks",
         };
         model.toast = model.task_status;
         return;
@@ -3801,7 +3865,7 @@ fn refreshTasks(model: *Model) void {
     if (count > 0) model.selected_task_id = model.workspace_tasks[0].id;
     model.task_status = std.fmt.bufPrint(
         &model.task_status_buf,
-        "{d} npm scripts detected",
+        "{d} workspace tasks detected",
         .{count},
     ) catch "Tasks detected";
     model.toast = model.task_status;
@@ -3813,8 +3877,8 @@ fn selectTask(model: *Model, task_id: u32) void {
             model.selected_task_id = task_id;
             model.task_status = std.fmt.bufPrint(
                 &model.task_status_buf,
-                "Selected npm run {s}",
-                .{task.name},
+                "Selected {s}: {s}",
+                .{ task.source_label, task.name },
             ) catch "Task selected";
             openBottomPanel(model, .terminal);
             return;
@@ -3860,25 +3924,31 @@ fn runSelectedTask(model: *Model, fx: ?*Effects) void {
         }
     }
     const task = selected orelse {
-        model.toast = "Select an npm task first";
+        model.toast = "Select a workspace task first";
         openBottomPanel(model, .terminal);
         return;
     };
 
     var command_buf: [max_terminal_command]u8 = undefined;
-    const prefix = "npm run -- ";
-    @memcpy(command_buf[0..prefix.len], prefix);
-    var used = prefix.len;
-    if (!appendShellQuoted(&command_buf, &used, task.name)) {
-        model.toast = "Task name is too long to run safely";
-        return;
+    var used: usize = 0;
+    if (task.source == .npm) {
+        const prefix = "npm run -- ";
+        @memcpy(command_buf[0..prefix.len], prefix);
+        used = prefix.len;
+        if (!appendShellQuoted(&command_buf, &used, task.name)) {
+            model.toast = "Task name is too long to run safely";
+            return;
+        }
+    } else {
+        used = @min(task.command.len, command_buf.len);
+        @memcpy(command_buf[0..used], task.command[0..used]);
     }
     model.terminal_command.set(command_buf[0..used]);
     model.task_running = true;
     model.task_status = std.fmt.bufPrint(
         &model.task_status_buf,
-        "Running npm run {s}",
-        .{task.name},
+        "Running {s}: {s}",
+        .{ task.source_label, task.name },
     ) catch "Task running";
     runTerminalFromModel(model, fx);
     if (fx == null) {
@@ -3889,6 +3959,71 @@ fn runSelectedTask(model: *Model, fx: ?*Effects) void {
             "Task exited with code {d}",
             .{exit_code},
         ) catch "Task finished";
+    }
+}
+
+fn runWorkspaceTests(model: *Model, fx: ?*Effects, rerun: bool) void {
+    if (model.terminal_async or (model.terminal != null and model.terminal.?.running)) {
+        model.toast = "A command is already running; use Stop Terminal/Task before starting tests";
+        openBottomPanel(model, .terminal);
+        return;
+    }
+    if (model.workspace_tasks.len == 0) refreshTasks(model);
+    var test_task: ?WorkspaceTask = null;
+    if (rerun and model.last_test_task_id != 0) {
+        for (model.workspace_tasks) |task| {
+            if (task.id == model.last_test_task_id) {
+                test_task = task;
+                break;
+            }
+        }
+    } else {
+        for (model.workspace_tasks) |task| {
+            if (std.mem.eql(u8, task.name, "test")) {
+                test_task = task;
+                break;
+            }
+        }
+        if (test_task == null) {
+            for (model.workspace_tasks) |task| {
+                if (std.mem.startsWith(u8, task.name, "test:")) {
+                    test_task = task;
+                    break;
+                }
+            }
+        }
+    }
+    const task = test_task orelse {
+        model.test_status = .idle;
+        model.test_status_label = "idle · no test/test:* task";
+        model.toast = if (rerun) "Previous test task is no longer available" else "No test or test:* workspace task detected";
+        openBottomPanel(model, .terminal);
+        return;
+    };
+    model.selected_task_id = task.id;
+    model.last_test_task_id = task.id;
+    model.test_running = true;
+    model.test_status = .running;
+    model.test_status_label = "running";
+    runSelectedTask(model, fx);
+    if (!model.task_running and !model.terminal_async and model.test_running) {
+        model.test_running = false;
+        model.test_status = .failed;
+        model.test_status_label = "failed";
+    }
+}
+
+fn mirrorTaskOutput(model: *Model, line: []const u8) void {
+    if (!model.task_running and !model.test_running) return;
+    for (model.workspace_tasks) |task| {
+        if (task.id != model.selected_task_id) continue;
+        appendOutputLabeled(
+            model,
+            if (model.test_running) "test" else "task",
+            task.source_label,
+            line,
+        );
+        return;
     }
 }
 
@@ -4443,7 +4578,7 @@ fn ensureMatcherBuffers(model: *Model) !*problem_matchers.MatcherBuffers {
     return p;
 }
 
-fn parseTerminalDiagnostics(model: *Model, show_when_empty: bool) void {
+fn parseTerminalDiagnostics(model: *Model, show_when_empty: bool, auto_open: bool) void {
     const term = model.terminal orelse {
         model.toast = "No terminal output";
         return;
@@ -4458,10 +4593,9 @@ fn parseTerminalDiagnostics(model: *Model, show_when_empty: bool) void {
         return;
     };
     problems.ingestDiagnostics(matcher.diagnosticsSlice());
-    model.problems = problems.itemsSlice();
-    model.problems_status = problems.status;
+    syncProblemView(model, problems);
     appendOutput(model, problems.status);
-    if (problems.item_count > 0) {
+    if (problems.item_count > 0 and auto_open) {
         openBottomPanel(model, .problems);
         model.toast = problems.status;
     } else if (show_when_empty) {
@@ -4484,11 +4618,38 @@ fn scanProblems(model: *Model) void {
         return;
     };
     bufs.scan(modelIo(model), ws);
-    model.problems = bufs.itemsSlice();
-    model.problems_status = bufs.status;
+    syncProblemView(model, bufs);
     model.current_view = .ide;
     openBottomPanel(model, .problems);
     model.toast = bufs.status;
+}
+
+fn setProblemFilters(
+    model: *Model,
+    severity: problems_mod.SeverityFilter,
+    source: problems_mod.SourceFilter,
+) void {
+    model.problem_severity_filter = severity;
+    model.problem_source_filter = source;
+    const bufs = model.problem_bufs orelse {
+        model.problem_filtered_count = 0;
+        model.problem_total_count = 0;
+        return;
+    };
+    bufs.setFilters(severity, source);
+    syncProblemView(model, bufs);
+}
+
+fn syncProblemView(model: *Model, bufs: *problems_mod.ProblemBuffers) void {
+    bufs.setFilters(model.problem_severity_filter, model.problem_source_filter);
+    model.problems = bufs.filteredSlice();
+    model.problem_filtered_count = bufs.filtered_count;
+    model.problem_total_count = bufs.item_count;
+    model.problems_status = std.fmt.bufPrint(
+        &model.problems_filter_status_buf,
+        "{d}/{d} · {s}",
+        .{ bufs.filtered_count, bufs.item_count, bufs.status },
+    ) catch bufs.status;
 }
 
 fn openProblem(model: *Model, problem_id: u32) void {

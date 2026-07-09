@@ -2,16 +2,14 @@
 
 - **id:** `feature.test-core`
 - **mode:** `dev`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `native`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `16`
 - **maxProcesses:** `0`
 - **activation:** `onTestRun`
 
-## Rules
-
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+Runs the exact `test` task or deterministic first `test:*` fallback. Run,
+rerun, pass/fail/cancel state, Stop, diagnostics, and output all share the
+existing one-process governed terminal lifecycle. Per-test discovery remains
+out of scope.

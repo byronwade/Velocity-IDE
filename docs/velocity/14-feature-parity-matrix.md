@@ -91,10 +91,10 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Terminal Links | `feature.terminal-links` | core | P1 | native | False | 4 | 0 | high | stub | docs/11 + contrib | |
 | Terminal Shell Integration | `feature.terminal-shell-integration` | dev | P2 | native | False | 8 | 0 | high | stub | docs/11 + contrib | |
 | Terminal Find | `feature.terminal-find` | core | P1 | native | False | 8 | 0 | high | stub | docs/11 + contrib | |
-| Task Runner | `feature.task-runner` | dev | P1 | process | False | 16 | 1 | high | working | npm scripts via terminal/governor + diagnostics | |
-| Task Detector | `feature.task-detector` | dev | P2 | native | False | 8 | 0 | high | working | bounded root package.json scripts | |
-| Problem Matchers | `feature.problem-matchers` | dev | P1 | native | False | 8 | 0 | high | working | bounded TS/Zig/GCC parser | |
-| Output Panel | `feature.output-panel` | dev | P1 | native | False | 16 | 0 | high | stub | docs/11 + contrib | |
+| Task Runner | `feature.task-runner` | dev | P1 | process | False | 16 | 1 | high | working | npm/tasks.json/Make via governed terminal + Stop + diagnostics | |
+| Task Detector | `feature.task-detector` | dev | P2 | native | False | 8 | 0 | high | working | bounded npm, tasks.json shell/process, simple Make targets; deterministic precedence | |
+| Problem Matchers | `feature.problem-matchers` | dev | P1 | native | False | 8 | 0 | high | working | bounded TS/Zig/GCC + Vitest/Jest assertion locations | |
+| Output Panel | `feature.output-panel` | dev | P1 | native | False | 16 | 0 | high | working | bounded labeled task/test terminal mirror + status lines | |
 | SCM Core | `feature.scm-core` | dev | P0 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Git Provider | `feature.git-provider` | dev | P0 | process | False | 24 | 1 | low | stub | docs/11 + contrib | |
 | Git Status | `feature.git-status` | dev | P0 | process | False | 8 | 1 | low | stub | docs/11 + contrib | |
@@ -114,10 +114,10 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Watch | `feature.watch` | dev | P2 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
 | Debug Console | `feature.debug-console` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Debug REPL | `feature.debug-repl` | dev | P2 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
-| Test Core | `feature.test-core` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
-| Test Discovery | `feature.test-discovery` | dev | P1 | process | False | 16 | 1 | low | stub | docs/11 + contrib | |
+| Test Core | `feature.test-core` | dev | P1 | native | False | 16 | 0 | low | working | run/rerun test or test:*; pass/fail/cancel state; shared governed process | |
+| Test Discovery | `feature.test-discovery` | dev | P1 | process | False | 16 | 1 | low | partial | task-name discovery only; no per-test tree | |
 | Test Explorer | `feature.test-explorer` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
-| Test Output | `feature.test-output` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
+| Test Output | `feature.test-output` | dev | P1 | native | False | 16 | 0 | low | working | labeled bounded Output mirror + assertion Problems | |
 | Coverage | `feature.coverage` | heavy | P3 | process | False | 32 | 1 | low | stub | docs/11 + contrib | |
 | LSP Broker | `feature.lsp-broker` | core | P0 | native | False | 16 | 0 | low | scaffold / transport blocked by SDK | bounded JSON-RPC/session/diagnostics; no process | long-lived streamed child process, backpressure, cancellation/exit, governor ownership |
 | LSP Process Manager | `feature.lsp-process-manager` | core | P0 | process | False | 8 | 4 | low | stub | docs/11 + contrib | |

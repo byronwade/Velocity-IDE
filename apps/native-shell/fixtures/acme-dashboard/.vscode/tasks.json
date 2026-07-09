@@ -1,0 +1,16 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "task-smoke",
+      "type": "shell",
+      "command": "echo should-not-override-npm"
+    },
+    {
+      "label": "test:fixture-process",
+      "type": "process",
+      "command": "sh",
+      "args": ["-c", "echo velocity-vscode-test-task"]
+    }
+  ]
+}

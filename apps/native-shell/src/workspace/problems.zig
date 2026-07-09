@@ -11,6 +11,8 @@ pub const max_preview: usize = 100;
 
 pub const Severity = enum { @"error", warning, info };
 pub const Source = enum { marker, terminal };
+pub const SeverityFilter = enum { all, errors, warnings };
+pub const SourceFilter = enum { all, terminal, marker };
 
 pub const Problem = struct {
     id: u32 = 0,
@@ -26,6 +28,10 @@ pub const Problem = struct {
 pub const ProblemBuffers = struct {
     items: [max_problems]Problem = [_]Problem{.{}} ** max_problems,
     item_count: u32 = 0,
+    filtered_items: [max_problems]Problem = [_]Problem{.{}} ** max_problems,
+    filtered_count: u32 = 0,
+    severity_filter: SeverityFilter = .all,
+    source_filter: SourceFilter = .all,
     path_pool: [max_problems][scanner.max_rel_path_len]u8 = undefined,
     path_lens: [max_problems]usize = [_]usize{0} ** max_problems,
     preview_pool: [max_problems][max_preview]u8 = undefined,
@@ -41,16 +47,47 @@ pub const ProblemBuffers = struct {
         return self.items[0..self.item_count];
     }
 
+    pub fn filteredSlice(self: *ProblemBuffers) []const Problem {
+        return self.filtered_items[0..self.filtered_count];
+    }
+
+    pub fn setFilters(self: *ProblemBuffers, severity: SeverityFilter, source: SourceFilter) void {
+        self.severity_filter = severity;
+        self.source_filter = source;
+        self.applyFilters();
+    }
+
+    pub fn applyFilters(self: *ProblemBuffers) void {
+        self.filtered_count = 0;
+        for (self.itemsSlice()) |item| {
+            const severity_match = switch (self.severity_filter) {
+                .all => true,
+                .errors => std.mem.eql(u8, item.severity_label, "error"),
+                .warnings => std.mem.eql(u8, item.severity_label, "warning"),
+            };
+            const source_match = switch (self.source_filter) {
+                .all => true,
+                .terminal => std.mem.eql(u8, item.source_label, "terminal"),
+                .marker => std.mem.eql(u8, item.source_label, "marker"),
+            };
+            if (!severity_match or !source_match) continue;
+            self.filtered_items[self.filtered_count] = item;
+            self.filtered_count += 1;
+        }
+    }
+
     pub fn clear(self: *ProblemBuffers) void {
         self.item_count = 0;
+        self.filtered_count = 0;
         self.error_count = 0;
         self.warning_count = 0;
         self.status = "idle";
     }
 
     pub fn scan(self: *ProblemBuffers, io: std.Io, ws: *workspace_store.WorkspaceBuffers) void {
-        self.clear();
+        self.retainSource(.terminal);
         self.status = "scanning";
+        const terminal_count = self.item_count;
         var file_buf: [scanner.max_file_bytes]u8 = undefined;
         var i: u32 = 0;
         while (i < ws.file_node_count and self.item_count < max_problems) : (i += 1) {
@@ -59,11 +96,19 @@ pub const ProblemBuffers = struct {
             const n = scanner.readTextFile(io, ws.rootPath(), node.path, file_buf[0..]) catch continue;
             self.scanFile(node.path, file_buf[0..n]);
         }
-        if (self.item_count == 0) {
+        const marker_count = self.item_count - terminal_count;
+        if (marker_count == 0 and terminal_count == 0) {
             self.status = "no markers";
+        } else if (terminal_count == 0) {
+            self.status = std.fmt.bufPrint(&self.status_buf, "{d} markers", .{marker_count}) catch "done";
         } else {
-            self.status = std.fmt.bufPrint(&self.status_buf, "{d} markers", .{self.item_count}) catch "done";
+            self.status = std.fmt.bufPrint(
+                &self.status_buf,
+                "{d} markers · {d} terminal",
+                .{ marker_count, terminal_count },
+            ) catch "done";
         }
+        self.applyFilters();
     }
 
     pub fn scanFile(self: *ProblemBuffers, path: []const u8, content: []const u8) void {
@@ -86,7 +131,7 @@ pub const ProblemBuffers = struct {
         self: *ProblemBuffers,
         diagnostics: []const problem_matchers.Diagnostic,
     ) void {
-        self.clear();
+        self.retainSource(.marker);
         for (diagnostics) |diagnostic| {
             if (self.item_count >= max_problems) break;
             const severity: Severity = switch (diagnostic.severity) {
@@ -116,6 +161,45 @@ pub const ProblemBuffers = struct {
                 "{d} errors · {d} warnings · {d} total",
                 .{ self.error_count, self.warning_count, self.item_count },
             ) catch "diagnostics";
+        self.applyFilters();
+    }
+
+    fn retainSource(self: *ProblemBuffers, source: Source) void {
+        var retained: u32 = 0;
+        var errors: u32 = 0;
+        var warnings: u32 = 0;
+        const wanted = sourceLabel(source);
+        var index: u32 = 0;
+        while (index < self.item_count) : (index += 1) {
+            const item = self.items[index];
+            if (!std.mem.eql(u8, item.source_label, wanted)) continue;
+            const path = item.path;
+            const kind = item.kind;
+            const preview = item.preview;
+            const plen = @min(path.len, self.path_pool[retained].len);
+            const klen = @min(kind.len, self.kind_pool[retained].len);
+            const vlen = @min(preview.len, self.preview_pool[retained].len);
+            std.mem.copyForwards(u8, self.path_pool[retained][0..plen], path[0..plen]);
+            std.mem.copyForwards(u8, self.kind_pool[retained][0..klen], kind[0..klen]);
+            std.mem.copyForwards(u8, self.preview_pool[retained][0..vlen], preview[0..vlen]);
+            self.items[retained] = .{
+                .id = retained + 1,
+                .path = self.path_pool[retained][0..plen],
+                .line = item.line,
+                .column = item.column,
+                .kind = self.kind_pool[retained][0..klen],
+                .preview = self.preview_pool[retained][0..vlen],
+                .severity_label = item.severity_label,
+                .source_label = wanted,
+            };
+            if (std.mem.eql(u8, item.severity_label, "error")) errors += 1;
+            if (std.mem.eql(u8, item.severity_label, "warning")) warnings += 1;
+            retained += 1;
+        }
+        self.item_count = retained;
+        self.error_count = errors;
+        self.warning_count = warnings;
+        self.filtered_count = 0;
     }
 
     fn markerInLine(line: []const u8) ?[]const u8 {
@@ -201,4 +285,31 @@ test "problems ingest compiler diagnostics" {
     try std.testing.expectEqual(@as(u32, 1), p.error_count);
     try std.testing.expectEqualStrings("terminal", p.items[0].source_label);
     try std.testing.expectEqualStrings("TS1001", p.items[0].kind);
+}
+
+test "problems expose filtered iterable and counts" {
+    var p: ProblemBuffers = .{};
+    p.scanFile("src/a.ts", "// TODO warning\n");
+    p.applyFilters();
+    try std.testing.expectEqual(@as(u32, 1), p.filtered_count);
+    p.setFilters(.errors, .all);
+    try std.testing.expectEqual(@as(u32, 0), p.filtered_count);
+    p.setFilters(.warnings, .marker);
+    try std.testing.expectEqual(@as(u32, 1), p.filtered_count);
+    try std.testing.expectEqualStrings("marker", p.filteredSlice()[0].source_label);
+}
+
+test "marker and terminal sources coexist and refresh independently" {
+    var p: ProblemBuffers = .{};
+    p.scanFile("src/a.ts", "// TODO warning\n");
+    p.applyFilters();
+    var matched: problem_matchers.MatcherBuffers = .{};
+    const lines = [_][]const u8{"src/a.ts(2,1): error TS1: broken"};
+    matched.parseLines(&lines);
+    p.ingestDiagnostics(matched.diagnosticsSlice());
+    try std.testing.expectEqual(@as(u32, 2), p.item_count);
+    p.setFilters(.all, .marker);
+    try std.testing.expectEqual(@as(u32, 1), p.filtered_count);
+    p.setFilters(.all, .terminal);
+    try std.testing.expectEqual(@as(u32, 1), p.filtered_count);
 }

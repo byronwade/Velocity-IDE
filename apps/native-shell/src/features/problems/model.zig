@@ -1,5 +1,5 @@
-//! Problems feature model stub.
-//! Status: stub. Mode: dev. Startup allowed: False.
+//! Problems lazy feature state.
+//! Status: working. Mode: dev. Startup allowed: False.
 
 pub const feature_id = "feature.problems";
 pub const mode = "dev";

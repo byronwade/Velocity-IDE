@@ -2,16 +2,13 @@
 
 - **id:** `feature.output-panel`
 - **mode:** `dev`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `native`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `16`
 - **maxProcesses:** `0`
 - **activation:** `onTaskRun`, `onCommand:output-panel.run`
 
-## Rules
-
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+Provides a bounded 48-line channel. Task/test terminal output is mirrored with
+channel (`task` or `test`) and source (`npm`, `tasks.json`, or `Makefile`)
+labels; system status lines remain separately labeled.

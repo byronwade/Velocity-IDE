@@ -1,5 +1,5 @@
 //! Bounded terminal problem matchers — compiler/test output to diagnostics.
-//! Supports common TypeScript, Zig, GCC/Clang, and generic path:line formats.
+//! Supports TypeScript, Zig, GCC/Clang, generic path:line, and test stacks.
 
 const std = @import("std");
 const scanner = @import("scanner.zig");
@@ -111,8 +111,60 @@ fn parseLine(line_raw: []const u8) ?Parsed {
     if (std.mem.startsWith(u8, line, "$ ")) return null;
     // npm prints lifecycle metadata and the script command with a `> ` prefix.
     if (std.mem.startsWith(u8, line, "> ")) return null;
+    if (parseTestStackLocation(line)) |hit| return hit;
     if (parseParenLocation(line)) |hit| return hit;
     return parseColonLocation(line);
+}
+
+fn parseTestStackLocation(line: []const u8) ?Parsed {
+    var location = line;
+    if (std.mem.startsWith(u8, location, "❯ ")) {
+        location = std.mem.trim(u8, location["❯ ".len..], " \t");
+    } else if (std.mem.startsWith(u8, location, "at ")) {
+        const open = std.mem.lastIndexOfScalar(u8, location, '(');
+        if (open) |index| {
+            if (!std.mem.endsWith(u8, location, ")")) return null;
+            location = location[index + 1 .. location.len - 1];
+        } else {
+            location = std.mem.trim(u8, location["at ".len..], " \t");
+        }
+        // Framework internals are stack context, not user-facing Problems.
+        if (std.mem.indexOf(u8, location, ".test.") == null and
+            std.mem.indexOf(u8, location, ".spec.") == null)
+        {
+            return null;
+        }
+    } else {
+        return null;
+    }
+    const parsed = parseBareLocation(location) orelse return null;
+    return .{
+        .path = parsed.path,
+        .line = parsed.line,
+        .column = parsed.column,
+        .severity = .@"error",
+        .code = "TEST",
+        .message = "Test assertion failed",
+    };
+}
+
+fn parseBareLocation(location_raw: []const u8) ?Parsed {
+    const location = normalizePath(location_raw);
+    const last = std.mem.lastIndexOfScalar(u8, location, ':') orelse return null;
+    const column = parsePositive(location[last + 1 ..]) orelse return null;
+    const before_column = location[0..last];
+    const previous = std.mem.lastIndexOfScalar(u8, before_column, ':') orelse return null;
+    const line = parsePositive(before_column[previous + 1 ..]) orelse return null;
+    const path = normalizePath(before_column[0..previous]);
+    if (!validPath(path)) return null;
+    return .{
+        .path = path,
+        .line = line,
+        .column = column,
+        .severity = .@"error",
+        .code = "TEST",
+        .message = "Test assertion failed",
+    };
 }
 
 fn parseParenLocation(line: []const u8) ?Parsed {
@@ -286,4 +338,21 @@ test "ignores noise and deduplicates diagnostics" {
     };
     buffers.parseLines(&lines);
     try std.testing.expectEqual(@as(u32, 1), buffers.count);
+}
+
+test "parses Vitest and Jest assertion locations but ignores framework stacks" {
+    var buffers: MatcherBuffers = .{};
+    const lines = [_][]const u8{
+        " ❯ tests/app.test.ts:12:7",
+        "    at Object.<anonymous> (tests/app.test.ts:12:7)",
+        "    at runTest (node_modules/vitest/runner.js:55:2)",
+        "    at helper (src/helper.ts:4:1)",
+    };
+    buffers.parseLines(&lines);
+    try std.testing.expectEqual(@as(u32, 1), buffers.count);
+    try std.testing.expectEqualStrings("tests/app.test.ts", buffers.diagnostics[0].path);
+    try std.testing.expectEqualStrings("TEST", buffers.diagnostics[0].code);
+    try std.testing.expectEqual(@as(u32, 12), buffers.diagnostics[0].line);
+    try std.testing.expectEqual(@as(u32, 7), buffers.diagnostics[0].column);
+    try std.testing.expect(buffers.diagnostics[0].severity == .@"error");
 }

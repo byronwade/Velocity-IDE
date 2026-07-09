@@ -9,9 +9,10 @@
 - **maxProcesses:** `0`
 - **activation:** `onWorkspaceOpen`, `onTaskRun`, `onCommand:task-detector.refresh`
 
-Discovers up to 32 root `package.json` scripts on workspace open and manual
-refresh. Names and commands are parsed into bounded owned buffers; malformed,
-oversized, or missing manifests are reported without affecting the workspace.
+Discovers up to 32 root npm scripts, `.vscode/tasks.json` shell/process tasks,
+and simple Makefile targets on workspace open and manual refresh. Precedence is
+npm → tasks.json → Makefile with first-name-wins deduplication. Names, commands,
+and source labels live in bounded owned buffers.
 
 ## Rules
 

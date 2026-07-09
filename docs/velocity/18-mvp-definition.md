@@ -40,8 +40,8 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Toggle comment | Cmd+/ toggles `//` / `#` / HTML comments on all lines. |
 | Indent / Outdent | Indent or outdent whole document by 2 spaces. |
 | Reopen closed tab | Cmd+Shift+T restores last closed file tab. |
-| Problems panel | Bottom-panel tab; scans markers and terminal diagnostics; click to open. |
-| Problem matchers | Bounded TypeScript/Zig/GCC-style parser with ANSI stripping, severity/code extraction, dedupe, and 64-item cap. |
+| Problems panel | Bottom-panel tab; marker/terminal sources, severity/source filters with filtered counts, click to open. |
+| Problem matchers | Bounded TypeScript/Zig/GCC and Vitest/Jest assertion-location parser with ANSI stripping, severity/code extraction, noise suppression, dedupe, and 64-item cap. |
 | SCM diff preview | Selecting a git entry loads bounded `git diff` text. |
 | Workspace counts | Explorer + status bar show file/node counts. |
 | Dirty tab marker | Each tab title shows ` *`; dirty text remains attached to its tab. |
@@ -79,7 +79,8 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Collapse blank lines | Reduce consecutive blank lines to one. |
 | Copy all tab paths | Join open tab paths into toast (newline-separated). |
 | New untitled | `Cmd+N` creates `Untitled-N.txt` in the workspace. |
-| Tasks | Detect bounded root `package.json` scripts on open/refresh; select and run via Terminal + Process Governor (`Cmd+Shift+B`) with diagnostics parsed on exit. |
+| Tasks | Detect bounded root npm scripts, `.vscode/tasks.json` shell/process tasks, and simple Makefile targets in deterministic npm → tasks.json → Make precedence; select and run via Terminal + Process Governor (`Cmd+Shift+B`). |
+| Workspace tests | Run/rerun the exact `test` task or first `test:*`; distinct idle/running/passed/failed/cancelled state while sharing terminal, one-process policy, Stop, diagnostics, and governor lifecycle. |
 | Workspace replace | Search-sidebar literal preview and double-confirm apply; refuse dirty or disk-stale matching open tabs, then rescan/reload. |
 | SCM stage / commit | Stage all or one file, unstage all or one file, and commit with message field. |
 | SCM restore / discard | Restore one tracked file with double confirmation and dirty/untracked refusal; discard all tracked working-tree changes with soft confirm. |
@@ -96,7 +97,7 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Outline | Sidebar panel lists heuristic symbols (fn/class/struct/def/headings); click to jump. |
 | Go to Definition | Cmd+Shift+D / Find→Def: bounded workspace text search for definition-like lines (no LSP). |
 | Bottom panel | Terminal / Output / Problems tabs with status counts under the editor (Control+backtick for Terminal, `Cmd+J` for panel). Terminal includes detected workspace tasks. |
-| Output channel | Bounded ring of status lines (definition search, etc.). |
+| Output channel | Bounded ring of labeled status lines plus mirrored task/test terminal lines with channel and task-source labels. |
 | New folder | Create relative directory from New-path field. |
 | File size | Toast active buffer byte size. |
 | Word wrap pref | Toggle + persist soft wrap preference (label; textarea wrap later). |

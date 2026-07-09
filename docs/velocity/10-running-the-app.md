@@ -25,10 +25,12 @@ Zig is downloaded automatically by the CLI (`native * --yes`) into `~/.native/to
 ```bash
 cd apps/native-shell
 npm run check    # validate .native markup + app.zon
-npm run test     # headless UI + model tests (7 passing)
+npm run test     # headless UI + unit/model tests
 npm run build    # ReleaseFast → zig-out/bin/velocity-ide
 npm run dev      # Debug build + run with markup hot reload
 npm run perf-smoke
+npm run task-smoke
+npm run test-smoke # deterministic workspace test pass + controlled failure
 ```
 
 Or:

@@ -2,16 +2,13 @@
 
 - **id:** `feature.problems`
 - **mode:** `dev`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `native`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `16`
 - **maxProcesses:** `0`
-- **activation:** `onFileOpen`
+- **activation:** `onFileOpen`, `onTaskRun`, `onTestRun`
 
-## Rules
-
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+Combines bounded marker scans and terminal/test diagnostics. The bottom panel
+exposes accessible severity (all/errors/warnings) and source
+(all/terminal/marker) controls with filtered and total counts.

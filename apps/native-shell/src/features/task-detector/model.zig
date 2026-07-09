@@ -1,5 +1,5 @@
-//! Task Detector feature model stub.
-//! Status: stub. Mode: dev. Startup allowed: False.
+//! Task Detector lazy feature state.
+//! Status: working. Mode: dev. Startup allowed: False.
 
 pub const feature_id = "feature.task-detector";
 pub const mode = "dev";

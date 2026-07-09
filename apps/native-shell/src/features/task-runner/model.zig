@@ -1,10 +1,10 @@
-//! Task Runner feature model stub.
-//! Status: stub. Mode: dev. Startup allowed: False.
+//! Task Runner lazy feature state.
+//! Status: working. Mode: dev. Startup allowed: False.
 
 pub const feature_id = "feature.task-runner";
 pub const mode = "dev";
 pub const memory_budget_mb: u32 = 16;
-pub const max_processes: u32 = 2;
+pub const max_processes: u32 = 1;
 pub const startup_allowed = false;
 
 pub const Model = struct {

@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "next dev",
-    "test": "vitest",
+    "test": "sh -c 'if [ \"${VELOCITY_FIXTURE_TEST_FAIL:-0}\" = \"1\" ]; then echo \"AssertionError: controlled fixture failure\"; echo \" ❯ tests/app.test.ts:2:1\"; exit 1; else echo \"velocity-test-smoke-pass\"; fi'",
     "task-smoke": "echo velocity-task-smoke"
   }
 }

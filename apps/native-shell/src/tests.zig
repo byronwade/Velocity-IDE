@@ -2177,3 +2177,109 @@ test "model SCM stages literal path and restore reloads clean open tab" {
     try testing.expectEqualStrings("original\n", model.document.text());
     try testing.expect(!model.document_dirty);
 }
+
+test "fixture task discovery preserves npm precedence and labels every source" {
+    var model = main.initialModel();
+    defer model.deinit();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    try testing.expectEqual(@as(usize, 5), model.workspace_tasks.len);
+    try testing.expectEqualStrings("npm", model.workspace_tasks[0].source_label);
+    var vscode_seen = false;
+    var make_seen = false;
+    var task_smoke_count: u32 = 0;
+    for (model.workspace_tasks) |task| {
+        if (std.mem.eql(u8, task.source_label, "tasks.json")) vscode_seen = true;
+        if (std.mem.eql(u8, task.source_label, "Makefile")) make_seen = true;
+        if (std.mem.eql(u8, task.name, "task-smoke")) {
+            task_smoke_count += 1;
+            try testing.expectEqualStrings("npm", task.source_label);
+        }
+    }
+    try testing.expect(vscode_seen);
+    try testing.expect(make_seen);
+    try testing.expectEqual(@as(u32, 1), task_smoke_count);
+}
+
+test "workspace tests pass and mirror bounded labeled output" {
+    var model = main.initialModel();
+    defer model.deinit();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .run_workspace_tests);
+    try testing.expectEqual(model_mod.TestStatus.passed, model.test_status);
+    try testing.expectEqualStrings("passed", model.test_status_label);
+    try testing.expect(model.last_test_task_id != 0);
+    var mirrored = false;
+    for (model.output_lines) |line| {
+        if (std.mem.indexOf(u8, line.text, "velocity-test-smoke-pass") != null) {
+            mirrored = true;
+            try testing.expectEqualStrings("test", line.channel_label);
+            try testing.expectEqualStrings("npm", line.source_label);
+        }
+    }
+    try testing.expect(mirrored);
+    main.update(&model, .rerun_workspace_tests);
+    try testing.expectEqual(model_mod.TestStatus.passed, model.test_status);
+}
+
+test "workspace test cancellation shares the governed Stop lifecycle" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    defer model.deinit();
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    model_mod.updateFx(&model, .run_workspace_tests, &fx);
+    try testing.expect(model.test_running);
+    try testing.expectEqual(model_mod.TestStatus.running, model.test_status);
+    try testing.expectEqual(@as(usize, 1), fx.pendingSpawnCount());
+    model_mod.updateFx(&model, .stop_terminal_task, &fx);
+    model_mod.updateFx(&model, .{ .terminal_exit = .{
+        .key = model.terminal_effect_key,
+        .code = native_sdk.effect_error_exit_code,
+        .reason = .cancelled,
+    } }, &fx);
+    try testing.expectEqual(model_mod.TestStatus.cancelled, model.test_status);
+    try testing.expectEqualStrings("cancelled", model.test_status_label);
+}
+
+test "failed workspace test creates one assertion problem and opens Problems" {
+    const root = "zig-out/test-model-test-failure";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root ++ "/tests");
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{
+        .sub_path = root ++ "/package.json",
+        .data =
+        \\{"scripts":{"test":"echo ' ❯ tests/fail.test.ts:2:1'; echo '    at Object.<anonymous> (tests/fail.test.ts:2:1)'; exit 1"}}
+        ,
+    });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{
+        .sub_path = root ++ "/tests/fail.test.ts",
+        .data = "one\ntwo\n",
+    });
+    var model = main.initialModel();
+    defer model.deinit();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    main.update(&model, .run_workspace_tests);
+    try testing.expectEqual(model_mod.TestStatus.failed, model.test_status);
+    try testing.expectEqual(@as(usize, 1), model.problems.len);
+    try testing.expectEqualStrings("TEST", model.problems[0].kind);
+    try testing.expect(model.showBottomProblems());
+}
+
+test "problem severity and source controls expose filtered counts" {
+    var model = main.initialModel();
+    defer model.deinit();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.terminal_command.set("echo 'src/app.tsx(1,1): error TS1: broken'");
+    main.update(&model, .run_terminal_command);
+    try testing.expectEqual(@as(u32, 1), model.problem_total_count);
+    main.update(&model, .{ .set_problem_severity_filter = .warnings });
+    try testing.expectEqual(@as(u32, 0), model.problem_filtered_count);
+    try testing.expectEqual(@as(usize, 0), model.problems.len);
+    main.update(&model, .{ .set_problem_severity_filter = .errors });
+    main.update(&model, .{ .set_problem_source_filter = .terminal });
+    try testing.expectEqual(@as(u32, 1), model.problem_filtered_count);
+    try testing.expectEqualStrings("terminal", model.problems[0].source_label);
+}

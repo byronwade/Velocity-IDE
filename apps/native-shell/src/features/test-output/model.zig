@@ -1,5 +1,5 @@
-//! Test Output feature model stub.
-//! Status: stub. Mode: dev. Startup allowed: False.
+//! Test Output lazy feature state.
+//! Status: working. Mode: dev. Startup allowed: False.
 
 pub const feature_id = "feature.test-output";
 pub const mode = "dev";
