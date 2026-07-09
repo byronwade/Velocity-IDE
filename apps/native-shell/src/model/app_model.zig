@@ -135,6 +135,17 @@ pub const Msg = union(enum) {
     goto_line,
     close_active_tab,
     save_all,
+    close_other_tabs,
+    close_all_tabs,
+    pin_active_tab,
+    toggle_focus_mode,
+    toggle_shortcuts_help,
+    transform_upper,
+    transform_lower,
+    transform_sort_lines,
+    transform_reverse_lines,
+    toggle_trim_trailing,
+    toggle_final_newline,
     update_replace_text: canvas.TextInputEvent,
     replace_once,
     replace_all,
@@ -189,6 +200,17 @@ pub const Msg = union(enum) {
         "goto_line",
         "close_active_tab",
         "save_all",
+        "close_other_tabs",
+        "close_all_tabs",
+        "pin_active_tab",
+        "toggle_focus_mode",
+        "toggle_shortcuts_help",
+        "transform_upper",
+        "transform_lower",
+        "transform_sort_lines",
+        "transform_reverse_lines",
+        "toggle_trim_trailing",
+        "toggle_final_newline",
         "replace_once",
         "replace_all",
         "copy_active_path",
@@ -279,6 +301,11 @@ pub const Model = struct {
     find_label_buf: [48]u8 = undefined,
     find_case_sensitive: bool = false,
     auto_save: bool = false,
+    trim_trailing_ws: bool = false,
+    insert_final_newline: bool = true,
+    focus_mode: bool = false,
+    shortcuts_help_visible: bool = false,
+    pinned_tab_id: u32 = 0,
     breadcrumb: []const u8 = "",
     breadcrumb_buf: [260]u8 = undefined,
     quick_query: canvas.TextBuffer(max_quick_query) = .{},
@@ -413,6 +440,12 @@ pub const Model = struct {
         "find_matches",
         "find_case_sensitive",
         "auto_save",
+        "trim_trailing_ws",
+        "insert_final_newline",
+        "focus_mode",
+        "pinned_tab_id",
+        "show_terminal",
+        "show_agent_panel",
         "breadcrumb",
         "breadcrumb_buf",
         "quick_query",
@@ -664,6 +697,30 @@ pub const Model = struct {
         return if (model.auto_save) "Auto Save: on" else "Auto Save: off";
     }
 
+    pub fn trimTrailingLabel(model: *const Model) []const u8 {
+        return if (model.trim_trailing_ws) "Trim WS: on" else "Trim WS: off";
+    }
+
+    pub fn finalNewlineLabel(model: *const Model) []const u8 {
+        return if (model.insert_final_newline) "Final NL: on" else "Final NL: off";
+    }
+
+    pub fn focusModeLabel(model: *const Model) []const u8 {
+        return if (model.focus_mode) "Focus: on" else "Focus: off";
+    }
+
+    pub fn pinLabel(model: *const Model) []const u8 {
+        return if (model.pinned_tab_id != 0 and model.pinned_tab_id == model.active_tab_id) "Unpin" else "Pin";
+    }
+
+    pub fn showAgentChrome(model: *const Model) bool {
+        return model.show_agent_panel and !model.focus_mode;
+    }
+
+    pub fn showTerminalChrome(model: *const Model) bool {
+        return model.show_terminal and !model.focus_mode;
+    }
+
     pub fn findCaseLabel(model: *const Model) []const u8 {
         return if (model.find_case_sensitive) "Aa: on" else "Aa: off";
     }
@@ -718,7 +775,7 @@ pub const Model = struct {
     }
 
     pub fn showLeftPanel(model: *const Model) bool {
-        return model.current_view == .ide and model.selected_activity == .explorer;
+        return model.current_view == .ide and model.selected_activity == .explorer and !model.focus_mode;
     }
 
     pub fn showIdeChrome(model: *const Model) bool {
@@ -798,6 +855,17 @@ pub const commands = [_]CommandItem{
     .{ .id = "toggle_find_case", .title = "Toggle Find Case Sensitivity", .hint = "" },
     .{ .id = "goto_line", .title = "Go to Line", .hint = "Cmd+G" },
     .{ .id = "close_active_tab", .title = "Close Active Tab", .hint = "" },
+    .{ .id = "close_other_tabs", .title = "Close Other Tabs", .hint = "" },
+    .{ .id = "close_all_tabs", .title = "Close All Tabs", .hint = "" },
+    .{ .id = "pin_active_tab", .title = "Pin / Unpin Active Tab", .hint = "" },
+    .{ .id = "toggle_focus_mode", .title = "Toggle Focus Mode", .hint = "" },
+    .{ .id = "toggle_shortcuts_help", .title = "Keyboard Shortcuts Help", .hint = "Cmd+Shift+/" },
+    .{ .id = "transform_upper", .title = "Transform: Upper Case", .hint = "" },
+    .{ .id = "transform_lower", .title = "Transform: Lower Case", .hint = "" },
+    .{ .id = "transform_sort_lines", .title = "Transform: Sort Lines", .hint = "" },
+    .{ .id = "transform_reverse_lines", .title = "Transform: Reverse Lines", .hint = "" },
+    .{ .id = "toggle_trim_trailing", .title = "Toggle Trim Trailing Whitespace", .hint = "" },
+    .{ .id = "toggle_final_newline", .title = "Toggle Insert Final Newline", .hint = "" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
     .{ .id = "run_terminal", .title = "Run Terminal Command", .hint = "" },
     .{ .id = "run_search", .title = "Search Workspace", .hint = "" },
@@ -927,6 +995,28 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 runGotoLine(model);
             } else if (std.mem.eql(u8, id, "close_active_tab")) {
                 closeActiveTab(model);
+            } else if (std.mem.eql(u8, id, "close_other_tabs")) {
+                closeOtherTabs(model);
+            } else if (std.mem.eql(u8, id, "close_all_tabs")) {
+                closeAllTabs(model);
+            } else if (std.mem.eql(u8, id, "pin_active_tab")) {
+                pinActiveTab(model);
+            } else if (std.mem.eql(u8, id, "toggle_focus_mode")) {
+                toggleFocusMode(model);
+            } else if (std.mem.eql(u8, id, "toggle_shortcuts_help")) {
+                model.shortcuts_help_visible = !model.shortcuts_help_visible;
+            } else if (std.mem.eql(u8, id, "transform_upper")) {
+                runTextTransform(model, .upper);
+            } else if (std.mem.eql(u8, id, "transform_lower")) {
+                runTextTransform(model, .lower);
+            } else if (std.mem.eql(u8, id, "transform_sort_lines")) {
+                runTextTransform(model, .sort);
+            } else if (std.mem.eql(u8, id, "transform_reverse_lines")) {
+                runTextTransform(model, .reverse);
+            } else if (std.mem.eql(u8, id, "toggle_trim_trailing")) {
+                toggleTrimTrailing(model);
+            } else if (std.mem.eql(u8, id, "toggle_final_newline")) {
+                toggleFinalNewline(model);
             } else if (std.mem.eql(u8, id, "run_terminal")) {
                 runTerminalFromModel(model, fx);
             } else if (std.mem.eql(u8, id, "run_search")) {
@@ -1045,6 +1135,17 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         },
         .close_tab => |id| closeTabById(model, id),
         .close_active_tab => closeActiveTab(model),
+        .close_other_tabs => closeOtherTabs(model),
+        .close_all_tabs => closeAllTabs(model),
+        .pin_active_tab => pinActiveTab(model),
+        .toggle_focus_mode => toggleFocusMode(model),
+        .toggle_shortcuts_help => model.shortcuts_help_visible = !model.shortcuts_help_visible,
+        .transform_upper => runTextTransform(model, .upper),
+        .transform_lower => runTextTransform(model, .lower),
+        .transform_sort_lines => runTextTransform(model, .sort),
+        .transform_reverse_lines => runTextTransform(model, .reverse),
+        .toggle_trim_trailing => toggleTrimTrailing(model),
+        .toggle_final_newline => toggleFinalNewline(model),
         .select_tab => |id| {
             model.active_tab_id = id;
             if (model.workspace_from_disk) {
@@ -1480,6 +1581,7 @@ fn saveActiveDocument(model: *Model) void {
         model.toast = "No workspace";
         return;
     };
+    applySaveHygiene(model);
     ws.saveActiveFile(modelIo(model), model.document.text()) catch {
         model.toast = "Save failed";
         return;
@@ -1487,6 +1589,30 @@ fn saveActiveDocument(model: *Model) void {
     model.document_dirty = false;
     model.toast = "Saved";
     syncActiveTabDirty(model);
+}
+
+fn applySaveHygiene(model: *Model) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    var text = model.document.text();
+    var changed = false;
+    if (model.trim_trailing_ws) {
+        if (edit_transforms.trimTrailingWhitespace(text, &out)) |n| {
+            if (!std.mem.eql(u8, text, out[0..n])) {
+                model.document.set(out[0..n]);
+                text = model.document.text();
+                changed = true;
+            }
+        }
+    }
+    if (model.insert_final_newline) {
+        if (edit_transforms.ensureFinalNewline(text, &out)) |n| {
+            if (!std.mem.eql(u8, text, out[0..n])) {
+                model.document.set(out[0..n]);
+                changed = true;
+            }
+        }
+    }
+    if (changed) refreshDocStats(model);
 }
 
 fn saveAllDirtyTabs(model: *Model) void {
@@ -1737,6 +1863,11 @@ fn clearFind(model: *Model) void {
 }
 
 fn dismissOverlay(model: *Model) void {
+    if (model.shortcuts_help_visible) {
+        model.shortcuts_help_visible = false;
+        model.toast = "";
+        return;
+    }
     if (model.command_palette_open) {
         model.command_palette_open = false;
         model.command_query.clear();
@@ -1747,6 +1878,11 @@ fn dismissOverlay(model: *Model) void {
     if (model.quick_open_visible) {
         model.quick_open_visible = false;
         model.toast = "";
+        return;
+    }
+    if (model.focus_mode) {
+        model.focus_mode = false;
+        model.toast = "Focus mode off";
         return;
     }
     if (model.find_query.text().len > 0 or model.find_matches.len > 0) {
@@ -2193,7 +2329,170 @@ fn openQuickItem(model: *Model, item_id: u32) void {
 }
 
 fn closeActiveTab(model: *Model) void {
+    if (model.pinned_tab_id != 0 and model.pinned_tab_id == model.active_tab_id) {
+        model.toast = "Unpin tab before closing";
+        return;
+    }
     closeTabById(model, model.active_tab_id);
+}
+
+fn closeOtherTabs(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const keep = model.active_tab_id;
+    // Collect ids to close (copy first — close mutates tabs).
+    var to_close: [8]u32 = undefined;
+    var n: u32 = 0;
+    for (ws.tabsSlice()) |tab| {
+        if (tab.id == keep) continue;
+        if (model.pinned_tab_id != 0 and tab.id == model.pinned_tab_id) continue;
+        if (n >= to_close.len) break;
+        to_close[n] = tab.id;
+        n += 1;
+    }
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        // Force-close without dirty soft-confirm for bulk close-other.
+        if (model.document_dirty and model.active_tab_id == to_close[i]) model.document_dirty = false;
+        // Remember + close
+        const id = to_close[i];
+        if (ws.findNode(id)) |node| {
+            pushClosedTab(model, node.path, scannerBaseName(node.path));
+        } else {
+            for (ws.tabsSlice()) |tab| {
+                if (tab.id == id) {
+                    pushClosedTab(model, tab.path, tab.title);
+                    break;
+                }
+            }
+        }
+        ws.closeTab(id);
+    }
+    model.open_tabs = ws.tabsSlice();
+    model.active_tab_id = keep;
+    model.selected_file_id = keep;
+    ws.openFileById(modelIo(model), keep) catch {};
+    syncDocumentFromWorkspace(model);
+    model.toast = "Closed other tabs";
+}
+
+fn closeAllTabs(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    if (model.document_dirty) {
+        if (!std.mem.startsWith(u8, model.toast, "Close all")) {
+            model.toast = "Close all? Confirm again to discard dirty";
+            return;
+        }
+        model.document_dirty = false;
+    }
+    var to_close: [8]u32 = undefined;
+    var n: u32 = 0;
+    for (ws.tabsSlice()) |tab| {
+        if (model.pinned_tab_id != 0 and tab.id == model.pinned_tab_id) continue;
+        if (n >= to_close.len) break;
+        to_close[n] = tab.id;
+        n += 1;
+    }
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        const id = to_close[i];
+        if (ws.findNode(id)) |node| {
+            pushClosedTab(model, node.path, scannerBaseName(node.path));
+        } else {
+            for (ws.tabsSlice()) |tab| {
+                if (tab.id == id) {
+                    pushClosedTab(model, tab.path, tab.title);
+                    break;
+                }
+            }
+        }
+        ws.closeTab(id);
+    }
+    model.open_tabs = ws.tabsSlice();
+    if (ws.tab_count > 0) {
+        model.active_tab_id = ws.tabs[0].id;
+        model.selected_file_id = model.active_tab_id;
+        ws.openFileById(modelIo(model), model.active_tab_id) catch {};
+        syncDocumentFromWorkspace(model);
+    } else {
+        model.document.clear();
+        model.active_tab_id = 0;
+        model.selected_file_id = 0;
+        model.pinned_tab_id = 0;
+    }
+    model.toast = "Closed all tabs";
+}
+
+fn pinActiveTab(model: *Model) void {
+    if (model.active_tab_id == 0) {
+        model.toast = "No active tab";
+        return;
+    }
+    if (model.pinned_tab_id == model.active_tab_id) {
+        model.pinned_tab_id = 0;
+        model.toast = "Tab unpinned";
+    } else {
+        model.pinned_tab_id = model.active_tab_id;
+        model.toast = "Tab pinned";
+    }
+}
+
+fn toggleFocusMode(model: *Model) void {
+    model.focus_mode = !model.focus_mode;
+    if (model.focus_mode) {
+        model.current_view = .ide;
+        model.toast = "Focus mode on";
+    } else {
+        model.toast = "Focus mode off";
+    }
+}
+
+const TextTransformKind = enum { upper, lower, sort, reverse };
+
+fn runTextTransform(model: *Model, kind: TextTransformKind) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const text = model.document.text();
+    const n = switch (kind) {
+        .upper => edit_transforms.toUpperCase(text, &out),
+        .lower => edit_transforms.toLowerCase(text, &out),
+        .sort => edit_transforms.sortLines(text, &out),
+        .reverse => edit_transforms.reverseLines(text, &out),
+    } orelse {
+        model.toast = "Transform failed";
+        return;
+    };
+    const toast: []const u8 = switch (kind) {
+        .upper => "Uppercased",
+        .lower => "Lowercased",
+        .sort => "Sorted lines",
+        .reverse => "Reversed lines",
+    };
+    applyDocumentTransform(model, out[0..n], toast);
+}
+
+fn toggleTrimTrailing(model: *Model) void {
+    model.trim_trailing_ws = !model.trim_trailing_ws;
+    persistPrefs(model);
+    model.toast = if (model.trim_trailing_ws) "Trim trailing WS on" else "Trim trailing WS off";
+}
+
+fn toggleFinalNewline(model: *Model) void {
+    model.insert_final_newline = !model.insert_final_newline;
+    persistPrefs(model);
+    model.toast = if (model.insert_final_newline) "Final newline on" else "Final newline off";
 }
 
 fn closeTabById(model: *Model, id: u32) void {
@@ -2367,6 +2666,8 @@ fn applyPrefsToModel(model: *Model) void {
     model.show_agent_panel = model.prefs.show_agent;
     model.auto_save = model.prefs.auto_save;
     model.find_case_sensitive = model.prefs.find_case_sensitive;
+    model.trim_trailing_ws = model.prefs.trim_trailing_ws;
+    model.insert_final_newline = model.prefs.insert_final_newline;
     if (model.prefs.last_path_len > 0 and model.open_path.text().len == 0) {
         model.open_path.set(model.prefs.lastPathSlice());
     }
@@ -2391,6 +2692,8 @@ fn persistPrefs(model: *Model) void {
     model.prefs.show_agent = model.show_agent_panel;
     model.prefs.auto_save = model.auto_save;
     model.prefs.find_case_sensitive = model.find_case_sensitive;
+    model.prefs.trim_trailing_ws = model.trim_trailing_ws;
+    model.prefs.insert_final_newline = model.insert_final_newline;
     model.prefs.save(modelIo(model));
 }
 

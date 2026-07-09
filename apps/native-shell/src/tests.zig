@@ -585,3 +585,49 @@ test "open search hit jumps to line toast" {
     main.update(&model, .{ .open_search_hit = id });
     try testing.expect(std.mem.indexOf(u8, model.toast, "Line") != null);
 }
+
+test "text transforms upper lower sort" {
+    var model = main.initialModel();
+    model.document.set("b\na\nc\n");
+    main.update(&model, .transform_sort_lines);
+    try testing.expectEqualStrings("a\nb\nc\n", model.document.text());
+    main.update(&model, .transform_upper);
+    try testing.expectEqualStrings("A\nB\nC\n", model.document.text());
+    main.update(&model, .transform_lower);
+    try testing.expectEqualStrings("a\nb\nc\n", model.document.text());
+}
+
+test "focus mode hides chrome helpers" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.show_terminal = true;
+    model.show_agent_panel = true;
+    main.update(&model, .toggle_focus_mode);
+    try testing.expect(model.focus_mode);
+    try testing.expect(!model_mod.Model.showLeftPanel(&model));
+    try testing.expect(!model_mod.Model.showTerminalChrome(&model));
+    try testing.expect(!model_mod.Model.showAgentChrome(&model));
+}
+
+test "pin blocks close until unpinned" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .pin_active_tab);
+    try testing.expect(model.pinned_tab_id == model.active_tab_id);
+    main.update(&model, .close_active_tab);
+    try testing.expectEqualStrings("Unpin tab before closing", model.toast);
+    main.update(&model, .pin_active_tab);
+    try testing.expect(model.pinned_tab_id == 0);
+}
+
+test "save hygiene trims trailing whitespace" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.trim_trailing_ws = true;
+    model.insert_final_newline = true;
+    model.document.set("hello  ");
+    model.document_dirty = true;
+    main.update(&model, .save_file);
+    try testing.expectEqualStrings("hello\n", model.document.text());
+    try testing.expect(!model.document_dirty);
+}

@@ -43,7 +43,13 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Dirty tab marker | Active tab title shows ` *` while unsaved. |
 | Search hit count | Search status badge reports `N hits`. |
 | Terminal history | ↑/↓ recall last commands (in-session). |
-| Command palette | Open Folder, Save, Search, Git refresh, Terminal, theme, safe mode. |
+| Close Other / Close All | Tab bar + palette close non-active or all tabs (pin blocks close). |
+| Pin active tab | Pin/unpin active tab; pinned tab refuses close until unpinned. |
+| Save hygiene | Prefs: trim trailing whitespace + insert final newline on save. |
+| Text transforms | Upper / lower / sort lines / reverse lines on active document. |
+| Focus mode | Hides left panel, agent, and terminal chrome for editing. |
+| Shortcuts help | Overlay lists core keybindings (Cmd+Shift+/). |
+| Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |
 | Agent panel | Local task board only — no network AI. |
 | Telemetry | Off. |

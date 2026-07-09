@@ -174,3 +174,171 @@ test "indent and outdent" {
     const n2 = outdentLines(out[0..n1], 2, &out).?;
     try std.testing.expectEqualStrings("a\nb\n", out[0..n2]);
 }
+
+pub fn toUpperCase(text: []const u8, out: []u8) ?usize {
+    if (text.len > out.len) return null;
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        out[i] = std.ascii.toUpper(text[i]);
+    }
+    return text.len;
+}
+
+pub fn toLowerCase(text: []const u8, out: []u8) ?usize {
+    if (text.len > out.len) return null;
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        out[i] = std.ascii.toLower(text[i]);
+    }
+    return text.len;
+}
+
+/// Lexicographic sort of lines (stable enough for MVP; trailing newline preserved if present).
+pub fn sortLines(text: []const u8, out: []u8) ?usize {
+    const max_lines = 512;
+    var starts: [max_lines]usize = undefined;
+    var lens: [max_lines]usize = undefined;
+    var count: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    const has_trailing_nl = text.len > 0 and text[text.len - 1] == '\n';
+    while (i <= text.len and count < max_lines) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            // Skip the final empty segment after trailing newline
+            if (i == text.len and has_trailing_nl and start == text.len) break;
+            starts[count] = start;
+            lens[count] = i - start;
+            count += 1;
+            start = i + 1;
+            if (i == text.len) break;
+        }
+    }
+    // Simple insertion sort by line content
+    var a: usize = 1;
+    while (a < count) : (a += 1) {
+        var b = a;
+        while (b > 0) {
+            const left = text[starts[b - 1] ..][0..lens[b - 1]];
+            const right = text[starts[b] ..][0..lens[b]];
+            if (std.mem.order(u8, left, right) != .gt) break;
+            const ts = starts[b - 1];
+            const tl = lens[b - 1];
+            starts[b - 1] = starts[b];
+            lens[b - 1] = lens[b];
+            starts[b] = ts;
+            lens[b] = tl;
+            b -= 1;
+        }
+    }
+    var dst: usize = 0;
+    var li: usize = 0;
+    while (li < count) : (li += 1) {
+        const line = text[starts[li] ..][0..lens[li]];
+        if (dst + line.len > out.len) return null;
+        @memcpy(out[dst..][0..line.len], line);
+        dst += line.len;
+        if (li + 1 < count or has_trailing_nl) {
+            if (dst + 1 > out.len) return null;
+            out[dst] = '\n';
+            dst += 1;
+        }
+    }
+    return dst;
+}
+
+pub fn reverseLines(text: []const u8, out: []u8) ?usize {
+    const max_lines = 512;
+    var starts: [max_lines]usize = undefined;
+    var lens: [max_lines]usize = undefined;
+    var count: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    const has_trailing_nl = text.len > 0 and text[text.len - 1] == '\n';
+    while (i <= text.len and count < max_lines) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            if (i == text.len and has_trailing_nl and start == text.len) break;
+            starts[count] = start;
+            lens[count] = i - start;
+            count += 1;
+            start = i + 1;
+            if (i == text.len) break;
+        }
+    }
+    var dst: usize = 0;
+    var li: usize = count;
+    while (li > 0) {
+        li -= 1;
+        const line = text[starts[li] ..][0..lens[li]];
+        if (dst + line.len > out.len) return null;
+        @memcpy(out[dst..][0..line.len], line);
+        dst += line.len;
+        if (li > 0 or has_trailing_nl) {
+            if (dst + 1 > out.len) return null;
+            out[dst] = '\n';
+            dst += 1;
+        }
+    }
+    return dst;
+}
+
+pub fn trimTrailingWhitespace(text: []const u8, out: []u8) ?usize {
+    var dst: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= text.len) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            var end = i;
+            while (end > start and (text[end - 1] == ' ' or text[end - 1] == '\t' or text[end - 1] == '\r')) {
+                end -= 1;
+            }
+            const line = text[start..end];
+            if (dst + line.len > out.len) return null;
+            @memcpy(out[dst..][0..line.len], line);
+            dst += line.len;
+            if (i < text.len) {
+                if (dst + 1 > out.len) return null;
+                out[dst] = '\n';
+                dst += 1;
+            }
+            start = i + 1;
+        }
+    }
+    return dst;
+}
+
+pub fn ensureFinalNewline(text: []const u8, out: []u8) ?usize {
+    if (text.len == 0) {
+        if (out.len == 0) return null;
+        out[0] = '\n';
+        return 1;
+    }
+    if (text[text.len - 1] == '\n') {
+        if (text.len > out.len) return null;
+        @memcpy(out[0..text.len], text);
+        return text.len;
+    }
+    if (text.len + 1 > out.len) return null;
+    @memcpy(out[0..text.len], text);
+    out[text.len] = '\n';
+    return text.len + 1;
+}
+
+test "case and sort transforms" {
+    var out: [128]u8 = undefined;
+    const u = toUpperCase("AbC", &out).?;
+    try std.testing.expectEqualStrings("ABC", out[0..u]);
+    const l = toLowerCase("AbC", &out).?;
+    try std.testing.expectEqualStrings("abc", out[0..l]);
+    const s = sortLines("c\na\nb\n", &out).?;
+    try std.testing.expectEqualStrings("a\nb\nc\n", out[0..s]);
+    const r = reverseLines("a\nb\nc\n", &out).?;
+    try std.testing.expectEqualStrings("c\nb\na\n", out[0..r]);
+}
+
+test "trim trailing and final newline" {
+    var out: [64]u8 = undefined;
+    const t = trimTrailingWhitespace("a  \nb\t\n", &out).?;
+    try std.testing.expectEqualStrings("a\nb\n", out[0..t]);
+    const n = ensureFinalNewline("hi", &out).?;
+    try std.testing.expectEqualStrings("hi\n", out[0..n]);
+}

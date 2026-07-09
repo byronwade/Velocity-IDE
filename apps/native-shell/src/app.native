@@ -110,13 +110,22 @@
                 <button size="sm" variant="ghost" selected="{t.id == active_tab_id}" on-press="select_tab:{t.id}">{t.title}</button>
               </for>
               <button size="sm" variant="ghost" on-press="close_active_tab">x</button>
+              <button size="sm" variant="ghost" on-press="close_other_tabs">Others</button>
+              <button size="sm" variant="ghost" on-press="close_all_tabs">All</button>
+              <button size="sm" variant="ghost" on-press="pin_active_tab">{pinLabel}</button>
               <button size="sm" variant="ghost" on-press="reopen_closed_tab">Reopen</button>
               <spacer grow="1" />
               <button size="sm" variant="ghost" on-press="toggle_line_comment">//</button>
               <button size="sm" variant="ghost" on-press="indent_document">In</button>
               <button size="sm" variant="ghost" on-press="outdent_document">Out</button>
+              <button size="sm" variant="ghost" on-press="transform_upper">AA</button>
+              <button size="sm" variant="ghost" on-press="transform_lower">aa</button>
+              <button size="sm" variant="ghost" on-press="transform_sort_lines">Sort</button>
+              <button size="sm" variant="ghost" on-press="transform_reverse_lines">Rev</button>
               <text-field text="{gotoLineText}" placeholder="Line" on-input="update_goto_line" on-submit="goto_line" width="72" label="Go to line" />
               <button size="sm" variant="ghost" on-press="goto_line">Go</button>
+              <button size="sm" variant="ghost" on-press="toggle_focus_mode">{focusModeLabel}</button>
+              <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Keys</button>
               <button size="sm" variant="ghost" on-press="toggle_agent_panel">Agent</button>
               <button size="sm" variant="ghost" on-press="toggle_terminal">Terminal</button>
             </row>
@@ -155,7 +164,7 @@
               </column>
 
               <!-- Agent panel -->
-              <if test="{show_agent_panel}">
+              <if test="{showAgentChrome}">
                 <separator />
                 <column width="320" gap="8" padding="10" background="surface">
                   <row gap="8" cross="center">
@@ -188,7 +197,7 @@
             </row>
 
             <!-- Terminal (pipe runner MVP) -->
-            <if test="{show_terminal}">
+            <if test="{showTerminalChrome}">
               <separator />
               <column height="200" gap="4" padding="8" background="surface">
                 <row gap="8" cross="center">
@@ -374,6 +383,9 @@
               <button variant="ghost" on-press="toggle_agent_panel">{agentPanelLabel}</button>
               <button variant="ghost" on-press="toggle_auto_save">{autoSaveLabel}</button>
               <button variant="ghost" on-press="toggle_find_case">Find {findCaseLabel}</button>
+              <button variant="ghost" on-press="toggle_trim_trailing">{trimTrailingLabel}</button>
+              <button variant="ghost" on-press="toggle_final_newline">{finalNewlineLabel}</button>
+              <button variant="ghost" on-press="toggle_focus_mode">{focusModeLabel}</button>
               <button variant="ghost" on-press="save_prefs">Save Preferences</button>
               <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
               <button variant="ghost" on-press="open_process_governor">Process Governor</button>
@@ -437,6 +449,20 @@
           </column>
         </scroll>
         <button size="sm" variant="ghost" on-press="close_quick_open">Close</button>
+      </column>
+    </column>
+  </if>
+
+  <!-- Keyboard shortcuts help -->
+  <if test="{shortcuts_help_visible}">
+    <column grow="1" main="start" cross="center" padding="48" background="surface_pressed">
+      <column width="480" gap="8" padding="12" background="surface">
+        <text>Keyboard Shortcuts</text>
+        <text size="sm" foreground="text_muted">Cmd+K palette / Cmd+P quick open / Cmd+F find / Cmd+G go to line</text>
+        <text size="sm" foreground="text_muted">Cmd+S save / Cmd+/ comment / Cmd+Shift+T reopen tab</text>
+        <text size="sm" foreground="text_muted">Ctrl+` terminal / Esc dismiss overlays / Focus mode hides chrome</text>
+        <text size="sm" foreground="text_muted">Close Others / Close All / Pin from the tab bar</text>
+        <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>
       </column>
     </column>
   </if>

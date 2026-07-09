@@ -14,6 +14,8 @@ pub const Prefs = struct {
     show_agent: bool = true,
     auto_save: bool = false,
     find_case_sensitive: bool = false,
+    trim_trailing_ws: bool = false,
+    insert_final_newline: bool = true,
     recent_count: u32 = 0,
     recent_paths: [max_recent][max_path]u8 = undefined,
     recent_lens: [max_recent]usize = [_]usize{0} ** max_recent,
@@ -106,6 +108,8 @@ pub const Prefs = struct {
             if (std.mem.eql(u8, key, "show_agent")) self.show_agent = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "auto_save")) self.auto_save = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "find_case_sensitive")) self.find_case_sensitive = std.mem.eql(u8, val, "1");
+            if (std.mem.eql(u8, key, "trim_trailing_ws")) self.trim_trailing_ws = std.mem.eql(u8, val, "1");
+            if (std.mem.eql(u8, key, "insert_final_newline")) self.insert_final_newline = std.mem.eql(u8, val, "1");
             if (std.mem.startsWith(u8, key, "recent")) self.pushRecent(val);
         }
     }
@@ -133,6 +137,10 @@ pub const Prefs = struct {
         append(&out, &len, if (self.auto_save) "1" else "0");
         append(&out, &len, "\nfind_case_sensitive=");
         append(&out, &len, if (self.find_case_sensitive) "1" else "0");
+        append(&out, &len, "\ntrim_trailing_ws=");
+        append(&out, &len, if (self.trim_trailing_ws) "1" else "0");
+        append(&out, &len, "\ninsert_final_newline=");
+        append(&out, &len, if (self.insert_final_newline) "1" else "0");
         append(&out, &len, "\n");
         var i: u32 = 0;
         while (i < self.recent_count) : (i += 1) {
@@ -152,6 +160,8 @@ test "prefs roundtrip theme and recent" {
     p.show_terminal = false;
     p.auto_save = true;
     p.find_case_sensitive = true;
+    p.trim_trailing_ws = true;
+    p.insert_final_newline = false;
     p.save(std.testing.io);
     var p2: Prefs = .{};
     p2.load(std.testing.io);
@@ -160,5 +170,7 @@ test "prefs roundtrip theme and recent" {
     try std.testing.expect(!p2.show_terminal);
     try std.testing.expect(p2.auto_save);
     try std.testing.expect(p2.find_case_sensitive);
+    try std.testing.expect(p2.trim_trailing_ws);
+    try std.testing.expect(!p2.insert_final_newline);
     std.Io.Dir.cwd().deleteTree(std.testing.io, ".velocity") catch {};
 }
