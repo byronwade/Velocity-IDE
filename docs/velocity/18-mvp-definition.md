@@ -79,8 +79,10 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Collapse blank lines | Reduce consecutive blank lines to one. |
 | Copy all tab paths | Join open tab paths into toast (newline-separated). |
 | New untitled | `Cmd+N` creates `Untitled-N.txt` in the workspace. |
-| SCM stage / commit | Stage all (`git add -A`) + commit with message field. |
-| SCM unstage / discard | Unstage all (`git reset HEAD`); discard working tree with soft confirm. |
+| Tasks | Detect bounded root `package.json` scripts on open/refresh; select and run via Terminal + Process Governor (`Cmd+Shift+B`) with diagnostics parsed on exit. |
+| Workspace replace | Search-sidebar literal preview and double-confirm apply; refuse dirty or disk-stale matching open tabs, then rescan/reload. |
+| SCM stage / commit | Stage all or one file, unstage all or one file, and commit with message field. |
+| SCM restore / discard | Restore one tracked file with double confirmation and dirty/untracked refusal; discard all tracked working-tree changes with soft confirm. |
 | Refresh explorer | Rescan workspace tree while preserving open tabs. |
 | Close saved tabs | Close non-active clean tabs (keeps dirty + pinned + active). |
 | Compare with saved | Toast whether the buffer matches disk (byte/line summary). |
@@ -93,7 +95,7 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Go to symbol | Cmd+Shift+O opens symbol palette from heuristic outline (or jumps via Find query). |
 | Outline | Sidebar panel lists heuristic symbols (fn/class/struct/def/headings); click to jump. |
 | Go to Definition | Cmd+Shift+D / Find→Def: bounded workspace text search for definition-like lines (no LSP). |
-| Bottom panel | Terminal / Output / Problems tabs under the editor (Ctrl+` toggles Terminal). |
+| Bottom panel | Terminal / Output / Problems tabs with status counts under the editor (Control+backtick for Terminal, `Cmd+J` for panel). Terminal includes detected workspace tasks. |
 | Output channel | Bounded ring of status lines (definition search, etc.). |
 | New folder | Create relative directory from New-path field. |
 | File size | Toast active buffer byte size. |

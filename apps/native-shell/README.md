@@ -17,6 +17,7 @@ npm run test     # headless UI tests
 npm run dev      # open native window (macOS primary; Linux/Windows supported by SDK)
 npm run build    # ReleaseFast binary
 npm run perf-smoke
+npm run task-smoke
 ```
 
 Or with the CLI directly:
@@ -37,6 +38,17 @@ the persisted `disk_poll_interval_ms` preference is ready for that timer.
 Closing through the shell's **Close Window** command writes the bounded session
 to `<workspace>/.velocity/hot-exit.bin`; reopening that workspace restores open
 tabs and dirty working copies.
+
+Root `package.json` scripts are detected on workspace open and manual refresh.
+Select one in the Terminal bottom panel or press **Cmd+Shift+B** to run the
+current selection through the terminal and Process Governor. Task output is
+parsed into Problems when the process exits.
+
+Workspace replacement lives in Search: enter search and replacement text,
+preview affected files, then confirm Apply twice. It refuses matching open tabs
+with unsaved or externally changed contents. Source Control provides per-file
+Stage, Unstage, and guarded Restore controls in addition to Stage All and
+Commit.
 
 # Layout
 

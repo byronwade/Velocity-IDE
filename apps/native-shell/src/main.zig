@@ -73,6 +73,12 @@ pub const app_shortcuts = [_]native_sdk.Shortcut{
     .{ .id = "format_document", .key = "f", .modifiers = .{ .shift = true, .option = true } },
     .{ .id = "go_to_symbol", .key = "o", .modifiers = .{ .primary = true, .shift = true } },
     .{ .id = "go_to_definition", .key = "d", .modifiers = .{ .primary = true, .shift = true } },
+    .{ .id = "open_folder", .key = "o", .modifiers = .{ .primary = true } },
+    .{ .id = "open_settings", .key = ",", .modifiers = .{ .primary = true } },
+    .{ .id = "save_all", .key = "s", .modifiers = .{ .primary = true, .shift = true } },
+    .{ .id = "workspace_search", .key = "f", .modifiers = .{ .primary = true, .shift = true } },
+    .{ .id = "toggle_bottom_panel", .key = "j", .modifiers = .{ .primary = true } },
+    .{ .id = "run_selected_task", .key = "b", .modifiers = .{ .primary = true, .shift = true } },
     .{ .id = "escape", .key = "escape" },
     .{ .id = "toggle_terminal", .key = "`", .modifiers = .{ .control = true } },
     .{ .id = "save_file", .key = "s", .modifiers = .{ .primary = true } },
@@ -97,6 +103,12 @@ pub fn onCommand(name: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "format_document")) return .format_document;
     if (std.mem.eql(u8, name, "go_to_symbol")) return .go_to_symbol;
     if (std.mem.eql(u8, name, "go_to_definition")) return .go_to_definition;
+    if (std.mem.eql(u8, name, "open_folder")) return .{ .open_project = "acme-dashboard" };
+    if (std.mem.eql(u8, name, "open_settings")) return .open_settings;
+    if (std.mem.eql(u8, name, "save_all")) return .save_all;
+    if (std.mem.eql(u8, name, "workspace_search")) return .{ .select_activity = .search };
+    if (std.mem.eql(u8, name, "toggle_bottom_panel")) return .toggle_bottom_panel;
+    if (std.mem.eql(u8, name, "run_selected_task")) return .run_selected_task;
     if (std.mem.eql(u8, name, "escape")) return .dismiss_overlay;
     if (std.mem.eql(u8, name, "toggle_terminal")) return .toggle_terminal;
     if (std.mem.eql(u8, name, "save_file")) return .save_file;
@@ -180,6 +192,8 @@ test {
     _ = @import("workspace/hot_exit_store.zig");
     _ = @import("workspace/undo_stack.zig");
     _ = @import("workspace/disk_sync.zig");
+    _ = @import("workspace/task_detector.zig");
+    _ = @import("workspace/workspace_replace.zig");
     _ = @import("workspace/outline.zig");
     _ = @import("workspace/go_to_def.zig");
     _ = @import("workspace/editor_view.zig");

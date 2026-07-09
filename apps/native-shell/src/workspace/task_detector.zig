@@ -157,11 +157,12 @@ fn tokenString(token: std.json.Token) ?[]const u8 {
 test "discovers package scripts from fixture" {
     var detector: TaskDetector = .{};
     const count = try detector.discover(std.testing.io, "fixtures/acme-dashboard");
-    try std.testing.expectEqual(@as(u32, 2), count);
+    try std.testing.expectEqual(@as(u32, 3), count);
     try std.testing.expectEqualStrings("dev", detector.tasksSlice()[0].name);
     try std.testing.expectEqualStrings("next dev", detector.tasksSlice()[0].command);
     try std.testing.expectEqualStrings("test", detector.tasksSlice()[1].name);
     try std.testing.expectEqualStrings("vitest", detector.tasksSlice()[1].command);
+    try std.testing.expectEqualStrings("task-smoke", detector.tasksSlice()[2].name);
 }
 
 test "decodes escaped script strings into owned bounded pools" {

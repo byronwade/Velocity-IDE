@@ -42,16 +42,16 @@
     <if test="{showShell}">
       <row grow="1">
         <!-- Slim activity rail -->
-        <column width="60" gap="2" padding="4" background="surface" cross="center">
-          <button size="sm" variant="ghost" selected="{explorerSelected}" on-press="select_activity:{activity_explorer}" label="Explorer">Files</button>
-          <button size="sm" variant="ghost" selected="{searchSelected}" on-press="select_activity:{activity_search}" label="Search">Find</button>
-          <button size="sm" variant="ghost" selected="{scmSelected}" on-press="select_activity:{activity_scm}" label="Source Control">Git</button>
-          <button size="sm" variant="ghost" selected="{outlineSelected}" on-press="select_activity:{activity_outline}" label="Outline">Code</button>
-          <button size="sm" variant="ghost" selected="{problemsSelected}" on-press="select_activity:{activity_problems}" label="Problems">Issues</button>
-          <button size="sm" variant="ghost" selected="{agentsSelected}" on-press="select_activity:{activity_agents}" label="Agents">Agent</button>
+        <column width="104" gap="2" padding="4" background="surface" cross="center">
+          <button size="sm" variant="ghost" selected="{explorerSelected}" on-press="select_activity:{activity_explorer}" label="Explorer: workspace files">Explorer</button>
+          <button size="sm" variant="ghost" selected="{searchSelected}" on-press="select_activity:{activity_search}" label="Search and replace across workspace">Search</button>
+          <button size="sm" variant="ghost" selected="{scmSelected}" on-press="select_activity:{activity_scm}" label="Source Control: Git changes">Source Control</button>
+          <button size="sm" variant="ghost" selected="{outlineSelected}" on-press="select_activity:{activity_outline}" label="Document outline">Outline</button>
+          <button size="sm" variant="ghost" selected="{problemsSelected}" on-press="select_activity:{activity_problems}" label="Problems and diagnostics">Problems</button>
+          <button size="sm" variant="ghost" selected="{agentsSelected}" on-press="select_activity:{activity_agents}" label="AI agents">Agents</button>
           <spacer grow="1" />
-          <button size="sm" variant="ghost" selected="{terminalSelected}" on-press="toggle_terminal" label="Terminal">Term</button>
-          <button size="sm" variant="ghost" selected="{settingsSelected}" on-press="select_activity:{activity_settings}" label="Settings">Prefs</button>
+          <button size="sm" variant="ghost" selected="{terminalSelected}" on-press="toggle_terminal" label="Toggle integrated terminal">Terminal</button>
+          <button size="sm" variant="ghost" selected="{settingsSelected}" on-press="select_activity:{activity_settings}" label="Application settings">Settings</button>
         </column>
         <separator />
 
@@ -60,7 +60,7 @@
           <column width="260" gap="6" padding="8" background="surface">
             <if test="{showSidebarExplorer}">
               <row gap="6" cross="center">
-                <text grow="1" wrap="false">{project_name}</text>
+                <text size="lg" grow="1" wrap="false">{project_name}</text>
                 <button size="sm" variant="ghost" on-press="refresh_explorer">Refresh</button>
                 <button size="sm" variant="ghost" on-press="create_new_file" label="New file">+</button>
               </row>
@@ -89,6 +89,24 @@
                 <button size="sm" variant="ghost" on-press="toggle_search_case">{searchCaseLabel}</button>
                 <button size="sm" variant="primary" on-press="run_search">Search</button>
               </row>
+              <separator />
+              <text>Replace Across Workspace</text>
+              <text-field text="{replaceText}" placeholder="Replacement text..." on-input="update_replace_text" label="Workspace replacement text" />
+              <row gap="4">
+                <button size="sm" variant="secondary" on-press="preview_workspace_replace">Preview Changes</button>
+                <button size="sm" variant="primary" on-press="apply_workspace_replace">Apply Preview</button>
+              </row>
+              <text size="sm" foreground="text_muted" wrap="true">{replaceStatus}</text>
+              <scroll height="88" label="Workspace replacement preview">
+                <column gap="2">
+                  <for each="replace_previews" key="id" as="preview">
+                    <row gap="6" padding="4" background="surface_subtle" cross="center">
+                      <text size="sm" grow="1" wrap="false">{preview.path}</text>
+                      <badge variant="secondary">{preview.replacements}</badge>
+                    </row>
+                  </for>
+                </column>
+              </scroll>
               <scroll grow="1" label="Search results">
                 <column gap="2">
                   <for each="search_hits" key="id" as="hit">
@@ -105,7 +123,7 @@
 
             <if test="{isScm}">
               <row gap="6" cross="center">
-                <text grow="1">Source Control</text>
+                <text size="lg" grow="1">Source Control</text>
                 <button size="sm" variant="ghost" on-press="refresh_git">Refresh</button>
               </row>
               <text size="sm" foreground="text_muted">{git_summary}</text>
@@ -118,9 +136,19 @@
               <scroll grow="1" label="Git changes">
                 <column gap="2">
                   <for each="git_entries" key="id" as="entry">
-                    <list-item on-press="open_git_entry:{entry.id}" padding="6" gap="6" cross="center" label="{entry.path}">
-                      <badge variant="secondary">{entry.status}</badge>
-                      <text grow="1" wrap="false">{entry.path}</text>
+                    <list-item on-press="select_git_entry:{entry.id}" selected="{entry.id == selected_git_entry_id}" padding="6" label="{entry.path}">
+                      <column grow="1" gap="3">
+                        <row gap="5" cross="center">
+                          <badge variant="secondary">{entry.status}</badge>
+                          <text grow="1" wrap="false">{entry.path}</text>
+                        </row>
+                        <row gap="3">
+                          <button size="sm" variant="ghost" on-press="open_git_entry:{entry.id}" label="Open file">Open</button>
+                          <button size="sm" variant="ghost" on-press="stage_git_entry:{entry.id}" label="Stage file">Stage</button>
+                          <button size="sm" variant="ghost" on-press="unstage_git_entry:{entry.id}" label="Unstage file">Unstage</button>
+                          <button size="sm" variant="ghost" on-press="restore_git_entry:{entry.id}" label="Restore tracked file">Restore</button>
+                        </row>
+                      </column>
                     </list-item>
                   </for>
                 </column>
@@ -187,8 +215,8 @@
                 </row>
                 <if test="{showDiskConflict}">
                   <row gap="6" padding="8" cross="center" background="warning" label="External file change conflict">
-                    <text size="sm" foreground="warning_text">FILE CONFLICT</text>
-                    <text size="sm" foreground="warning_text" grow="1" wrap="false">Changed on disk. Your unsaved working copy is protected.</text>
+                    <text foreground="warning_text">External Change Conflict</text>
+                    <text size="sm" foreground="warning_text" grow="1" wrap="false">The file changed on disk. Your unsaved working copy is protected.</text>
                     <button size="sm" variant="secondary" on-press="compare_with_saved">Compare</button>
                     <button size="sm" variant="secondary" on-press="revert_file">Reload from Disk</button>
                     <button size="sm" variant="primary" on-press="overwrite_file">Keep Mine</button>
@@ -201,7 +229,7 @@
                     <button size="sm" variant="ghost" on-press="find_prev">Prev</button>
                     <button size="sm" variant="ghost" on-press="find_next">Next</button>
                     <button size="sm" variant="secondary" on-press="run_find">Find</button>
-                    <button size="sm" variant="ghost" on-press="go_to_definition" label="Go to Definition">Def</button>
+                    <button size="sm" variant="ghost" on-press="go_to_definition" label="Go to Definition">Definition</button>
                     <button size="sm" variant="ghost" on-press="clear_find">Close</button>
                   </row>
                   <row gap="4" cross="center">
@@ -251,11 +279,11 @@
 
             <if test="{showBottomPanel}">
               <separator />
-              <column height="180" gap="4" padding="6" background="surface">
+              <column height="230" gap="5" padding="8" background="surface">
                 <row gap="4" cross="center">
-                  <button size="sm" variant="ghost" selected="{showBottomTerminal}" on-press="select_bottom_tab:{bottom_tab_terminal}">Terminal</button>
-                  <button size="sm" variant="ghost" selected="{showBottomOutput}" on-press="select_bottom_tab:{bottom_tab_output}">Output</button>
-                  <button size="sm" variant="ghost" selected="{showBottomProblems}" on-press="select_bottom_tab:{bottom_tab_problems}">Problems</button>
+                  <button size="sm" variant="ghost" selected="{showBottomTerminal}" on-press="select_bottom_tab:{bottom_tab_terminal}">Terminal · {terminalStatus}</button>
+                  <button size="sm" variant="ghost" selected="{showBottomOutput}" on-press="select_bottom_tab:{bottom_tab_output}">Output · {output_count}</button>
+                  <button size="sm" variant="ghost" selected="{showBottomProblems}" on-press="select_bottom_tab:{bottom_tab_problems}">Problems · {problemsStatus}</button>
                   <spacer grow="1" />
                   <if test="{showBottomTerminal}">
                     <badge variant="secondary">{terminalStatus}</badge>
@@ -272,6 +300,20 @@
                   <button size="sm" variant="ghost" on-press="toggle_bottom_panel">Close</button>
                 </row>
                 <if test="{showBottomTerminal}">
+                  <row gap="4" cross="center">
+                    <text>Workspace Tasks</text>
+                    <badge variant="secondary">{taskStatus}</badge>
+                    <spacer grow="1" />
+                    <button size="sm" variant="ghost" on-press="refresh_tasks">Refresh Tasks</button>
+                    <button size="sm" variant="primary" on-press="run_selected_task">Run Selected Task</button>
+                  </row>
+                  <scroll height="62" label="Detected workspace tasks">
+                    <column gap="2">
+                      <for each="workspace_tasks" key="id" as="task">
+                        <button size="sm" variant="ghost" selected="{task.id == selected_task_id}" on-press="select_task:{task.id}" label="{task.command}">{task.name}</button>
+                      </for>
+                    </column>
+                  </scroll>
                   <row gap="4" cross="center">
                     <text-field text="{terminalCommandText}" placeholder="echo hello" on-input="update_terminal_command" on-submit="run_terminal_command" grow="1" label="Terminal command" />
                     <button size="sm" variant="ghost" on-press="terminal_history_older">Prev</button>
@@ -534,8 +576,9 @@
     <column grow="1" main="start" cross="center" padding="24" background="scrim">
       <column width="480" gap="8" padding="12" background="surface">
         <text>Keyboard Shortcuts</text>
-        <text size="sm" foreground="text_muted">Cmd+K palette | Cmd+P quick open | Cmd+F find | Cmd+G go to line</text>
-        <text size="sm" foreground="text_muted">Cmd+Shift+O symbols | Cmd+Shift+D definition | Cmd+S save | Cmd+W close</text>
+        <text size="sm" foreground="text_muted">Cmd+K palette | Cmd+O open folder | Cmd+, settings | Cmd+P quick open</text>
+        <text size="sm" foreground="text_muted">Cmd+F find | Cmd+Shift+F workspace search | Cmd+G go to line | Cmd+J bottom panel</text>
+        <text size="sm" foreground="text_muted">Cmd+S save | Cmd+Shift+S save all | Cmd+Shift+B run task | Cmd+W close</text>
         <text size="sm" foreground="text_muted">Cmd+B sidebar | Ctrl+` terminal | Cmd+Z undo | Cmd+Shift+Z redo</text>
         <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>
       </column>

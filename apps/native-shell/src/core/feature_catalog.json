@@ -1494,7 +1494,7 @@
     "startupAllowed": false,
     "memoryBudgetMB": 16,
     "processBudget": {
-      "maxProcesses": 1,
+      "maxProcesses": 0,
       "killOnWorkspaceClose": true,
       "idleSuspend": true
     },
@@ -1504,9 +1504,9 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "search",
-    "implementation": "process",
+    "implementation": "native",
     "priority": "P1"
   },
   {
@@ -1809,17 +1809,18 @@
     "startupAllowed": false,
     "memoryBudgetMB": 16,
     "processBudget": {
-      "maxProcesses": 2,
+      "maxProcesses": 1,
       "killOnWorkspaceClose": true,
       "idleSuspend": true
     },
     "activation": [
       "onTaskRun",
-      "onCommand:task-runner.run"
+      "onCommand:task-runner.run",
+      "onShortcut:Cmd+Shift+B"
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "terminal",
     "implementation": "process",
     "priority": "P1"
@@ -1837,14 +1838,15 @@
       "idleSuspend": true
     },
     "activation": [
+      "onWorkspaceOpen",
       "onTaskRun",
-      "onCommand:task-detector.run"
+      "onCommand:task-detector.refresh"
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "terminal",
-    "implementation": "process",
+    "implementation": "native",
     "priority": "P2"
   },
   {
@@ -2003,7 +2005,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "scm",
     "implementation": "process",
     "priority": "P0"

@@ -10,6 +10,7 @@
     "test": "native test",
     "clean": "rm -rf .native zig-out zig-cache .zig-cache",
     "perf-smoke": "bash scripts/perf-smoke.sh",
+    "task-smoke": "bash scripts/task-smoke.sh",
     "doctor": "native doctor"
   },
   "engines": {

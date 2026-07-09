@@ -25,6 +25,8 @@ const prefs_mod = @import("../core/prefs.zig");
 const undo_stack = @import("../workspace/undo_stack.zig");
 const disk_sync = @import("../workspace/disk_sync.zig");
 const hot_exit_store = @import("../workspace/hot_exit_store.zig");
+const task_detector = @import("../workspace/task_detector.zig");
+const workspace_replace = @import("../workspace/workspace_replace.zig");
 
 pub const header_natural_height: f32 = 36;
 pub const max_command_query = 64;
@@ -37,7 +39,7 @@ pub const max_new_file_path = 160;
 pub const max_find_query = find_in_doc.max_query;
 pub const max_quick_query = quick_open.max_query;
 pub const max_goto_line = 12;
-pub const max_replace = 64;
+pub const max_replace = workspace_replace.max_replacement_len;
 pub const max_commit_message = 120;
 pub const SearchHit = workspace_search.SearchHit;
 pub const GitEntry = git_status.GitEntry;
@@ -47,6 +49,8 @@ pub const Problem = problems_mod.Problem;
 pub const OutlineSymbol = outline_mod.Symbol;
 pub const DefHit = go_to_def_mod.DefHit;
 pub const PeekLine = editor_view.PeekLine;
+pub const WorkspaceTask = task_detector.Task;
+pub const ReplacePreview = workspace_replace.FilePreview;
 
 pub const BreadcrumbSeg = struct {
     id: u32 = 0,
@@ -137,8 +141,14 @@ pub const Msg = union(enum) {
     update_search_query: canvas.TextInputEvent,
     run_search,
     open_search_hit: u32,
+    preview_workspace_replace,
+    apply_workspace_replace,
     refresh_git,
     open_git_entry: u32,
+    select_git_entry: u32,
+    stage_git_entry: u32,
+    unstage_git_entry: u32,
+    restore_git_entry: u32,
     clear_find,
     reopen_last_workspace,
     update_new_file_path: canvas.TextInputEvent,
@@ -210,6 +220,9 @@ pub const Msg = union(enum) {
     duplicate_line,
     terminal_history_older,
     terminal_history_newer,
+    refresh_tasks,
+    select_task: u32,
+    run_selected_task,
     toggle_line_comment,
     indent_document,
     outdent_document,
@@ -487,8 +500,19 @@ pub const Model = struct {
     terminal: ?*terminal_session.TerminalBuffers = null,
     search_bufs: ?*workspace_search.SearchBuffers = null,
     git_bufs: ?*git_status.GitBuffers = null,
+    task_bufs: ?*task_detector.TaskDetector = null,
+    workspace_replace_bufs: ?*workspace_replace.WorkspaceReplace = null,
     search_query: canvas.TextBuffer(max_search_query) = .{},
     search_hits: []const SearchHit = &.{},
+    workspace_tasks: []const WorkspaceTask = &.{},
+    replace_previews: []const ReplacePreview = &.{},
+    selected_task_id: u32 = 0,
+    selected_git_entry_id: u32 = 0,
+    task_running: bool = false,
+    task_status: []const u8 = "No tasks detected",
+    replace_status: []const u8 = "Preview changes before applying",
+    task_status_buf: [96]u8 = undefined,
+    replace_status_buf: [128]u8 = undefined,
     git_entries: []const GitEntry = &.{},
     git_summary: []const u8 = "not loaded",
     git_branch: []const u8 = "unknown",
@@ -669,7 +693,14 @@ pub const Model = struct {
         "terminal",
         "search_bufs",
         "git_bufs",
+        "task_bufs",
+        "workspace_replace_bufs",
         "search_query",
+        "task_running",
+        "task_status",
+        "replace_status",
+        "task_status_buf",
+        "replace_status_buf",
         "new_file_path",
         "explorer_filter",
         "explorer_filtered",
@@ -773,7 +804,6 @@ pub const Model = struct {
         "output_storage",
         "output_pool",
         "output_lens",
-        "output_count",
         "output_next_id",
         "recent_files",
         "recent_file_lens",
@@ -857,7 +887,7 @@ pub const Model = struct {
     }
 
     pub fn problemsSelected(model: *const Model) bool {
-        return model.selected_activity == .problems or (model.bottom_panel_open and model.bottom_panel_tab == .problems);
+        return model.selected_activity == .problems;
     }
 
     pub fn outlineSelected(model: *const Model) bool {
@@ -1040,6 +1070,14 @@ pub const Model = struct {
 
     pub fn replaceText(model: *const Model) []const u8 {
         return model.replace_text.text();
+    }
+
+    pub fn taskStatus(model: *const Model) []const u8 {
+        return model.task_status;
+    }
+
+    pub fn replaceStatus(model: *const Model) []const u8 {
+        return model.replace_status;
     }
 
     pub fn commitMessageText(model: *const Model) []const u8 {
@@ -1290,7 +1328,7 @@ pub const commands = [_]CommandItem{
     .{ .id = "open_folder", .title = "Open Folder", .hint = "Cmd+O" },
     .{ .id = "save_file", .title = "Save File", .hint = "Cmd+S" },
     .{ .id = "overwrite_file", .title = "Overwrite File Changed on Disk", .hint = "" },
-    .{ .id = "save_all", .title = "Save All Dirty Tabs", .hint = "Cmd+Alt+S" },
+    .{ .id = "save_all", .title = "Save All Dirty Tabs", .hint = "Cmd+Shift+S" },
     .{ .id = "create_new_file", .title = "New File", .hint = "" },
     .{ .id = "delete_selected_file", .title = "Delete Selected File", .hint = "" },
     .{ .id = "rename_selected_file", .title = "Rename Selected File", .hint = "" },
@@ -1346,8 +1384,15 @@ pub const commands = [_]CommandItem{
     .{ .id = "toggle_final_newline", .title = "Toggle Insert Final Newline", .hint = "" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
     .{ .id = "run_terminal", .title = "Run Terminal Command", .hint = "" },
-    .{ .id = "run_search", .title = "Search Workspace", .hint = "" },
+    .{ .id = "run_selected_task", .title = "Run Selected Workspace Task", .hint = "Cmd+Shift+B" },
+    .{ .id = "refresh_tasks", .title = "Refresh Workspace Tasks", .hint = "" },
+    .{ .id = "run_search", .title = "Search Workspace", .hint = "Cmd+Shift+F" },
+    .{ .id = "preview_workspace_replace", .title = "Preview Workspace Replace", .hint = "" },
+    .{ .id = "apply_workspace_replace", .title = "Apply Workspace Replace", .hint = "" },
     .{ .id = "refresh_git", .title = "Refresh Git Status", .hint = "" },
+    .{ .id = "stage_git_entry", .title = "Git: Stage Selected File", .hint = "" },
+    .{ .id = "unstage_git_entry", .title = "Git: Unstage Selected File", .hint = "" },
+    .{ .id = "restore_git_entry", .title = "Git: Restore Selected File", .hint = "" },
     .{ .id = "stage_all", .title = "Git: Stage All", .hint = "" },
     .{ .id = "unstage_all", .title = "Git: Unstage All", .hint = "" },
     .{ .id = "discard_changes", .title = "Git: Discard Working Tree", .hint = "" },
@@ -1366,7 +1411,7 @@ pub const commands = [_]CommandItem{
     .{ .id = "go_to_symbol", .title = "Go to Symbol in File", .hint = "Cmd+Shift+O" },
     .{ .id = "go_to_definition", .title = "Go to Definition", .hint = "Cmd+Shift+D" },
     .{ .id = "open_outline", .title = "Open Outline", .hint = "" },
-    .{ .id = "toggle_bottom_panel", .title = "Toggle Bottom Panel", .hint = "" },
+    .{ .id = "toggle_bottom_panel", .title = "Toggle Bottom Panel", .hint = "Cmd+J" },
     .{ .id = "clear_output", .title = "Clear Output", .hint = "" },
     .{ .id = "create_folder", .title = "New Folder", .hint = "" },
     .{ .id = "show_file_size", .title = "Show File Size", .hint = "" },
@@ -1452,6 +1497,8 @@ fn isStickyToast(text: []const u8) bool {
     if (std.mem.startsWith(u8, text, "Close other tabs")) return true;
     if (std.mem.startsWith(u8, text, "Unsaved")) return true;
     if (std.mem.startsWith(u8, text, "Discard")) return true;
+    if (std.mem.startsWith(u8, text, "Apply workspace replace")) return true;
+    if (std.mem.startsWith(u8, text, "Restore ")) return true;
     if (std.mem.startsWith(u8, text, "File changed on disk")) return true;
     if (std.mem.startsWith(u8, text, "Overwrite changed file")) return true;
     if (std.mem.startsWith(u8, text, "Clear recent")) return true;
@@ -1724,11 +1771,19 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 toggleFinalNewline(model);
             } else if (std.mem.eql(u8, id, "run_terminal")) {
                 runTerminalFromModel(model, fx);
+            } else if (std.mem.eql(u8, id, "run_selected_task")) {
+                runSelectedTask(model, fx);
+            } else if (std.mem.eql(u8, id, "refresh_tasks")) {
+                refreshTasks(model);
             } else if (std.mem.eql(u8, id, "run_search")) {
                 model.current_view = .ide;
                 model.selected_activity = .search;
                 model.show_sidebar = true;
                 runWorkspaceSearch(model);
+            } else if (std.mem.eql(u8, id, "preview_workspace_replace")) {
+                previewWorkspaceReplace(model);
+            } else if (std.mem.eql(u8, id, "apply_workspace_replace")) {
+                applyWorkspaceReplace(model);
             } else if (std.mem.eql(u8, id, "refresh_git")) {
                 model.current_view = .ide;
                 model.selected_activity = .scm;
@@ -1738,6 +1793,12 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 stageAllChanges(model);
             } else if (std.mem.eql(u8, id, "unstage_all")) {
                 unstageAllChanges(model);
+            } else if (std.mem.eql(u8, id, "stage_git_entry")) {
+                stageGitEntry(model, model.selected_git_entry_id);
+            } else if (std.mem.eql(u8, id, "unstage_git_entry")) {
+                unstageGitEntry(model, model.selected_git_entry_id);
+            } else if (std.mem.eql(u8, id, "restore_git_entry")) {
+                restoreGitEntry(model, model.selected_git_entry_id);
             } else if (std.mem.eql(u8, id, "discard_changes")) {
                 discardWorkingTreeChanges(model);
             } else if (std.mem.eql(u8, id, "commit_changes")) {
@@ -1873,6 +1934,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                     model.current_view = .processes;
                 },
                 .problems => {
+                    model.selected_activity = .problems;
                     model.current_view = .ide;
                     openBottomPanel(model, .problems);
                 },
@@ -2110,9 +2172,14 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.term_lines = &.{};
             model.toast = "Terminal cleared";
         },
-        .update_search_query => |edit| model.search_query.apply(edit),
+        .update_search_query => |edit| {
+            model.search_query.apply(edit);
+            invalidateWorkspaceReplace(model);
+        },
         .run_search => runWorkspaceSearch(model),
         .open_search_hit => |id| openSearchHit(model, id),
+        .preview_workspace_replace => previewWorkspaceReplace(model),
+        .apply_workspace_replace => applyWorkspaceReplace(model),
         .refresh_git => refreshGitStatus(model),
         .update_commit_message => |edit| model.git_commit_message.apply(edit),
         .stage_all => stageAllChanges(model),
@@ -2193,6 +2260,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.toast = "Symbol not found";
         },
         .open_git_entry => |id| openGitEntry(model, id),
+        .select_git_entry => |id| selectGitEntry(model, id),
+        .stage_git_entry => |id| stageGitEntry(model, id),
+        .unstage_git_entry => |id| unstageGitEntry(model, id),
+        .restore_git_entry => |id| restoreGitEntry(model, id),
         .clear_find => clearFind(model),
         .reopen_last_workspace => reopenLastWorkspace(model),
         .update_new_file_path => |edit| model.new_file_path.apply(edit),
@@ -2208,7 +2279,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .run_find => runFindInDocument(model),
         .find_next => findNavigate(model, true),
         .find_prev => findNavigate(model, false),
-        .update_replace_text => |edit| model.replace_text.apply(edit),
+        .update_replace_text => |edit| {
+            model.replace_text.apply(edit);
+            invalidateWorkspaceReplace(model);
+        },
         .replace_once => replaceOnceInDocument(model),
         .replace_all => replaceAllInDocument(model),
         .copy_active_path => copyActivePath(model),
@@ -2226,6 +2300,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .preview_git_diff => |id| previewGitDiff(model, id),
         .terminal_history_older => terminalHistory(model, true),
         .terminal_history_newer => terminalHistory(model, false),
+        .refresh_tasks => refreshTasks(model),
+        .select_task => |id| selectTask(model, id),
+        .run_selected_task => runSelectedTask(model, fx),
         .update_quick_query => |edit| {
             model.quick_query.apply(edit);
             filterQuickOpen(model);
@@ -2261,6 +2338,14 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.process_count = model.governor.aliveCount();
             model.terminal_async = false;
             parseTerminalDiagnostics(model, false);
+            if (model.task_running) {
+                model.task_running = false;
+                model.task_status = std.fmt.bufPrint(
+                    &model.task_status_buf,
+                    "Task exited with code {d}",
+                    .{exit.code},
+                ) catch "Task finished";
+            }
             if (model.problems.len == 0) {
                 model.toast = if (exit.reason == .exited and exit.code == 0) "Command ok" else "Command exited";
             }
@@ -2297,7 +2382,6 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .update_settings_query => |edit| model.settings_query.apply(edit),
     }
 }
-
 
 fn modelIo(model: *const Model) std.Io {
     if (model.io) |io| return io;
@@ -2453,6 +2537,22 @@ fn ensureGitBuffers(model: *Model) !*git_status.GitBuffers {
     g.* = .{};
     model.git_bufs = g;
     return g;
+}
+
+fn ensureTaskBuffers(model: *Model) !*task_detector.TaskDetector {
+    if (model.task_bufs) |tasks| return tasks;
+    const tasks = try std.heap.page_allocator.create(task_detector.TaskDetector);
+    tasks.* = .{};
+    model.task_bufs = tasks;
+    return tasks;
+}
+
+fn ensureWorkspaceReplaceBuffers(model: *Model) !*workspace_replace.WorkspaceReplace {
+    if (model.workspace_replace_bufs) |workflow| return workflow;
+    const workflow = try std.heap.page_allocator.create(workspace_replace.WorkspaceReplace);
+    workflow.* = .{};
+    model.workspace_replace_bufs = workflow;
+    return workflow;
 }
 
 fn syncDocumentFromWorkspace(model: *Model) void {
@@ -2899,6 +2999,7 @@ fn openWorkspacePath(model: *Model, path: []const u8) void {
     };
     applyWorkspaceMeta(model, ws, meta);
     const restored = meta.scan_error.len == 0 and restoreHotExit(model, ws);
+    refreshTasks(model);
     if (meta.scan_error.len > 0) {
         model.toast = meta.scan_error;
     } else if (restored) {
@@ -3380,6 +3481,124 @@ fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
     }
 }
 
+fn refreshTasks(model: *Model) void {
+    model.workspace_tasks = &.{};
+    model.selected_task_id = 0;
+    model.task_running = false;
+    if (!model.workspace_from_disk) {
+        model.task_status = "Open a workspace to detect tasks";
+        model.toast = model.task_status;
+        return;
+    }
+    const detector = ensureTaskBuffers(model) catch {
+        model.task_status = "Task detector allocation failed";
+        model.toast = model.task_status;
+        return;
+    };
+    const count = detector.discover(modelIo(model), model.project_path) catch |err| {
+        detector.clear();
+        model.task_status = switch (err) {
+            error.FileNotFound => "No package.json tasks",
+            error.PackageTooLarge => "package.json exceeds task detector limit",
+            error.InvalidPackage => "package.json is invalid",
+            error.TooManyTasks => "Too many npm scripts (limit 32)",
+            error.NameTooLong => "An npm script name is too long",
+            error.CommandTooLong => "An npm script command is too long",
+            else => "Unable to detect npm scripts",
+        };
+        model.toast = model.task_status;
+        return;
+    };
+    model.workspace_tasks = detector.tasksSlice();
+    if (count > 0) model.selected_task_id = model.workspace_tasks[0].id;
+    model.task_status = std.fmt.bufPrint(
+        &model.task_status_buf,
+        "{d} npm scripts detected",
+        .{count},
+    ) catch "Tasks detected";
+    model.toast = model.task_status;
+}
+
+fn selectTask(model: *Model, task_id: u32) void {
+    for (model.workspace_tasks) |task| {
+        if (task.id == task_id) {
+            model.selected_task_id = task_id;
+            model.task_status = std.fmt.bufPrint(
+                &model.task_status_buf,
+                "Selected npm run {s}",
+                .{task.name},
+            ) catch "Task selected";
+            openBottomPanel(model, .terminal);
+            return;
+        }
+    }
+    model.toast = "Workspace task not found";
+}
+
+fn appendShellQuoted(out: []u8, used: *usize, value: []const u8) bool {
+    if (used.* >= out.len) return false;
+    out[used.*] = '\'';
+    used.* += 1;
+    for (value) |byte| {
+        if (byte == '\'') {
+            const escaped = "'\\''";
+            if (used.* + escaped.len > out.len) return false;
+            @memcpy(out[used.*..][0..escaped.len], escaped);
+            used.* += escaped.len;
+        } else {
+            if (used.* >= out.len) return false;
+            out[used.*] = byte;
+            used.* += 1;
+        }
+    }
+    if (used.* >= out.len) return false;
+    out[used.*] = '\'';
+    used.* += 1;
+    return true;
+}
+
+fn runSelectedTask(model: *Model, fx: ?*Effects) void {
+    if (model.workspace_tasks.len == 0) refreshTasks(model);
+    var selected: ?WorkspaceTask = null;
+    for (model.workspace_tasks) |task| {
+        if (task.id == model.selected_task_id) {
+            selected = task;
+            break;
+        }
+    }
+    const task = selected orelse {
+        model.toast = "Select an npm task first";
+        openBottomPanel(model, .terminal);
+        return;
+    };
+
+    var command_buf: [max_terminal_command]u8 = undefined;
+    const prefix = "npm run -- ";
+    @memcpy(command_buf[0..prefix.len], prefix);
+    var used = prefix.len;
+    if (!appendShellQuoted(&command_buf, &used, task.name)) {
+        model.toast = "Task name is too long to run safely";
+        return;
+    }
+    model.terminal_command.set(command_buf[0..used]);
+    model.task_running = true;
+    model.task_status = std.fmt.bufPrint(
+        &model.task_status_buf,
+        "Running npm run {s}",
+        .{task.name},
+    ) catch "Task running";
+    runTerminalFromModel(model, fx);
+    if (fx == null) {
+        model.task_running = false;
+        const exit_code = if (model.terminal) |term| term.last_exit else 1;
+        model.task_status = std.fmt.bufPrint(
+            &model.task_status_buf,
+            "Task exited with code {d}",
+            .{exit_code},
+        ) catch "Task finished";
+    }
+}
+
 fn runWorkspaceSearch(model: *Model) void {
     if (!model.workspace_from_disk) {
         model.toast = "Open a workspace to search";
@@ -3402,6 +3621,125 @@ fn runWorkspaceSearch(model: *Model) void {
     model.current_view = .ide;
     model.selected_activity = .search;
     model.show_sidebar = true;
+}
+
+fn invalidateWorkspaceReplace(model: *Model) void {
+    if (model.workspace_replace_bufs) |workflow| workflow.clear();
+    model.replace_previews = &.{};
+    model.replace_status = "Preview changes before applying";
+}
+
+const ReplaceConflict = enum { none, dirty, stale };
+
+fn matchingOpenTabConflict(model: *Model) ReplaceConflict {
+    const ws = model.workspace orelse return .none;
+    syncActiveTabDirty(model);
+    _ = model.disk_checker.check(modelIo(model), ws, workspace_store.max_open_tabs);
+    model.disk_changed = model.active_tab_id != 0 and model.disk_checker.isStale(model.active_tab_id);
+    for (model.replace_previews) |preview| {
+        for (ws.tabsSlice()) |tab| {
+            if (!std.mem.eql(u8, preview.path, tab.path)) continue;
+            if (tab.dirty) return .dirty;
+            if (model.disk_checker.isStale(tab.id)) return .stale;
+        }
+    }
+    return .none;
+}
+
+fn previewWorkspaceReplace(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace to replace";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const needle = model.search_query.text();
+    if (needle.len == 0) {
+        model.toast = "Enter workspace search text";
+        return;
+    }
+    const workflow = ensureWorkspaceReplaceBuffers(model) catch {
+        model.toast = "Replace preview allocation failed";
+        return;
+    };
+    const summary = workflow.preview(
+        modelIo(model),
+        ws,
+        needle,
+        model.replace_text.text(),
+    ) catch |err| {
+        model.replace_previews = &.{};
+        model.replace_status = switch (err) {
+            error.EmptyNeedle => "Enter workspace search text",
+            error.NeedleTooLong => "Search text exceeds replace limit",
+            error.ReplacementTooLong => "Replacement text exceeds limit",
+            error.TooManyFiles => "Replace preview exceeds 64 files",
+            error.OutputTooLarge => "Replacement would exceed a file limit",
+            else => "Workspace replace preview failed",
+        };
+        model.toast = model.replace_status;
+        return;
+    };
+    model.replace_previews = workflow.previewsSlice();
+    model.replace_status = std.fmt.bufPrint(
+        &model.replace_status_buf,
+        "Preview: {d} replacements in {d} files",
+        .{ summary.replacements, summary.files },
+    ) catch "Replace preview ready";
+    model.current_view = .ide;
+    model.selected_activity = .search;
+    model.show_sidebar = true;
+    model.toast = model.replace_status;
+}
+
+fn applyWorkspaceReplace(model: *Model) void {
+    if (model.replace_previews.len == 0) {
+        model.toast = "Preview workspace replace first";
+        return;
+    }
+    const conflict = matchingOpenTabConflict(model);
+    if (conflict != .none) {
+        model.toast = switch (conflict) {
+            .dirty => "Replace refused: a matching open tab has unsaved changes",
+            .stale => "Replace refused: a matching open tab changed on disk",
+            .none => unreachable,
+        };
+        return;
+    }
+    if (!std.mem.startsWith(u8, model.toast, "Apply workspace replace")) {
+        model.toast = "Apply workspace replace? Confirm again";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const workflow = model.workspace_replace_bufs orelse {
+        model.toast = "Preview workspace replace first";
+        return;
+    };
+    const summary = workflow.apply(
+        modelIo(model),
+        ws,
+        model.search_query.text(),
+        model.replace_text.text(),
+    ) catch {
+        model.toast = "Workspace replace failed; rescan before retrying";
+        return;
+    };
+    invalidateWorkspaceReplace(model);
+    refreshExplorer(model);
+    model.selected_activity = .search;
+    model.show_sidebar = true;
+    runWorkspaceSearch(model);
+    model.replace_status = std.fmt.bufPrint(
+        &model.replace_status_buf,
+        "Applied {d} replacements in {d} files",
+        .{ summary.replacements, summary.files },
+    ) catch "Workspace replace applied";
+    model.toast = model.replace_status;
 }
 
 fn openSearchHit(model: *Model, hit_id: u32) void {
@@ -3442,6 +3780,7 @@ fn openGitEntry(model: *Model, entry_id: u32) void {
     if (model.git_bufs) |bufs| {
         for (bufs.entriesSlice()) |entry| {
             if (entry.id == entry_id) {
+                model.selected_git_entry_id = entry_id;
                 // Always load diff preview for the selected entry.
                 bufs.loadDiff(modelIo(model), model.project_path, entry_id);
                 model.git_diff_text = bufs.diffText();
@@ -3469,6 +3808,105 @@ fn openGitEntry(model: *Model, entry_id: u32) void {
         }
     }
     model.toast = "Git entry not found";
+}
+
+fn selectGitEntry(model: *Model, entry_id: u32) void {
+    const bufs = model.git_bufs orelse {
+        model.toast = "Refresh Git status first";
+        return;
+    };
+    for (bufs.entriesSlice()) |entry| {
+        if (entry.id != entry_id) continue;
+        model.selected_git_entry_id = entry_id;
+        bufs.loadDiff(modelIo(model), model.project_path, entry_id);
+        model.git_diff_text = bufs.diffText();
+        model.git_diff_status = bufs.diff_status;
+        model.toast = bufs.diff_status;
+        return;
+    }
+    model.toast = "Git entry not found";
+}
+
+fn gitEntryById(model: *Model, entry_id: u32) ?GitEntry {
+    const bufs = model.git_bufs orelse return null;
+    for (bufs.entriesSlice()) |entry| {
+        if (entry.id == entry_id) return entry;
+    }
+    return null;
+}
+
+fn syncGitModel(model: *Model, bufs: *git_status.GitBuffers) void {
+    model.git_entries = bufs.entriesSlice();
+    model.git_summary = bufs.summary;
+    model.git_branch = bufs.branch();
+    model.git_diff_text = bufs.diffText();
+    model.git_diff_status = bufs.diff_status;
+    model.selected_git_entry_id = 0;
+}
+
+fn stageGitEntry(model: *Model, entry_id: u32) void {
+    const entry = gitEntryById(model, entry_id) orelse {
+        model.toast = "Select a Git file to stage";
+        return;
+    };
+    const bufs = model.git_bufs.?;
+    _ = model.governor.spawn("feature.scm", "git add path") catch {};
+    const status = bufs.stagePath(modelIo(model), model.project_path, entry.path);
+    model.governor.killFeature("feature.scm");
+    model.process_count = model.governor.aliveCount();
+    syncGitModel(model, bufs);
+    model.toast = status;
+}
+
+fn unstageGitEntry(model: *Model, entry_id: u32) void {
+    const entry = gitEntryById(model, entry_id) orelse {
+        model.toast = "Select a Git file to unstage";
+        return;
+    };
+    const bufs = model.git_bufs.?;
+    _ = model.governor.spawn("feature.scm", "git reset path") catch {};
+    const status = bufs.unstagePath(modelIo(model), model.project_path, entry.path);
+    model.governor.killFeature("feature.scm");
+    model.process_count = model.governor.aliveCount();
+    syncGitModel(model, bufs);
+    model.toast = status;
+}
+
+fn restoreGitEntry(model: *Model, entry_id: u32) void {
+    const entry = gitEntryById(model, entry_id) orelse {
+        model.toast = "Select a Git file to restore";
+        return;
+    };
+    if (entry.status.len > 0 and (entry.status[0] == '?' or (entry.status.len > 1 and entry.status[1] == '?'))) {
+        model.toast = "Restore refused: untracked files are never removed";
+        return;
+    }
+    syncActiveTabDirty(model);
+    if (model.workspace) |ws| {
+        for (ws.tabsSlice()) |tab| {
+            if (std.mem.eql(u8, tab.path, entry.path) and tab.dirty) {
+                model.toast = "Restore refused: matching open tab has unsaved changes";
+                return;
+            }
+        }
+    }
+    if (!std.mem.startsWith(u8, model.toast, "Restore selected file")) {
+        model.toast = "Restore selected file? Confirm again";
+        return;
+    }
+    const bufs = model.git_bufs.?;
+    _ = model.governor.spawn("feature.scm", "git checkout path") catch {};
+    const status = bufs.restorePath(modelIo(model), model.project_path, entry.path);
+    model.governor.killFeature("feature.scm");
+    model.process_count = model.governor.aliveCount();
+    syncGitModel(model, bufs);
+    if (std.mem.eql(u8, status, "restored")) {
+        refreshExplorer(model);
+        model.selected_activity = .scm;
+        model.show_sidebar = true;
+        refreshGitStatus(model);
+    }
+    model.toast = status;
 }
 
 fn previewGitDiff(model: *Model, entry_id: u32) void {
@@ -4572,6 +5010,7 @@ fn refreshExplorer(model: *Model) void {
     }
     model.current_view = .ide;
     model.selected_activity = .explorer;
+    refreshTasks(model);
     model.toast = "Explorer refreshed";
 }
 
@@ -5143,6 +5582,7 @@ fn refreshGitStatus(model: *Model) void {
     if (bufs.branch_len > 0) model.project_branch = bufs.branch();
     model.git_diff_text = bufs.diffText();
     model.git_diff_status = bufs.diff_status;
+    model.selected_git_entry_id = 0;
     model.governor.killFeature("feature.scm");
     model.process_count = model.governor.aliveCount();
     model.toast = bufs.summary;

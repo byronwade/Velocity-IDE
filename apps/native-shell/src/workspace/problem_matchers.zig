@@ -109,6 +109,8 @@ fn parseLine(line_raw: []const u8) ?Parsed {
     if (line.len == 0) return null;
     // Command echo is context, not compiler output.
     if (std.mem.startsWith(u8, line, "$ ")) return null;
+    // npm prints lifecycle metadata and the script command with a `> ` prefix.
+    if (std.mem.startsWith(u8, line, "> ")) return null;
     if (parseParenLocation(line)) |hit| return hit;
     return parseColonLocation(line);
 }

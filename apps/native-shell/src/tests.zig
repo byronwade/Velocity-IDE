@@ -1392,6 +1392,105 @@ test "manual disk refresh reports active external changes without discarding edi
     try testing.expect(std.mem.startsWith(u8, model.toast, "Active file changed externally"));
 }
 
+test "workspace open detects and runs bounded npm task with diagnostics" {
+    const root = "zig-out/test-model-task-runner";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root ++ "/src");
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{
+        .sub_path = root ++ "/package.json",
+        .data =
+        \\{"scripts":{"smoke":"echo 'src/main.ts(1,1): error TS7777: task smoke'"}}
+        ,
+    });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{
+        .sub_path = root ++ "/src/main.ts",
+        .data = "export const smoke = true;\n",
+    });
+
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    try testing.expectEqual(@as(usize, 1), model.workspace_tasks.len);
+    try testing.expectEqualStrings("smoke", model.workspace_tasks[0].name);
+    try testing.expectEqual(model.workspace_tasks[0].id, model.selected_task_id);
+
+    main.update(&model, .run_selected_task);
+    try testing.expect(std.mem.indexOf(u8, model.terminal_command.text(), "npm run") != null);
+    try testing.expectEqual(@as(usize, 1), model.problems.len);
+    try testing.expectEqualStrings("TS7777", model.problems[0].kind);
+    try testing.expect(model.showBottomProblems());
+    try testing.expect(std.mem.indexOf(u8, model.task_status, "code 0") != null);
+}
+
+test "workspace replace refuses dirty matching tab then applies after double confirm" {
+    const root = "zig-out/test-model-workspace-replace";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{
+        .sub_path = root ++ "/a.txt",
+        .data = "alpha alpha\n",
+    });
+
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    model.search_query.set("alpha");
+    model.replace_text.set("beta");
+    main.update(&model, .preview_workspace_replace);
+    try testing.expectEqual(@as(usize, 1), model.replace_previews.len);
+    try testing.expectEqual(@as(u32, 2), model.replace_previews[0].replacements);
+
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    main.update(&model, .apply_workspace_replace);
+    try testing.expect(std.mem.indexOf(u8, model.toast, "unsaved changes") != null);
+
+    model.document_dirty = false;
+    model_mod.syncActiveTabDirtyForTest(&model);
+    main.update(&model, .apply_workspace_replace);
+    try testing.expect(std.mem.startsWith(u8, model.toast, "Apply workspace replace"));
+    main.update(&model, .apply_workspace_replace);
+    try testing.expect(std.mem.indexOf(u8, model.replace_status, "Applied 2") != null);
+    var out: [32]u8 = undefined;
+    const disk = try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out);
+    try testing.expectEqualStrings("beta beta\n", disk);
+    try testing.expectEqualStrings("beta beta\n", model.document.text());
+}
+
+test "workspace replace refuses matching open tab changed on disk" {
+    const root = "zig-out/test-model-workspace-replace-stale";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "alpha\n" });
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    model.search_query.set("alpha");
+    model.replace_text.set("beta");
+    main.update(&model, .preview_workspace_replace);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "external alpha\n" });
+    main.update(&model, .apply_workspace_replace);
+    try testing.expect(std.mem.indexOf(u8, model.toast, "changed on disk") != null);
+    var out: [32]u8 = undefined;
+    try testing.expectEqualStrings(
+        "external alpha\n",
+        try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/a.txt", &out),
+    );
+}
+
+test "high value native shortcuts are wired without replacing redo" {
+    try testing.expect(main.onCommand("open_folder") != null);
+    try testing.expect(main.onCommand("open_settings") != null);
+    try testing.expect(main.onCommand("save_all") != null);
+    try testing.expect(main.onCommand("workspace_search") != null);
+    try testing.expect(main.onCommand("toggle_bottom_panel") != null);
+    try testing.expect(main.onCommand("run_selected_task") != null);
+    try testing.expect(main.onCommand("redo_edit") != null);
+}
+
 test "close persists hot exit and matching workspace restores dirty session" {
     const root = "zig-out/test-model-hot-exit";
     std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};

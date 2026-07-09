@@ -77,7 +77,7 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Workspace Search | `feature.workspace-search` | core | P0 | process | False | 24 | 1 | low | stub | docs/11 + contrib | |
 | Quick Search | `feature.quick-search` | core | P0 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
 | Search Results | `feature.search-results` | core | P0 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
-| Search Replace | `feature.search-replace` | core | P1 | process | False | 16 | 1 | low | stub | docs/11 + contrib | |
+| Search Replace | `feature.search-replace` | core | P1 | native | False | 16 | 0 | low | working | bounded preview, guarded double-confirm apply | |
 | Ripgrep Adapter | `feature.ripgrep-adapter` | core | P0 | process | False | 8 | 1 | low | stub | docs/11 + contrib | |
 | Search Index | `feature.search-index` | dev | P2 | process | False | 64 | 1 | low | stub | docs/11 + contrib | |
 | Search Editor | `feature.search-editor` | heavy | P3 | native | False | 32 | 0 | low | stub | docs/11 + contrib | |
@@ -91,15 +91,15 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Terminal Links | `feature.terminal-links` | core | P1 | native | False | 4 | 0 | high | stub | docs/11 + contrib | |
 | Terminal Shell Integration | `feature.terminal-shell-integration` | dev | P2 | native | False | 8 | 0 | high | stub | docs/11 + contrib | |
 | Terminal Find | `feature.terminal-find` | core | P1 | native | False | 8 | 0 | high | stub | docs/11 + contrib | |
-| Task Runner | `feature.task-runner` | dev | P1 | process | False | 16 | 2 | high | stub | docs/11 + contrib | |
-| Task Detector | `feature.task-detector` | dev | P2 | process | False | 8 | 0 | high | stub | docs/11 + contrib | |
+| Task Runner | `feature.task-runner` | dev | P1 | process | False | 16 | 1 | high | working | npm scripts via terminal/governor + diagnostics | |
+| Task Detector | `feature.task-detector` | dev | P2 | native | False | 8 | 0 | high | working | bounded root package.json scripts | |
 | Problem Matchers | `feature.problem-matchers` | dev | P1 | native | False | 8 | 0 | high | working | bounded TS/Zig/GCC parser | |
 | Output Panel | `feature.output-panel` | dev | P1 | native | False | 16 | 0 | high | stub | docs/11 + contrib | |
 | SCM Core | `feature.scm-core` | dev | P0 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Git Provider | `feature.git-provider` | dev | P0 | process | False | 24 | 1 | low | stub | docs/11 + contrib | |
 | Git Status | `feature.git-status` | dev | P0 | process | False | 8 | 1 | low | stub | docs/11 + contrib | |
 | Git Diff | `feature.git-diff` | dev | P0 | process | False | 16 | 1 | low | stub | docs/11 + contrib | |
-| Git Stage/Commit | `feature.git-stage-commit` | dev | P0 | process | False | 8 | 1 | low | stub | docs/11 + contrib | |
+| Git Stage/Commit | `feature.git-stage-commit` | dev | P0 | process | False | 8 | 1 | low | working | per-file/all stage/unstage, guarded restore, commit | |
 | Git Branches | `feature.git-branches` | dev | P1 | process | False | 8 | 1 | low | stub | docs/11 + contrib | |
 | Git Merge Conflicts | `feature.git-merge-conflicts` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Git History | `feature.git-history` | heavy | P2 | process | False | 32 | 1 | low | stub | docs/11 + contrib | |

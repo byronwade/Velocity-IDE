@@ -2,12 +2,16 @@
 
 - **id:** `feature.task-runner`
 - **mode:** `dev`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `process`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `16`
-- **maxProcesses:** `2`
-- **activation:** `onTaskRun`, `onCommand:task-runner.run`
+- **maxProcesses:** `1`
+- **activation:** `onTaskRun`, `onCommand:task-runner.run`, `Cmd+Shift+B`
+
+Runs the selected detected npm script through the integrated terminal and
+Process Governor. Output is bounded, exit state is shown in the Tasks panel,
+and compiler-style diagnostics are parsed into clickable Problems on exit.
 
 ## Rules
 

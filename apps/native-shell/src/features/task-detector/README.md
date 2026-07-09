@@ -2,12 +2,16 @@
 
 - **id:** `feature.task-detector`
 - **mode:** `dev`
-- **status:** `stub`
-- **implementation:** `process`
+- **status:** `working`
+- **implementation:** `native`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `8`
 - **maxProcesses:** `0`
-- **activation:** `onTaskRun`, `onCommand:task-detector.run`
+- **activation:** `onWorkspaceOpen`, `onTaskRun`, `onCommand:task-detector.refresh`
+
+Discovers up to 32 root `package.json` scripts on workspace open and manual
+refresh. Names and commands are parsed into bounded owned buffers; malformed,
+oversized, or missing manifests are reported without affecting the workspace.
 
 ## Rules
 

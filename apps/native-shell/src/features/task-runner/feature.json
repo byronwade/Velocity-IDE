@@ -5,18 +5,19 @@
   "defaultEnabled": true,
   "activation": [
     "onTaskRun",
-    "onCommand:task-runner.run"
+    "onCommand:task-runner.run",
+    "onShortcut:Cmd+Shift+B"
   ],
   "startupAllowed": false,
   "memoryBudgetMB": 16,
   "processBudget": {
-    "maxProcesses": 2,
+    "maxProcesses": 1,
     "killOnWorkspaceClose": true,
     "idleSuspend": true
   },
   "dependencies": [],
   "permissions": [],
-  "status": "stub",
+  "status": "working",
   "implementation": "process",
   "priority": "P1",
   "category": "terminal"
