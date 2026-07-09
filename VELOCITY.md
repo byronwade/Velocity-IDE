@@ -54,10 +54,10 @@ npm run dev
 
 ## Next
 
-1. OS folder dialog (`showOpenDialog`) when Runtime hook is wired  
-2. Monaco editor island after first paint  
-3. Real PTY terminal (replace pipe runner)  
-4. Git provider + LSP broker  
+1. OS folder dialog (`showOpenDialog`) when Runtime hook is wired
+2. Monaco editor island after first paint
+3. Real PTY terminal (replace pipe runner)
+4. Git provider + LSP broker
 
 MVP definition: `docs/velocity/18-mvp-definition.md`
 

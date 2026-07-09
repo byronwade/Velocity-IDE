@@ -1,6 +1,6 @@
 # Feature Parity Matrix
 
-Complete catalog: `apps/native-shell/src/core/feature_catalog.json` (200 modules).  
+Complete catalog: `apps/native-shell/src/core/feature_catalog.json` (200 modules).
 Research: `11-vscode-feature-parity-research.md`.
 
 ## Columns

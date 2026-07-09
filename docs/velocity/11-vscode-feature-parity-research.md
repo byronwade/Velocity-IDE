@@ -1,7 +1,7 @@
 # VS Code Feature Parity Research
 
-**Date:** 2026-07-09  
-**Rule:** VS Code feature parity, not VS Code bloat parity.  
+**Date:** 2026-07-09
+**Rule:** VS Code feature parity, not VS Code bloat parity.
 **Product:** Velocity IDE (`apps/native-shell`)
 
 ## Sources
@@ -106,32 +106,32 @@ Velocity adds: `onStartupCritical`, `onFirstPaintDone`, `onIdle`, `onPanelVisibl
 ## Feature category inventories
 
 ### Editor / workbench
-Editing basics (docs/editing/codebasics): multi-cursor, find/replace, folding, breadcrumbs, minimap, sticky scroll, etc.  
-**Fork:** `contrib/codeEditor`, `contrib/folding`, `contrib/snippets`, `contrib/preferences`, `contrib/keybindings`, `contrib/themes`, `contrib/quickaccess`.  
+Editing basics (docs/editing/codebasics): multi-cursor, find/replace, folding, breadcrumbs, minimap, sticky scroll, etc.
+**Fork:** `contrib/codeEditor`, `contrib/folding`, `contrib/snippets`, `contrib/preferences`, `contrib/keybindings`, `contrib/themes`, `contrib/quickaccess`.
 **Velocity:** core shell + editor-island; minimap **disabled by default**; Monaco via island after paint.
 
 ### Terminal
-Docs: profiles, tabs, splits, links, scrollback (default **1000** in this fork: `terminalConfiguration.ts`), shell integration, sticky scroll, command nav.  
-**Fork:** `contrib/terminal`, `contrib/terminalContrib`, `contrib/externalTerminal`.  
+Docs: profiles, tabs, splits, links, scrollback (default **1000** in this fork: `terminalConfiguration.ts`), shell integration, sticky scroll, command nav.
+**Fork:** `contrib/terminal`, `contrib/terminalContrib`, `contrib/externalTerminal`.
 **Velocity:** bounded scrollback default **2000** / hard max **10000**; no shell integration before first command; Process Governor owns PTY; see `12-terminal-ram-and-process-management.md`.
 
 ### SCM
-Docs: sourcecontrol/overview.  
-**Fork:** `contrib/scm`, `extensions/git`, `extensions/git-base`.  
+Docs: sourcecontrol/overview.
+**Fork:** `contrib/scm`, `extensions/git`, `extensions/git-base`.
 **Velocity:** Dev mode; no git process until SCM visible/queried.
 
 ### Debug / tasks / testing
-Docs: debugging, tasks.  
-**Fork:** `contrib/debug`, `contrib/tasks`, `contrib/testing`, `contrib/output`, `contrib/markers`.  
+Docs: debugging, tasks.
+**Fork:** `contrib/debug`, `contrib/tasks`, `contrib/testing`, `contrib/output`, `contrib/markers`.
 **Velocity:** Dev mode; adapters/tasks only on explicit start.
 
 ### Notebook / webview / remote
-**Fork:** `contrib/notebook`, `contrib/webview*`, `contrib/remote*`, `contrib/customEditor`.  
+**Fork:** `contrib/notebook`, `contrib/webview*`, `contrib/remote*`, `contrib/customEditor`.
 **Velocity:** Heavy/Remote; never boot.
 
 ### Agent / chat
-Docs: agents/overview.  
-**Fork:** `contrib/chat`, `contrib/inlineChat`, `contrib/mcp`, `contrib/remoteCodingAgents`.  
+Docs: agents/overview.
+**Fork:** `contrib/chat`, `contrib/inlineChat`, `contrib/mcp`, `contrib/remoteCodingAgents`.
 **Velocity:** Agent mode first-class; no network/AI calls in scaffold; MCP disabled by default.
 
 ### Extensions security risks
