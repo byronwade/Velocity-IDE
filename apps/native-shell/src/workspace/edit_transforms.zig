@@ -509,6 +509,137 @@ pub fn fileNameOf(path: []const u8) []const u8 {
     return path;
 }
 
+pub fn tabsToSpaces(text: []const u8, tab_width: u8, out: []u8) ?usize {
+    var dst: usize = 0;
+    var col: u8 = 0;
+    for (text) |c| {
+        if (c == '\t') {
+            const spaces = tab_width - (col % tab_width);
+            var s: u8 = 0;
+            while (s < spaces) : (s += 1) {
+                if (dst + 1 > out.len) return null;
+                out[dst] = ' ';
+                dst += 1;
+                col += 1;
+            }
+        } else {
+            if (dst + 1 > out.len) return null;
+            out[dst] = c;
+            dst += 1;
+            if (c == '\n') col = 0 else col +%= 1;
+        }
+    }
+    return dst;
+}
+
+pub fn spacesToTabs(text: []const u8, tab_width: u8, out: []u8) ?usize {
+    if (tab_width == 0) return null;
+    var dst: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= text.len) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            const line = text[start..i];
+            var j: usize = 0;
+            while (j + tab_width <= line.len) {
+                var all_space = true;
+                var k: u8 = 0;
+                while (k < tab_width) : (k += 1) {
+                    if (line[j + k] != ' ') {
+                        all_space = false;
+                        break;
+                    }
+                }
+                if (!all_space) break;
+                if (dst + 1 > out.len) return null;
+                out[dst] = '\t';
+                dst += 1;
+                j += tab_width;
+            }
+            const rest = line[j..];
+            if (dst + rest.len > out.len) return null;
+            @memcpy(out[dst..][0..rest.len], rest);
+            dst += rest.len;
+            if (i < text.len) {
+                if (dst + 1 > out.len) return null;
+                out[dst] = '\n';
+                dst += 1;
+            }
+            start = i + 1;
+        }
+    }
+    return dst;
+}
+
+/// Sort lines and drop exact duplicates (preserves first occurrence order after sort).
+pub fn sortUniqueLines(text: []const u8, out: []u8) ?usize {
+    const max_lines = 512;
+    var starts: [max_lines]usize = undefined;
+    var lens: [max_lines]usize = undefined;
+    var count: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    const has_trailing_nl = text.len > 0 and text[text.len - 1] == '\n';
+    while (i <= text.len and count < max_lines) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            if (i == text.len and has_trailing_nl and start == text.len) break;
+            starts[count] = start;
+            lens[count] = i - start;
+            count += 1;
+            start = i + 1;
+            if (i == text.len) break;
+        }
+    }
+    var a: usize = 1;
+    while (a < count) : (a += 1) {
+        var b = a;
+        while (b > 0) {
+            const left = text[starts[b - 1] ..][0..lens[b - 1]];
+            const right = text[starts[b] ..][0..lens[b]];
+            if (std.mem.order(u8, left, right) != .gt) break;
+            const ts = starts[b - 1];
+            const tl = lens[b - 1];
+            starts[b - 1] = starts[b];
+            lens[b - 1] = lens[b];
+            starts[b] = ts;
+            lens[b] = tl;
+            b -= 1;
+        }
+    }
+    var dst: usize = 0;
+    var li: usize = 0;
+    var wrote: usize = 0;
+    while (li < count) : (li += 1) {
+        const line = text[starts[li] ..][0..lens[li]];
+        if (wrote > 0) {
+            const prev = text[starts[li - 1] ..][0..lens[li - 1]];
+            if (std.mem.eql(u8, prev, line)) continue;
+        }
+        if (wrote > 0) {
+            if (dst + 1 > out.len) return null;
+            out[dst] = '\n';
+            dst += 1;
+        }
+        if (dst + line.len > out.len) return null;
+        @memcpy(out[dst..][0..line.len], line);
+        dst += line.len;
+        wrote += 1;
+    }
+    if (wrote > 0 and has_trailing_nl) {
+        if (dst + 1 > out.len) return null;
+        out[dst] = '\n';
+        dst += 1;
+    }
+    return dst;
+}
+
+pub fn encodingLabel(text: []const u8) []const u8 {
+    for (text) |c| {
+        if (c >= 0x80) return "UTF-8";
+    }
+    return "ASCII";
+}
+
 test "case and sort transforms" {
     var out: [128]u8 = undefined;
     const u = toUpperCase("AbC", &out).?;
@@ -549,4 +680,15 @@ test "blank lines insert remove and words" {
     try std.testing.expectEqualStrings("hi\n\n", out[0..i]);
     try std.testing.expectEqual(@as(u32, 3), countWords("one two  three"));
     try std.testing.expectEqualStrings("Chart.tsx", fileNameOf("src/components/Chart.tsx"));
+}
+
+test "tabs spaces unique sort encoding" {
+    var out: [128]u8 = undefined;
+    const s = tabsToSpaces("a\tb", 4, &out).?;
+    try std.testing.expectEqualStrings("a   b", out[0..s]);
+    const t = spacesToTabs("    a\n  b", 4, &out).?;
+    try std.testing.expectEqualStrings("\ta\n  b", out[0..t]);
+    const u = sortUniqueLines("b\na\nb\nc\n", &out).?;
+    try std.testing.expectEqualStrings("a\nb\nc\n", out[0..u]);
+    try std.testing.expectEqualStrings("ASCII", encodingLabel("hi"));
 }

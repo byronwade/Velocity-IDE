@@ -16,6 +16,7 @@ pub const Prefs = struct {
     find_case_sensitive: bool = false,
     trim_trailing_ws: bool = false,
     insert_final_newline: bool = true,
+    indent_size: u8 = 2,
     recent_count: u32 = 0,
     recent_paths: [max_recent][max_path]u8 = undefined,
     recent_lens: [max_recent]usize = [_]usize{0} ** max_recent,
@@ -110,6 +111,11 @@ pub const Prefs = struct {
             if (std.mem.eql(u8, key, "find_case_sensitive")) self.find_case_sensitive = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "trim_trailing_ws")) self.trim_trailing_ws = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "insert_final_newline")) self.insert_final_newline = std.mem.eql(u8, val, "1");
+            if (std.mem.eql(u8, key, "indent_size")) {
+                if (std.fmt.parseInt(u8, val, 10)) |n| {
+                    if (n == 2 or n == 4) self.indent_size = n;
+                } else |_| {}
+            }
             if (std.mem.startsWith(u8, key, "recent")) self.pushRecent(val);
         }
     }
@@ -141,6 +147,10 @@ pub const Prefs = struct {
         append(&out, &len, if (self.trim_trailing_ws) "1" else "0");
         append(&out, &len, "\ninsert_final_newline=");
         append(&out, &len, if (self.insert_final_newline) "1" else "0");
+        append(&out, &len, "\nindent_size=");
+        var indent_buf: [4]u8 = undefined;
+        const indent_s = std.fmt.bufPrint(&indent_buf, "{d}", .{self.indent_size}) catch "2";
+        append(&out, &len, indent_s);
         append(&out, &len, "\n");
         var i: u32 = 0;
         while (i < self.recent_count) : (i += 1) {
@@ -162,6 +172,7 @@ test "prefs roundtrip theme and recent" {
     p.find_case_sensitive = true;
     p.trim_trailing_ws = true;
     p.insert_final_newline = false;
+    p.indent_size = 4;
     p.save(std.testing.io);
     var p2: Prefs = .{};
     p2.load(std.testing.io);
@@ -172,5 +183,6 @@ test "prefs roundtrip theme and recent" {
     try std.testing.expect(p2.find_case_sensitive);
     try std.testing.expect(p2.trim_trailing_ws);
     try std.testing.expect(!p2.insert_final_newline);
+    try std.testing.expectEqual(@as(u8, 4), p2.indent_size);
     std.Io.Dir.cwd().deleteTree(std.testing.io, ".velocity") catch {};
 }

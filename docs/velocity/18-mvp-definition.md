@@ -58,6 +58,10 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Remove / insert blank lines | Strip blank lines or append a blank line at end. |
 | Copy file name | Basename of active path into toast. |
 | Word count | Status bar includes words; command shows toast. |
+| Indent size | Prefs cycle 2/4 spaces; indent/outdent use it. |
+| Tabs ↔ spaces | Convert leading indent using current indent size. |
+| Sort unique | Sort lines and drop exact duplicates. |
+| Encoding label | Status shows ASCII vs UTF-8 (byte heuristic). |
 | Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |
 | Agent panel | Local task board only — no network AI. |

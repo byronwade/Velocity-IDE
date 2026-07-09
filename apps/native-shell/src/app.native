@@ -123,6 +123,7 @@
               <button size="sm" variant="ghost" on-press="transform_upper">AA</button>
               <button size="sm" variant="ghost" on-press="transform_lower">aa</button>
               <button size="sm" variant="ghost" on-press="transform_sort_lines">Sort</button>
+              <button size="sm" variant="ghost" on-press="transform_sort_unique">Uniq</button>
               <button size="sm" variant="ghost" on-press="transform_reverse_lines">Rev</button>
               <button size="sm" variant="ghost" on-press="delete_last_line">DelLn</button>
               <button size="sm" variant="ghost" on-press="join_lines">Join</button>
@@ -130,6 +131,8 @@
               <button size="sm" variant="ghost" on-press="move_line_down">LnDn</button>
               <button size="sm" variant="ghost" on-press="remove_blank_lines">NoBlank</button>
               <button size="sm" variant="ghost" on-press="insert_blank_line">+Blank</button>
+              <button size="sm" variant="ghost" on-press="convert_tabs_to_spaces">Tab>Sp</button>
+              <button size="sm" variant="ghost" on-press="convert_spaces_to_tabs">Sp>Tab</button>
               <button size="sm" variant="ghost" on-press="undo_edit">Undo</button>
               <text-field text="{gotoLineText}" placeholder="Line" on-input="update_goto_line" on-submit="goto_line" width="72" label="Go to line" />
               <button size="sm" variant="ghost" on-press="goto_line">Go</button>
@@ -399,6 +402,7 @@
               <button variant="ghost" on-press="toggle_find_case">Find {findCaseLabel}</button>
               <button variant="ghost" on-press="toggle_trim_trailing">{trimTrailingLabel}</button>
               <button variant="ghost" on-press="toggle_final_newline">{finalNewlineLabel}</button>
+              <button variant="ghost" on-press="cycle_indent_size">{indentSizeLabel}</button>
               <button variant="ghost" on-press="toggle_focus_mode">{focusModeLabel}</button>
               <button variant="ghost" on-press="save_prefs">Save Preferences</button>
               <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>

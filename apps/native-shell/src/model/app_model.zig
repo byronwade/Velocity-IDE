@@ -159,6 +159,10 @@ pub const Msg = union(enum) {
     insert_blank_line,
     copy_filename,
     show_word_count,
+    cycle_indent_size,
+    convert_tabs_to_spaces,
+    convert_spaces_to_tabs,
+    transform_sort_unique,
     update_replace_text: canvas.TextInputEvent,
     replace_once,
     replace_all,
@@ -237,6 +241,10 @@ pub const Msg = union(enum) {
         "insert_blank_line",
         "copy_filename",
         "show_word_count",
+        "cycle_indent_size",
+        "convert_tabs_to_spaces",
+        "convert_spaces_to_tabs",
+        "transform_sort_unique",
         "replace_once",
         "replace_all",
         "copy_active_path",
@@ -333,6 +341,7 @@ pub const Model = struct {
     auto_save: bool = false,
     trim_trailing_ws: bool = false,
     insert_final_newline: bool = true,
+    indent_size: u8 = 2,
     focus_mode: bool = false,
     shortcuts_help_visible: bool = false,
     pinned_tab_id: u32 = 0,
@@ -346,8 +355,8 @@ pub const Model = struct {
     goto_line_label: []const u8 = "",
     goto_line_buf: [32]u8 = undefined,
     replace_text: canvas.TextBuffer(max_replace) = .{},
-    doc_stats: []const u8 = "0 lines · 0 words · 0 bytes · LF",
-    doc_stats_buf: [80]u8 = undefined,
+    doc_stats: []const u8 = "0 lines · 0 words · 0 bytes · LF · ASCII",
+    doc_stats_buf: [96]u8 = undefined,
     path_toast: []const u8 = "",
     path_toast_buf: [520]u8 = undefined,
     action_toast_buf: [48]u8 = undefined,
@@ -475,6 +484,7 @@ pub const Model = struct {
         "auto_save",
         "trim_trailing_ws",
         "insert_final_newline",
+        "indent_size",
         "focus_mode",
         "pinned_tab_id",
         "show_terminal",
@@ -738,6 +748,10 @@ pub const Model = struct {
         return if (model.insert_final_newline) "Final NL: on" else "Final NL: off";
     }
 
+    pub fn indentSizeLabel(model: *const Model) []const u8 {
+        return if (model.indent_size == 4) "Indent: 4" else "Indent: 2";
+    }
+
     pub fn focusModeLabel(model: *const Model) []const u8 {
         return if (model.focus_mode) "Focus: on" else "Focus: off";
     }
@@ -910,6 +924,10 @@ pub const commands = [_]CommandItem{
     .{ .id = "insert_blank_line", .title = "Insert Blank Line at End", .hint = "" },
     .{ .id = "copy_filename", .title = "Copy File Name", .hint = "" },
     .{ .id = "show_word_count", .title = "Show Word Count", .hint = "" },
+    .{ .id = "cycle_indent_size", .title = "Cycle Indent Size (2/4)", .hint = "" },
+    .{ .id = "convert_tabs_to_spaces", .title = "Convert Tabs to Spaces", .hint = "" },
+    .{ .id = "convert_spaces_to_tabs", .title = "Convert Spaces to Tabs", .hint = "" },
+    .{ .id = "transform_sort_unique", .title = "Transform: Sort Unique Lines", .hint = "" },
     .{ .id = "toggle_trim_trailing", .title = "Toggle Trim Trailing Whitespace", .hint = "" },
     .{ .id = "toggle_final_newline", .title = "Toggle Insert Final Newline", .hint = "" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
@@ -1085,6 +1103,14 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 copyFileName(model);
             } else if (std.mem.eql(u8, id, "show_word_count")) {
                 showWordCount(model);
+            } else if (std.mem.eql(u8, id, "cycle_indent_size")) {
+                cycleIndentSize(model);
+            } else if (std.mem.eql(u8, id, "convert_tabs_to_spaces")) {
+                convertIndent(model, true);
+            } else if (std.mem.eql(u8, id, "convert_spaces_to_tabs")) {
+                convertIndent(model, false);
+            } else if (std.mem.eql(u8, id, "transform_sort_unique")) {
+                runTextTransform(model, .sort_unique);
             } else if (std.mem.eql(u8, id, "toggle_trim_trailing")) {
                 toggleTrimTrailing(model);
             } else if (std.mem.eql(u8, id, "toggle_final_newline")) {
@@ -1231,6 +1257,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .insert_blank_line => insertBlankLine(model),
         .copy_filename => copyFileName(model),
         .show_word_count => showWordCount(model),
+        .cycle_indent_size => cycleIndentSize(model),
+        .convert_tabs_to_spaces => convertIndent(model, true),
+        .convert_spaces_to_tabs => convertIndent(model, false),
+        .transform_sort_unique => runTextTransform(model, .sort_unique),
         .select_tab => |id| {
             model.active_tab_id = id;
             if (model.workspace_from_disk) {
@@ -1488,7 +1518,8 @@ pub fn refreshDocStats(model: *Model) void {
     if (text.len == 0) lines = 0;
     const eol = edit_transforms.detectEol(text);
     const words = edit_transforms.countWords(text);
-    const label = std.fmt.bufPrint(&model.doc_stats_buf, "{d} lines · {d} words · {d} bytes · {s}", .{ lines, words, text.len, eol }) catch "stats";
+    const enc = edit_transforms.encodingLabel(text);
+    const label = std.fmt.bufPrint(&model.doc_stats_buf, "{d} lines · {d} words · {d} bytes · {s} · {s}", .{ lines, words, text.len, eol, enc }) catch "stats";
     model.doc_stats = label;
 }
 
@@ -2256,15 +2287,36 @@ fn toggleLineComment(model: *Model) void {
 
 fn indentDocument(model: *Model, indent: bool) void {
     var out: [edit_transforms.max_out]u8 = undefined;
+    const spaces = model.indent_size;
     const n = if (indent)
-        edit_transforms.indentLines(model.document.text(), 2, &out)
+        edit_transforms.indentLines(model.document.text(), spaces, &out)
     else
-        edit_transforms.outdentLines(model.document.text(), 2, &out);
+        edit_transforms.outdentLines(model.document.text(), spaces, &out);
     const len = n orelse {
         model.toast = "Indent failed";
         return;
     };
     applyDocumentTransform(model, out[0..len], if (indent) "Indented" else "Outdented");
+}
+
+fn cycleIndentSize(model: *Model) void {
+    model.indent_size = if (model.indent_size == 2) 4 else 2;
+    persistPrefs(model);
+    const msg = std.fmt.bufPrint(&model.action_toast_buf, "Indent size {d}", .{model.indent_size}) catch "Indent";
+    model.toast = msg;
+}
+
+fn convertIndent(model: *Model, tabs_to_spaces: bool) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = if (tabs_to_spaces)
+        edit_transforms.tabsToSpaces(model.document.text(), model.indent_size, &out)
+    else
+        edit_transforms.spacesToTabs(model.document.text(), model.indent_size, &out);
+    const len = n orelse {
+        model.toast = "Indent convert failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..len], if (tabs_to_spaces) "Tabs to spaces" else "Spaces to tabs");
 }
 
 fn ensureProblemBuffers(model: *Model) !*problems_mod.ProblemBuffers {
@@ -2760,7 +2812,7 @@ fn toggleFocusMode(model: *Model) void {
     }
 }
 
-const TextTransformKind = enum { upper, lower, sort, reverse };
+const TextTransformKind = enum { upper, lower, sort, reverse, sort_unique };
 
 fn runTextTransform(model: *Model, kind: TextTransformKind) void {
     var out: [edit_transforms.max_out]u8 = undefined;
@@ -2770,6 +2822,7 @@ fn runTextTransform(model: *Model, kind: TextTransformKind) void {
         .lower => edit_transforms.toLowerCase(text, &out),
         .sort => edit_transforms.sortLines(text, &out),
         .reverse => edit_transforms.reverseLines(text, &out),
+        .sort_unique => edit_transforms.sortUniqueLines(text, &out),
     } orelse {
         model.toast = "Transform failed";
         return;
@@ -2779,6 +2832,7 @@ fn runTextTransform(model: *Model, kind: TextTransformKind) void {
         .lower => "Lowercased",
         .sort => "Sorted lines",
         .reverse => "Reversed lines",
+        .sort_unique => "Sorted unique lines",
     };
     applyDocumentTransform(model, out[0..n], toast);
 }
@@ -2968,6 +3022,7 @@ fn applyPrefsToModel(model: *Model) void {
     model.find_case_sensitive = model.prefs.find_case_sensitive;
     model.trim_trailing_ws = model.prefs.trim_trailing_ws;
     model.insert_final_newline = model.prefs.insert_final_newline;
+    model.indent_size = if (model.prefs.indent_size == 4) 4 else 2;
     if (model.prefs.last_path_len > 0 and model.open_path.text().len == 0) {
         model.open_path.set(model.prefs.lastPathSlice());
     }
@@ -2994,6 +3049,7 @@ fn persistPrefs(model: *Model) void {
     model.prefs.find_case_sensitive = model.find_case_sensitive;
     model.prefs.trim_trailing_ws = model.trim_trailing_ws;
     model.prefs.insert_final_newline = model.insert_final_newline;
+    model.prefs.indent_size = model.indent_size;
     model.prefs.save(modelIo(model));
 }
 

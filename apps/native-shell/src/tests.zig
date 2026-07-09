@@ -696,3 +696,18 @@ test "remove blank lines and copy filename" {
     try testing.expect(model.path_toast.len > 0);
     try testing.expect(std.mem.indexOf(u8, model.path_toast, "/") == null);
 }
+
+test "indent size cycle and tabs to spaces" {
+    var model = main.initialModel();
+    try testing.expectEqual(@as(u8, 2), model.indent_size);
+    main.update(&model, .cycle_indent_size);
+    try testing.expectEqual(@as(u8, 4), model.indent_size);
+    model.document.set("a\tb");
+    main.update(&model, .convert_tabs_to_spaces);
+    try testing.expectEqualStrings("a   b", model.document.text());
+    model.document.set("b\na\nb\n");
+    main.update(&model, .transform_sort_unique);
+    try testing.expectEqualStrings("a\nb\n", model.document.text());
+    model_mod.refreshDocStats(&model);
+    try testing.expect(std.mem.indexOf(u8, model.doc_stats, "ASCII") != null);
+}
