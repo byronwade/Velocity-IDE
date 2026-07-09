@@ -17,6 +17,7 @@ const theme = @import("theme/tokens.zig");
 pub const Model = model_mod.Model;
 pub const Msg = model_mod.Msg;
 pub const update = model_mod.update;
+pub const updateFx = model_mod.updateFx;
 
 const canvas_label = "main-canvas";
 const window_width: f32 = 1280;
@@ -98,7 +99,7 @@ pub fn main(init: std.process.Init) !void {
         .name = "velocity-ide",
         .scene = shell_scene,
         .canvas_label = canvas_label,
-        .update = update,
+        .update_fx = updateFx,
         .tokens_fn = tokensFromModel,
         .on_appearance = onAppearance,
         .on_chrome = onChrome,

@@ -164,7 +164,7 @@
                 <row gap="8" cross="center">
                   <text size="sm" grow="1">Terminal</text>
                   <badge variant="secondary">{terminalStatus}</badge>
-                  <text size="sm" foreground="text_muted">pipe / sh -c</text>
+                  <text size="sm" foreground="text_muted">pipe / async sh -c</text>
                   <button size="sm" variant="ghost" on-press="clear_terminal">Clear</button>
                 </row>
                 <row gap="6" cross="center">

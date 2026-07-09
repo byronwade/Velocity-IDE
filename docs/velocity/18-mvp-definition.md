@@ -14,7 +14,7 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Search | Bounded in-process text search over scanned files (no ripgrep). |
 | SCM | `git status --porcelain` + branch via governor (lazy on SCM panel). |
 | Command palette | Open Folder, Save, Search, Git refresh, Terminal, theme, safe mode. |
-| Terminal | Pipe-based shell command runner via Process Governor (not full PTY). |
+| Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |
 | Agent panel | Local task board only — no network AI. |
 | Telemetry | Off. |
 

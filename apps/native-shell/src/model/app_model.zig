@@ -96,6 +96,8 @@ pub const Msg = union(enum) {
     refresh_git,
     update_new_file_path: canvas.TextInputEvent,
     create_new_file,
+    terminal_line: native_sdk.EffectLine,
+    terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
     set_appearance: native_sdk.Appearance,
 
@@ -117,8 +119,12 @@ pub const Msg = union(enum) {
         "run_search",
         "refresh_git",
         "create_new_file",
+        "terminal_line",
+        "terminal_exit",
     };
 };
+
+pub const Effects = native_sdk.Effects(Msg);
 
 pub const Model = struct {
     current_view: ViewKind = .launch,
@@ -160,6 +166,8 @@ pub const Model = struct {
     git_summary: []const u8 = "not loaded",
     git_branch: []const u8 = "unknown",
     new_file_path: canvas.TextBuffer(max_new_file_path) = .{},
+    terminal_effect_key: u64 = 0,
+    terminal_async: bool = false,
     governor: process_governor.Governor = .{},
     toast: []const u8 = "",
     editor_mode_label: []const u8 = "read-only mock",
@@ -240,6 +248,8 @@ pub const Model = struct {
         "git_bufs",
         "search_query",
         "new_file_path",
+        "terminal_effect_key",
+        "terminal_async",
         "governor",
         "editorBody",
     };
@@ -550,7 +560,17 @@ pub fn initialModel() Model {
     return .{};
 }
 
+/// Sync update used by unit tests (no effects channel).
 pub fn update(model: *Model, msg: Msg) void {
+    updateInner(model, msg, null);
+}
+
+/// Runtime update with Native SDK effects (async terminal spawn).
+pub fn updateFx(model: *Model, msg: Msg, fx: *Effects) void {
+    updateInner(model, msg, fx);
+}
+
+fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
     switch (msg) {
         .open_command_palette => {
             model.command_palette_open = true;
@@ -591,7 +611,7 @@ pub fn update(model: *Model, msg: Msg) void {
             } else if (std.mem.eql(u8, id, "create_new_file")) {
                 createNewFile(model);
             } else if (std.mem.eql(u8, id, "run_terminal")) {
-                runTerminalFromModel(model);
+                runTerminalFromModel(model, fx);
             } else if (std.mem.eql(u8, id, "run_search")) {
                 model.current_view = .search;
                 model.selected_activity = .search;
@@ -763,7 +783,7 @@ pub fn update(model: *Model, msg: Msg) void {
             }
         },
         .update_terminal_command => |edit| model.terminal_command.apply(edit),
-        .run_terminal_command => runTerminalFromModel(model),
+        .run_terminal_command => runTerminalFromModel(model, fx),
         .clear_terminal => {
             if (model.terminal) |t| t.clear();
             model.term_lines = &.{};
@@ -775,6 +795,29 @@ pub fn update(model: *Model, msg: Msg) void {
         .refresh_git => refreshGitStatus(model),
         .update_new_file_path => |edit| model.new_file_path.apply(edit),
         .create_new_file => createNewFile(model),
+        .terminal_line => |line| {
+            if (ensureTerminalBuffers(model)) |term| {
+                term.pushLine(line.line);
+                model.term_lines = term.linesSlice();
+                term.status = "running";
+            } else |_| {}
+        },
+        .terminal_exit => |exit| {
+            if (ensureTerminalBuffers(model)) |term| {
+                term.running = false;
+                term.last_exit = exit.code;
+                term.status = if (exit.reason == .exited and exit.code == 0) "ok" else "exit";
+                var exit_buf: [48]u8 = undefined;
+                const exit_msg = std.fmt.bufPrint(&exit_buf, "[exit {d} / {s}]", .{ exit.code, @tagName(exit.reason) }) catch "[exit]";
+                term.pushLine(exit_msg);
+                model.term_lines = term.linesSlice();
+            } else |_| {}
+            model.governor.killFeature("feature.terminal");
+            model.terminal_process_count = 0;
+            model.process_count = model.governor.aliveCount();
+            model.terminal_async = false;
+            model.toast = if (exit.reason == .exited and exit.code == 0) "Command ok" else "Command exited";
+        },
         .chrome_changed => |chrome| {
             model.chrome_leading = chrome.insets.left;
             model.header_height = @max(header_natural_height, chrome.insets.top);
@@ -901,7 +944,7 @@ fn saveActiveDocument(model: *Model) void {
     model.toast = "Saved";
 }
 
-fn runTerminalFromModel(model: *Model) void {
+fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
     const cmd = model.terminal_command.text();
     if (cmd.len == 0) {
         model.toast = "Enter a command";
@@ -916,6 +959,39 @@ fn runTerminalFromModel(model: *Model) void {
     model.process_count = model.governor.aliveCount();
     model.terminal_process_count = 1;
     model.show_terminal = true;
+
+    if (fx) |effects| {
+        // Async path: wrap with cd when workspace is open (fx.spawn has no cwd).
+        term.pushPrompt(cmd);
+        term.running = true;
+        term.status = "running";
+        model.term_lines = term.linesSlice();
+        model.terminal_effect_key +%= 1;
+        if (model.terminal_effect_key == 0) model.terminal_effect_key = 1;
+        model.terminal_async = true;
+
+        var script_buf: [512]u8 = undefined;
+        const script = if (cwd.len > 0) blk: {
+            // Quote cwd lightly for sh -c; fixture paths are simple.
+            break :blk std.fmt.bufPrint(&script_buf, "cd {s} && {s}", .{ cwd, cmd }) catch cmd;
+        } else cmd;
+
+        // Keep script alive for the spawn call (copied by effects).
+        var script_owned: [512]u8 = undefined;
+        const slen = @min(script.len, script_owned.len);
+        @memcpy(script_owned[0..slen], script[0..slen]);
+
+        effects.spawn(.{
+            .key = model.terminal_effect_key,
+            .argv = &.{ "/bin/sh", "-c", script_owned[0..slen] },
+            .on_line = Effects.lineMsg(.terminal_line),
+            .on_exit = Effects.exitMsg(.terminal_exit),
+        });
+        model.toast = "Running...";
+        return;
+    }
+
+    // Sync fallback for unit tests (no effects channel).
     term.runCommand(modelIo(model), cwd, cmd);
     model.term_lines = term.linesSlice();
     model.governor.killFeature("feature.terminal");
