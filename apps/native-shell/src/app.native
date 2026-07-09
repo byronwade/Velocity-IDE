@@ -310,8 +310,6 @@
                   </if>
                   <if test="{showBottomProblems}">
                     <badge variant="secondary">{problemsStatus}</badge>
-                    <button size="sm" variant="ghost" on-press="parse_terminal_diagnostics">Parse Output</button>
-                    <button size="sm" variant="ghost" on-press="scan_problems">Scan Markers</button>
                   </if>
                   <button size="sm" variant="ghost" on-press="toggle_bottom_panel">Close</button>
                 </row>
@@ -373,6 +371,9 @@
                     <button size="sm" variant="ghost" selected="{problem_source_filter == problem_source_all}" on-press="set_problem_source_filter:{problem_source_all}" label="Show all problem sources">All</button>
                     <button size="sm" variant="ghost" selected="{problem_source_filter == problem_source_terminal}" on-press="set_problem_source_filter:{problem_source_terminal}" label="Show terminal problems">Terminal</button>
                     <button size="sm" variant="ghost" selected="{problem_source_filter == problem_source_marker}" on-press="set_problem_source_filter:{problem_source_marker}" label="Show marker problems">Marker</button>
+                    <spacer grow="1" />
+                    <button size="sm" variant="ghost" on-press="parse_terminal_diagnostics">Parse Output</button>
+                    <button size="sm" variant="ghost" on-press="scan_problems">Scan Markers</button>
                   </row>
                   <scroll grow="1" label="Problems list">
                     <column gap="2">
