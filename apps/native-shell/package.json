@@ -1,0 +1,18 @@
+{
+  "name": "@velocity/native-shell",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Velocity IDE native shell (Native SDK). Codename is rename-ready.",
+  "scripts": {
+    "dev": "native dev",
+    "check": "native check",
+    "build": "native build",
+    "test": "native test",
+    "clean": "rm -rf .native zig-out zig-cache .zig-cache",
+    "perf-smoke": "bash scripts/perf-smoke.sh",
+    "doctor": "native doctor"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,228 @@
+<!-- Velocity IDE shell - launch screen + IDE chrome + overlays.
+     Tokenized via theme/tokens.zig. Mock data only. Hot-reloads in native dev. -->
+<stack>
+  <column background="background" grow="1">
+    <!-- Titlebar / drag band -->
+    <row height="{header_height}" padding="10" gap="10" cross="center" background="surface" window-drag="true" label="Velocity header">
+      <spacer width="{chrome_leading}" />
+      <text size="sm" wrap="false">Velocity</text>
+      <text size="sm" foreground="text_muted" wrap="false">native ide</text>
+      <spacer grow="1" />
+      <button size="sm" variant="ghost" on-press="open_command_palette" label="Command palette">Cmd+K</button>
+      <button size="sm" variant="ghost" on-press="switch_theme" label="Switch theme">{themeLabel}</button>
+    </row>
+    <separator />
+
+    <!-- Launch screen -->
+    <if test="{isLaunch}">
+      <column grow="1" gap="16" padding="32" main="center" cross="center">
+        <column gap="8" cross="center" width="420">
+          <text size="lg">Velocity</text>
+          <text foreground="text_muted" wrap="true">Native IDE for fast software creation</text>
+          <text size="sm" foreground="text_muted">Press Cmd+K or Ctrl+K for commands</text>
+        </column>
+        <row gap="8" main="center">
+          <button variant="primary" on-press="open_project:{project_acme}">Open Folder</button>
+          <button variant="secondary" on-press="open_command_palette">Clone Repo</button>
+          <button variant="ghost" on-press="open_command_palette">Connect SSH</button>
+          <button variant="ghost" on-press="open_project:{project_scratch}">New Scratch</button>
+        </row>
+        <column gap="6" width="480" padding="12" background="surface_subtle">
+          <text size="sm" foreground="text_muted">Recent projects</text>
+          <for each="recent" as="p">
+            <list-item on-press="open_project:{p.name}" padding="8" gap="8" cross="center" label="{p.name}">
+              <column gap="2" grow="1">
+                <text wrap="false">{p.name}</text>
+                <text size="sm" foreground="text_muted" wrap="false">{p.path} / {p.branch}</text>
+              </column>
+            </list-item>
+          </for>
+        </column>
+        <text size="sm" foreground="text_muted">dev build 0.1.0 / no telemetry / plugins locked</text>
+      </column>
+    </if>
+
+    <!-- IDE / plugins / settings / perf -->
+    <if test="{showShell}">
+      <row grow="1">
+        <!-- Activity rail -->
+        <column width="48" gap="4" padding="6" background="surface" cross="center">
+          <button size="sm" variant="ghost" selected="{explorerSelected}" on-press="select_activity:{activity_explorer}" label="Explorer">Ex</button>
+          <button size="sm" variant="ghost" selected="{searchSelected}" on-press="select_activity:{activity_search}" label="Search">Se</button>
+          <button size="sm" variant="ghost" selected="{scmSelected}" on-press="select_activity:{activity_scm}" label="Source Control">Sc</button>
+          <button size="sm" variant="ghost" selected="{agentsSelected}" on-press="select_activity:{activity_agents}" label="Agents">Ag</button>
+          <button size="sm" variant="ghost" selected="{terminalSelected}" on-press="select_activity:{activity_terminal}" label="Terminal">Te</button>
+          <spacer grow="1" />
+          <button size="sm" variant="ghost" selected="{pluginsSelected}" on-press="select_activity:{activity_plugins}" label="Plugins">Pl</button>
+          <button size="sm" variant="ghost" selected="{settingsSelected}" on-press="select_activity:{activity_settings}" label="Settings">St</button>
+        </column>
+        <separator />
+
+        <!-- Left panel: explorer -->
+        <if test="{showLeftPanel}">
+          <column width="240" gap="8" padding="10" background="surface">
+            <row gap="8" cross="center">
+              <text grow="1" wrap="false">{project_name}</text>
+              <badge variant="secondary">{project_branch}</badge>
+            </row>
+            <text size="sm" foreground="text_muted" wrap="false">{project_path}</text>
+            <separator />
+            <scroll grow="1" label="File explorer">
+              <column gap="1">
+                <for each="file_nodes" key="id" as="n">
+                  <list-item on-press="select_file:{n.id}" selected="{n.id == selected_file_id}" padding="6" gap="6" cross="center" label="{n.name}">
+                    <text size="sm" foreground="text_muted">{n.depth}</text>
+                    <text grow="1" wrap="false">{n.name}</text>
+                  </list-item>
+                </for>
+              </column>
+            </scroll>
+          </column>
+          <separator />
+        </if>
+
+        <!-- Center + right -->
+        <column grow="1">
+          <if test="{showIdeChrome}">
+            <!-- Tabs -->
+            <row gap="4" padding="6" background="surface" cross="center">
+              <for each="open_tabs" key="id" as="t">
+                <button size="sm" variant="ghost" selected="{t.id == active_tab_id}" on-press="select_tab:{t.id}">{t.title}</button>
+              </for>
+              <spacer grow="1" />
+              <button size="sm" variant="ghost" on-press="toggle_agent_panel">Agent</button>
+              <button size="sm" variant="ghost" on-press="toggle_terminal">Terminal</button>
+            </row>
+            <separator />
+            <row grow="1">
+              <!-- Editor island placeholder -->
+              <column grow="1" gap="8" padding="12">
+                <text size="sm" foreground="text_muted" wrap="false">{activeTabPath} / {status_language}</text>
+                <column grow="1" gap="4" padding="12" background="surface_subtle">
+                  <text size="sm" foreground="text_muted">Editor island (placeholder)</text>
+                  <text wrap="true">{editorBody}</text>
+                  <spacer grow="1" />
+                  <text size="sm" foreground="text_muted">Monaco bridge loads after first paint / Cmd+K for commands</text>
+                </column>
+              </column>
+
+              <!-- Agent panel -->
+              <if test="{show_agent_panel}">
+                <separator />
+                <column width="320" gap="8" padding="10" background="surface">
+                  <row gap="8" cross="center">
+                    <text grow="1">Agent</text>
+                    <badge variant="secondary">mock</badge>
+                  </row>
+                  <text size="sm" foreground="text_muted">Model: placeholder / Autonomy: review</text>
+                  <text-field text="{agentPrompt}" placeholder="Ask the agent...  /commands  @files" on-input="update_agent_prompt" on-submit="create_agent_task" label="Agent prompt" />
+                  <row gap="6">
+                    <button size="sm" variant="primary" on-press="create_agent_task">Run</button>
+                    <button size="sm" variant="ghost" on-press="run_perf_check_placeholder">Perf</button>
+                  </row>
+                  <separator />
+                  <text size="sm" foreground="text_muted">Tasks</text>
+                  <scroll grow="1" label="Agent tasks">
+                    <column gap="6">
+                      <for each="tasks" key="id" as="task">
+                        <column gap="4" padding="8" background="surface_subtle">
+                          <row gap="6" cross="center">
+                            <text grow="1" wrap="false">{task.title}</text>
+                            <badge variant="secondary">{task.status_label}</badge>
+                          </row>
+                          <text size="sm" foreground="text_muted" wrap="true">{task.detail}</text>
+                        </column>
+                      </for>
+                    </column>
+                  </scroll>
+                </column>
+              </if>
+            </row>
+
+            <!-- Terminal -->
+            <if test="{show_terminal}">
+              <separator />
+              <column height="160" gap="4" padding="8" background="surface">
+                <row gap="8" cross="center">
+                  <text size="sm" grow="1">Terminal</text>
+                  <text size="sm" foreground="text_muted">fast mode / mock pty</text>
+                </row>
+                <scroll grow="1" label="Terminal output">
+                  <column gap="2">
+                    <for each="term_lines" as="line">
+                      <text size="sm" wrap="false">{line}</text>
+                    </for>
+                  </column>
+                </scroll>
+              </column>
+            </if>
+          </if>
+
+          <!-- Plugins view -->
+          <if test="{isPlugins}">
+            <column grow="1" gap="10" padding="16">
+              <text>Plugin Registry</text>
+              <text foreground="text_muted">Curated, permissioned, signed. No marketplace dependency by default.</text>
+              <scroll grow="1">
+                <column gap="8">
+                  <for each="plugins" as="plug">
+                    <column gap="4" padding="10" background="surface_subtle">
+                      <row gap="8" cross="center">
+                        <text grow="1">{plug.name}</text>
+                        <badge variant="secondary">{plug.trust}</badge>
+                      </row>
+                      <text size="sm" foreground="text_muted">{plug.id} / {plug.publisher} / v{plug.version}</text>
+                      <text size="sm" foreground="text_muted">Permissions: {plug.permissions_summary}</text>
+                    </column>
+                  </for>
+                </column>
+              </scroll>
+            </column>
+          </if>
+
+          <!-- Settings -->
+          <if test="{isSettings}">
+            <column grow="1" gap="10" padding="16">
+              <text>Settings</text>
+              <text foreground="text_muted">Telemetry off / Surveys off / Plugins locked until trusted</text>
+              <button variant="secondary" on-press="switch_theme">Theme: {themeLabel}</button>
+              <button variant="ghost" on-press="run_perf_check_placeholder">Run Performance Check</button>
+              <button variant="ghost" on-press="go_launch">Back to Launch</button>
+            </column>
+          </if>
+
+          <!-- Perf HUD -->
+          <if test="{show_perf_hud}">
+            <column gap="6" padding="10" background="surface_subtle">
+              <text size="sm">Performance HUD (mock)</text>
+              <text size="sm" foreground="text_muted">{perfSummary}</text>
+              <text size="sm" foreground="text_muted">app_start={perf_app_start_ms}ms window={perf_first_window_ms}ms paint={perf_first_paint_ms}ms palette={perf_palette_ms}ms terminal={perf_terminal_ms}ms rss={perf_rss_mb}MB plugins={perf_plugins_loaded}</text>
+            </column>
+          </if>
+        </column>
+      </row>
+    </if>
+
+    <separator />
+    <status-bar>{project_branch} / {status_language} / Native Shell / {status_plugins} / {status_agent} / {status_memory} / {status_startup}</status-bar>
+  </column>
+
+  <!-- Command palette overlay -->
+  <if test="{command_palette_open}">
+    <column grow="1" main="start" cross="center" padding="48" background="surface_pressed">
+      <column width="520" gap="8" padding="12" background="surface">
+        <text>Command Palette</text>
+        <search-field text="{commandQuery}" placeholder="Type a command..." on-input="update_command_query" label="Command search" />
+        <column gap="2">
+          <for each="command_items" as="cmd">
+            <list-item on-press="run_command:{cmd.id}" padding="8" gap="8" cross="center" label="{cmd.title}">
+              <text grow="1" wrap="false">{cmd.title}</text>
+              <text size="sm" foreground="text_muted">{cmd.hint}</text>
+            </list-item>
+          </for>
+        </column>
+        <button size="sm" variant="ghost" on-press="close_command_palette">Close</button>
+      </column>
+    </column>
+  </if>
+</stack>

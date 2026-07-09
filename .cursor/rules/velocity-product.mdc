@@ -1,0 +1,17 @@
+---
+description: Velocity IDE product vision and boundaries
+globs:
+  - apps/native-shell/**
+  - packages/**
+  - docs/velocity/**
+alwaysApply: true
+---
+
+# Velocity Product
+
+- The product is **Velocity**, a native IDE — not a VS Code theme/skin.
+- The Code-OSS tree under `src/` is a reference/compatibility bunker. Do **not** rewrite the Electron workbench for Velocity features.
+- New work lives in `apps/native-shell` and `packages/*`.
+- Prioritize a running app and measurable progress over abstract refactors.
+- No telemetry, surveys, Copilot, or Microsoft marketplace by default.
+- Codename is rename-ready; do not hardcode irreversible branding.

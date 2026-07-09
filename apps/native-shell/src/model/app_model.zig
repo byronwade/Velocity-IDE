@@ -1,0 +1,483 @@
+//! Velocity IDE application model — explicit TEA state for the mock shell.
+//! No network, no plugins, no secrets. Mock data only.
+
+const std = @import("std");
+const native_sdk = @import("native_sdk");
+const canvas = native_sdk.canvas;
+const theme = @import("../theme/tokens.zig");
+
+pub const header_natural_height: f32 = 44;
+pub const max_command_query = 64;
+pub const max_agent_prompt = 160;
+
+pub const ViewKind = enum { launch, ide, plugins, settings, perf };
+pub const Activity = enum { explorer, search, scm, agents, terminal, plugins, settings };
+pub const AgentStatus = enum { running, planning, ready_for_review, failed, completed };
+
+pub const FileNode = struct {
+    id: u32,
+    name: []const u8,
+    path: []const u8,
+    depth: u8,
+    is_dir: bool,
+};
+
+pub const Tab = struct {
+    id: u32,
+    title: []const u8,
+    path: []const u8,
+    language: []const u8,
+    dirty: bool = false,
+};
+
+pub const AgentTask = struct {
+    id: u32,
+    title: []const u8,
+    status: AgentStatus,
+    status_label: []const u8,
+    detail: []const u8,
+};
+
+pub const PluginEntry = struct {
+    id: []const u8,
+    name: []const u8,
+    publisher: []const u8,
+    version: []const u8,
+    trust: []const u8,
+    permissions_summary: []const u8,
+};
+
+pub const RecentProject = struct {
+    name: []const u8,
+    path: []const u8,
+    branch: []const u8,
+};
+
+pub const CommandItem = struct {
+    id: []const u8,
+    title: []const u8,
+    hint: []const u8,
+};
+
+pub const Msg = union(enum) {
+    open_command_palette,
+    close_command_palette,
+    update_command_query: canvas.TextInputEvent,
+    run_command: []const u8,
+    select_activity: Activity,
+    toggle_terminal,
+    toggle_agent_panel,
+    select_file: u32,
+    open_tab: u32,
+    close_tab: u32,
+    select_tab: u32,
+    open_project: []const u8,
+    go_launch,
+    create_agent_task,
+    update_agent_prompt: canvas.TextInputEvent,
+    switch_theme,
+    open_plugin_registry,
+    open_settings,
+    run_perf_check_placeholder,
+    chrome_changed: native_sdk.WindowChrome,
+    set_appearance: native_sdk.Appearance,
+
+    pub const view_unbound = .{
+        "chrome_changed",
+        "set_appearance",
+        "open_tab",
+        "close_tab",
+        "open_plugin_registry",
+        "open_settings",
+    };
+};
+
+pub const Model = struct {
+    current_view: ViewKind = .launch,
+    selected_activity: Activity = .explorer,
+    command_palette_open: bool = false,
+    command_query: canvas.TextBuffer(max_command_query) = .{},
+    agent_prompt: canvas.TextBuffer(max_agent_prompt) = .{},
+    show_terminal: bool = true,
+    show_agent_panel: bool = true,
+    show_perf_hud: bool = false,
+    theme_preference: theme.ThemePreference = .dark,
+    appearance: native_sdk.Appearance = .{},
+    chrome_leading: f32 = 0,
+    header_height: f32 = header_natural_height,
+    active_tab_id: u32 = 1,
+    selected_file_id: u32 = 2,
+    project_name: []const u8 = "acme-dashboard",
+    project_branch: []const u8 = "main",
+    project_path: []const u8 = "~/src/acme-dashboard",
+    status_language: []const u8 = "TypeScript",
+    status_plugins: []const u8 = "Plugins: locked",
+    status_agent: []const u8 = "Agent: idle",
+    status_memory: []const u8 = "Memory: -",
+    status_startup: []const u8 = "Startup: -",
+    perf_app_start_ms: u32 = 0,
+    perf_first_window_ms: u32 = 0,
+    perf_first_paint_ms: u32 = 0,
+    perf_palette_ms: u32 = 0,
+    perf_terminal_ms: u32 = 0,
+    perf_rss_mb: u32 = 0,
+    perf_plugins_loaded: u32 = 0,
+    next_task_id: u32 = 5,
+
+    // Constant payloads for markup on-press bindings (literals are not allowed).
+    activity_explorer: Activity = .explorer,
+    activity_search: Activity = .search,
+    activity_scm: Activity = .scm,
+    activity_agents: Activity = .agents,
+    activity_terminal: Activity = .terminal,
+    activity_plugins: Activity = .plugins,
+    activity_settings: Activity = .settings,
+    project_acme: []const u8 = "acme-dashboard",
+    project_scratch: []const u8 = "scratch",
+
+    // Static mock collections exposed for markup `for each=...`
+    file_nodes: []const FileNode = &file_tree,
+    open_tabs: []const Tab = &tabs,
+    tasks: []const AgentTask = &agent_tasks,
+    plugins: []const PluginEntry = &plugin_registry,
+    recent: []const RecentProject = &recent_projects,
+    command_items: []const CommandItem = &commands,
+    term_lines: []const []const u8 = &terminal_lines,
+
+    // Fields/fns used by update/theme/tests but not directly bound in markup.
+    pub const view_unbound = .{
+        "current_view",
+        "selected_activity",
+        "theme_preference",
+        "next_task_id",
+        "command_query",
+        "agent_prompt",
+        "appearance",
+        "isIde",
+        "isPerf",
+        "activeTabTitle",
+    };
+
+    pub fn commandQuery(model: *const Model) []const u8 {
+        return model.command_query.text();
+    }
+
+    pub fn agentPrompt(model: *const Model) []const u8 {
+        return model.agent_prompt.text();
+    }
+
+    pub fn isLaunch(model: *const Model) bool {
+        return model.current_view == .launch;
+    }
+
+    pub fn showShell(model: *const Model) bool {
+        return model.current_view != .launch;
+    }
+
+    pub fn isIde(model: *const Model) bool {
+        return model.current_view == .ide;
+    }
+
+    pub fn isPlugins(model: *const Model) bool {
+        return model.current_view == .plugins;
+    }
+
+    pub fn isSettings(model: *const Model) bool {
+        return model.current_view == .settings;
+    }
+
+    pub fn isPerf(model: *const Model) bool {
+        return model.current_view == .perf;
+    }
+
+    pub fn explorerSelected(model: *const Model) bool {
+        return model.selected_activity == .explorer;
+    }
+
+    pub fn searchSelected(model: *const Model) bool {
+        return model.selected_activity == .search;
+    }
+
+    pub fn scmSelected(model: *const Model) bool {
+        return model.selected_activity == .scm;
+    }
+
+    pub fn agentsSelected(model: *const Model) bool {
+        return model.selected_activity == .agents;
+    }
+
+    pub fn terminalSelected(model: *const Model) bool {
+        return model.selected_activity == .terminal;
+    }
+
+    pub fn pluginsSelected(model: *const Model) bool {
+        return model.selected_activity == .plugins;
+    }
+
+    pub fn settingsSelected(model: *const Model) bool {
+        return model.selected_activity == .settings;
+    }
+
+    pub fn activeTabTitle(model: *const Model) []const u8 {
+        for (tabs) |tab| {
+            if (tab.id == model.active_tab_id) return tab.title;
+        }
+        return "Untitled";
+    }
+
+    pub fn activeTabPath(model: *const Model) []const u8 {
+        for (tabs) |tab| {
+            if (tab.id == model.active_tab_id) return tab.path;
+        }
+        return "";
+    }
+
+    pub fn editorBody(model: *const Model) []const u8 {
+        _ = model;
+        return editor_placeholder;
+    }
+
+    pub fn themeLabel(model: *const Model) []const u8 {
+        return switch (model.theme_preference) {
+            .dark => "Dark",
+            .light => "Light",
+            .high_contrast => "High Contrast",
+        };
+    }
+
+    pub fn showLeftPanel(model: *const Model) bool {
+        return model.current_view == .ide and (model.selected_activity == .explorer or model.selected_activity == .search or model.selected_activity == .scm);
+    }
+
+    pub fn showIdeChrome(model: *const Model) bool {
+        return model.current_view == .ide or model.current_view == .perf;
+    }
+
+    pub fn perfSummary(model: *const Model) []const u8 {
+        _ = model;
+        return "Mock perf: window 118ms / paint 186ms / RSS 48MB / plugins 0";
+    }
+};
+
+pub const recent_projects = [_]RecentProject{
+    .{ .name = "acme-dashboard", .path = "~/src/acme-dashboard", .branch = "main" },
+    .{ .name = "velocity-ide", .path = "~/src/velocity-ide", .branch = "feat/shell" },
+    .{ .name = "payments-api", .path = "~/src/payments-api", .branch = "develop" },
+};
+
+pub const file_tree = [_]FileNode{
+    .{ .id = 1, .name = "src", .path = "src", .depth = 0, .is_dir = true },
+    .{ .id = 2, .name = "app.tsx", .path = "src/app.tsx", .depth = 1, .is_dir = false },
+    .{ .id = 3, .name = "components", .path = "src/components", .depth = 1, .is_dir = true },
+    .{ .id = 4, .name = "Chart.tsx", .path = "src/components/Chart.tsx", .depth = 2, .is_dir = false },
+    .{ .id = 5, .name = "server", .path = "src/server", .depth = 1, .is_dir = true },
+    .{ .id = 6, .name = "auth.ts", .path = "src/server/auth.ts", .depth = 2, .is_dir = false },
+    .{ .id = 7, .name = "package.json", .path = "package.json", .depth = 0, .is_dir = false },
+    .{ .id = 8, .name = "README.md", .path = "README.md", .depth = 0, .is_dir = false },
+    .{ .id = 9, .name = "tests", .path = "tests", .depth = 0, .is_dir = true },
+    .{ .id = 10, .name = "app.test.ts", .path = "tests/app.test.ts", .depth = 1, .is_dir = false },
+};
+
+pub const tabs = [_]Tab{
+    .{ .id = 1, .title = "app.tsx", .path = "src/app.tsx", .language = "TypeScript React" },
+    .{ .id = 2, .title = "auth.ts", .path = "src/server/auth.ts", .language = "TypeScript" },
+    .{ .id = 3, .title = "Chart.tsx", .path = "src/components/Chart.tsx", .language = "TypeScript React", .dirty = true },
+};
+
+pub const agent_tasks = [_]AgentTask{
+    .{ .id = 1, .title = "Build Landing Page", .status = .running, .status_label = "running", .detail = "Generating hero + CTA sections" },
+    .{ .id = 2, .title = "Analyze Tab vs Agent Usage", .status = .planning, .status_label = "planning", .detail = "Collecting interaction signals" },
+    .{ .id = 3, .title = "Fix CI Failures", .status = .ready_for_review, .status_label = "ready for review", .detail = "3 failing tests patched" },
+    .{ .id = 4, .title = "Refactor Auth Flow", .status = .completed, .status_label = "completed", .detail = "Session tokens unified" },
+};
+
+pub const terminal_lines = [_][]const u8{
+    "$ npm run dev",
+    "",
+    "  Next.js 15.1.0",
+    "  - Local:        http://localhost:3000",
+    "  - Ready in 428ms",
+    "",
+    "Compiled / in 86ms",
+};
+
+pub const plugin_registry = [_]PluginEntry{
+    .{ .id = "velocity.core-files", .name = "Core Files", .publisher = "velocity", .version = "0.1.0", .trust = "trusted-core", .permissions_summary = "filesystem.read" },
+    .{ .id = "velocity.theme-pack", .name = "Theme Pack", .publisher = "velocity", .version = "0.1.0", .trust = "trusted-core", .permissions_summary = "none" },
+    .{ .id = "community.fmt", .name = "Format On Save", .publisher = "community", .version = "0.0.0", .trust = "unsigned", .permissions_summary = "filesystem.write (denied)" },
+};
+
+pub const commands = [_]CommandItem{
+    .{ .id = "open_folder", .title = "Open Folder", .hint = "Cmd+O" },
+    .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
+    .{ .id = "toggle_agent", .title = "Toggle Agent Panel", .hint = "Cmd+." },
+    .{ .id = "open_plugins", .title = "Open Plugin Registry", .hint = "" },
+    .{ .id = "open_settings", .title = "Open Settings", .hint = "Cmd+," },
+    .{ .id = "run_perf", .title = "Run Performance Check", .hint = "" },
+    .{ .id = "switch_theme", .title = "Switch Theme", .hint = "" },
+    .{ .id = "new_agent_task", .title = "New Agent Task", .hint = "" },
+    .{ .id = "go_launch", .title = "Back to Launch Screen", .hint = "" },
+};
+
+pub const editor_placeholder =
+    \\import { Chart } from "./components/Chart";
+    \\
+    \\export default function App() {
+    \\  return (
+    \\    <main className="page">
+    \\      <h1>Acme Dashboard</h1>
+    \\      <Chart metric="revenue" />
+    \\    </main>
+    \\  );
+    \\}
+;
+
+pub fn initialModel() Model {
+    return .{};
+}
+
+pub fn update(model: *Model, msg: Msg) void {
+    switch (msg) {
+        .open_command_palette => {
+            model.command_palette_open = true;
+            model.command_query.clear();
+        },
+        .close_command_palette => {
+            model.command_palette_open = false;
+            model.command_query.clear();
+        },
+        .update_command_query => |edit| model.command_query.apply(edit),
+        .run_command => |id| {
+            model.command_palette_open = false;
+            model.command_query.clear();
+            if (std.mem.eql(u8, id, "toggle_terminal")) {
+                model.show_terminal = !model.show_terminal;
+            } else if (std.mem.eql(u8, id, "toggle_agent")) {
+                model.show_agent_panel = !model.show_agent_panel;
+            } else if (std.mem.eql(u8, id, "open_plugins")) {
+                model.current_view = .plugins;
+                model.selected_activity = .plugins;
+            } else if (std.mem.eql(u8, id, "open_settings")) {
+                model.current_view = .settings;
+                model.selected_activity = .settings;
+            } else if (std.mem.eql(u8, id, "run_perf")) {
+                applyPerfPlaceholder(model);
+                model.show_perf_hud = true;
+                model.current_view = .perf;
+            } else if (std.mem.eql(u8, id, "switch_theme")) {
+                cycleTheme(model);
+            } else if (std.mem.eql(u8, id, "new_agent_task")) {
+                createTask(model);
+            } else if (std.mem.eql(u8, id, "go_launch")) {
+                model.current_view = .launch;
+            } else if (std.mem.eql(u8, id, "open_folder")) {
+                model.current_view = .ide;
+            }
+        },
+        .select_activity => |activity| {
+            model.selected_activity = activity;
+            switch (activity) {
+                .plugins => model.current_view = .plugins,
+                .settings => model.current_view = .settings,
+                .terminal => {
+                    model.current_view = .ide;
+                    model.show_terminal = true;
+                },
+                .agents => {
+                    model.current_view = .ide;
+                    model.show_agent_panel = true;
+                },
+                else => model.current_view = .ide,
+            }
+        },
+        .toggle_terminal => model.show_terminal = !model.show_terminal,
+        .toggle_agent_panel => model.show_agent_panel = !model.show_agent_panel,
+        .select_file => |id| {
+            model.selected_file_id = id;
+            for (tabs) |tab| {
+                if (std.mem.eql(u8, tab.path, pathForFile(id))) {
+                    model.active_tab_id = tab.id;
+                    break;
+                }
+            }
+            model.current_view = .ide;
+        },
+        .open_tab => |id| {
+            model.active_tab_id = id;
+            model.current_view = .ide;
+        },
+        .close_tab => {},
+        .select_tab => |id| model.active_tab_id = id,
+        .open_project => |name| {
+            model.project_name = name;
+            model.current_view = .ide;
+            model.selected_activity = .explorer;
+        },
+        .go_launch => model.current_view = .launch,
+        .create_agent_task => createTask(model),
+        .update_agent_prompt => |edit| model.agent_prompt.apply(edit),
+        .switch_theme => cycleTheme(model),
+        .open_plugin_registry => {
+            model.current_view = .plugins;
+            model.selected_activity = .plugins;
+        },
+        .open_settings => {
+            model.current_view = .settings;
+            model.selected_activity = .settings;
+        },
+        .run_perf_check_placeholder => {
+            applyPerfPlaceholder(model);
+            model.show_perf_hud = true;
+            model.current_view = .perf;
+        },
+        .chrome_changed => |chrome| {
+            model.chrome_leading = chrome.insets.left;
+            model.header_height = @max(header_natural_height, chrome.insets.top);
+        },
+        .set_appearance => |appearance| model.appearance = appearance,
+    }
+}
+
+fn pathForFile(id: u32) []const u8 {
+    for (file_tree) |node| {
+        if (node.id == id) return node.path;
+    }
+    return "";
+}
+
+fn cycleTheme(model: *Model) void {
+    model.theme_preference = switch (model.theme_preference) {
+        .dark => .light,
+        .light => .high_contrast,
+        .high_contrast => .dark,
+    };
+}
+
+fn createTask(model: *Model) void {
+    _ = model;
+    // Mock: bump status text only — fixed array size for milestone 1.
+    // Real task append lands when agent runtime exists.
+}
+
+fn applyPerfPlaceholder(model: *Model) void {
+    model.perf_app_start_ms = 42;
+    model.perf_first_window_ms = 118;
+    model.perf_first_paint_ms = 186;
+    model.perf_palette_ms = 8;
+    model.perf_terminal_ms = 12;
+    model.perf_rss_mb = 48;
+    model.perf_plugins_loaded = 0;
+    model.status_memory = "Memory: 48 MB (mock)";
+    model.status_startup = "Startup: 186 ms (mock)";
+    model.status_agent = "Agent: idle";
+}
+
+pub fn statusFor(task: AgentTask) []const u8 {
+    return switch (task.status) {
+        .running => "running",
+        .planning => "planning",
+        .ready_for_review => "ready for review",
+        .failed => "failed",
+        .completed => "completed",
+    };
+}

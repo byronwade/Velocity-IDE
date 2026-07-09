@@ -1,0 +1,14 @@
+---
+description: Velocity performance budgets
+globs:
+  - apps/native-shell/**
+  - docs/velocity/06-performance-budget.md
+alwaysApply: true
+---
+
+# Performance
+
+- No feature without a performance budget.
+- First paint must not wait on plugins, agents, terminal init, or network.
+- Lazy-load everything heavy.
+- Measure or stub measurement (`perf/` + Run Performance Check).

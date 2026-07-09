@@ -1,0 +1,14 @@
+---
+description: Velocity security defaults
+globs:
+  - apps/native-shell/**
+  - packages/plugin-sdk/**
+alwaysApply: true
+---
+
+# Security
+
+- Plugin permissions default deny.
+- No arbitrary shell/network/filesystem/credentials access.
+- No telemetry. No secret handling in scaffold.
+- Future legacy VSIX bridge must be isolated/sandboxed.

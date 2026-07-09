@@ -1,0 +1,8 @@
+<!-- Terminal panel is currently inlined in src/app.native (mock lines).
+     Future: extract this panel and bind to terminal_model.zig + native PTY. -->
+<column height="160" gap="4" padding="8" background="surface">
+  <row gap="8" cross="center">
+    <text size="sm" grow="1">Terminal</text>
+    <text size="sm" foreground="text_muted">fast mode / mock pty</text>
+  </row>
+</column>

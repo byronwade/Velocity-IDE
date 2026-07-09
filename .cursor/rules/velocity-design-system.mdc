@@ -1,0 +1,14 @@
+---
+description: Velocity design system rules
+globs:
+  - apps/native-shell/**
+  - docs/velocity/03-design-system.md
+alwaysApply: true
+---
+
+# Design
+
+- Dark-first, high contrast, hairline borders, compact panels, keyboard-first.
+- Tokenized styling only (`theme/tokens.zig`).
+- Cursor/Vercel are inspiration only — no brand assets, logos, or trade dress.
+- Agent surface: task cards, status labels, calm typography.

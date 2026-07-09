@@ -1,0 +1,14 @@
+---
+description: Velocity architecture boundaries
+globs:
+  - apps/native-shell/**
+  - packages/**
+alwaysApply: true
+---
+
+# Architecture
+
+- Keep native shell, workspace core, plugins, terminal, LSP, and editor island as separate modules.
+- Prefer small modules and explicit TEA (Model/Msg/update) state.
+- Do not import VS Code workbench code into the native shell.
+- WebView is allowed only for the editor island, never the whole shell.

@@ -23,3 +23,13 @@ product.overrides.json
 *.tsbuildinfo
 .vscode-test
 vscode-telemetry-docs/
+
+# Local Native SDK CLI install
+.tools/
+apps/native-shell/.native/
+apps/native-shell/zig-out/
+apps/native-shell/zig-cache/
+apps/native-shell/.zig-cache/
+
+# Local agent scratch (not part of Velocity)
+.perf-fork/
