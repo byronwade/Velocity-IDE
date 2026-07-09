@@ -273,7 +273,7 @@ pub fn deleteRelDir(io: Io, root_path: []const u8, rel_path: []const u8) !void {
     if (rel_path.len == 0) return error.AccessDenied;
     var root = try Io.Dir.cwd().openDir(io, root_path, .{});
     defer root.close(io);
-    root.deleteTree(io, rel_path) catch return error.AccessDenied;
+    root.deleteDir(io, rel_path) catch return error.AccessDenied;
 }
 
 /// Join root + relative path into `out`. Returns joined slice.

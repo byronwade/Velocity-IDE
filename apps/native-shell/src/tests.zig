@@ -1390,6 +1390,7 @@ test "manual disk refresh reports active external changes without discarding edi
     try testing.expect(model.document_dirty);
     try testing.expectEqualStrings("unsaved\n", model.document.text());
     try testing.expect(std.mem.startsWith(u8, model.toast, "Active file changed externally"));
+    try testing.expect(std.mem.endsWith(u8, model.open_tabs[0].title, " * !"));
 }
 
 test "workspace open detects and runs bounded npm task with diagnostics" {
@@ -1512,4 +1513,152 @@ test "close persists hot exit and matching workspace restores dirty session" {
     try testing.expectEqualStrings("Hot-exit session restored", restored.toast);
     try testing.expectEqualStrings("hot exit edit\n", restored.document.text());
     try testing.expect(restored.document_dirty);
+}
+
+test "external clean background tab is decorated and reloads on selection" {
+    const root = "zig-out/test-model-background-stale-tab";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "a original\n" });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/b.txt", .data = "b original\n" });
+
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    const ws = model.workspace.?;
+    const a_id = ws.findNodeByPath("a.txt").?.id;
+    const b_id = ws.findNodeByPath("b.txt").?.id;
+    main.update(&model, .{ .select_file = b_id });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "a external\n" });
+
+    main.update(&model, .refresh_disk_sync);
+    var stale_title: []const u8 = "";
+    for (model.open_tabs) |tab| {
+        if (tab.id == a_id) stale_title = tab.title;
+    }
+    try testing.expect(std.mem.endsWith(u8, stale_title, " !"));
+    try testing.expectEqualStrings("b original\n", model.document.text());
+
+    main.update(&model, .{ .select_tab = a_id });
+    try testing.expectEqualStrings("a external\n", model.document.text());
+    try testing.expect(!model.disk_changed);
+    for (model.open_tabs) |tab| {
+        if (tab.id == a_id) try testing.expect(!std.mem.endsWith(u8, tab.title, " !"));
+    }
+}
+
+test "explorer create rename and delete preserve unrelated dirty tabs" {
+    const root = "zig-out/test-model-explorer-session";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/a.txt", .data = "a\n" });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/b.txt", .data = "b\n" });
+
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    var ws = model.workspace.?;
+    main.update(&model, .{ .select_file = ws.findNodeByPath("b.txt").?.id });
+    model.document.set("dirty b\n");
+    model.document_dirty = true;
+    model_mod.syncActiveTabDirtyForTest(&model);
+
+    model.new_file_path.set("c.txt");
+    main.update(&model, .create_new_file);
+    try testing.expectEqual(@as(usize, 3), model.open_tabs.len);
+
+    ws = model.workspace.?;
+    model.selected_file_id = ws.findNodeByPath("b.txt").?.id;
+    model.new_file_path.set("renamed.txt");
+    main.update(&model, .rename_selected_file);
+    try testing.expectEqualStrings("dirty b\n", model.document.text());
+    try testing.expect(model.document_dirty);
+    try testing.expectEqualStrings("renamed.txt", Model.activeTabPath(&model));
+
+    ws = model.workspace.?;
+    model.selected_file_id = ws.findNodeByPath("c.txt").?.id;
+    main.update(&model, .delete_selected_file);
+    main.update(&model, .delete_selected_file);
+    try testing.expectEqual(@as(usize, 2), model.open_tabs.len);
+    try testing.expect(ws.findNodeByPath("c.txt") == null);
+    main.update(&model, .{ .select_tab = ws.findNodeByPath("renamed.txt").?.id });
+    try testing.expectEqualStrings("dirty b\n", model.document.text());
+    try testing.expect(model.document_dirty);
+
+    model.new_file_path.set("empty");
+    main.update(&model, .create_folder);
+    ws = model.workspace.?;
+    model.selected_file_id = ws.findNodeByPath("empty").?.id;
+    main.update(&model, .delete_selected_file);
+    main.update(&model, .delete_selected_file);
+    try testing.expectEqualStrings("Folder deleted", model.toast);
+    try testing.expect(ws.findNodeByPath("empty") == null);
+}
+
+fn runModelTestGit(cwd: []const u8, argv: []const []const u8) !void {
+    const result = try std.process.run(testing.allocator, std.testing.io, .{
+        .argv = argv,
+        .cwd = .{ .path = cwd },
+        .stdout_limit = .limited(4096),
+        .stderr_limit = .limited(4096),
+    });
+    defer {
+        testing.allocator.free(result.stdout);
+        testing.allocator.free(result.stderr);
+    }
+    switch (result.term) {
+        .exited => |code| try testing.expectEqual(@as(u8, 0), code),
+        else => return error.TestUnexpectedResult,
+    }
+}
+
+test "model SCM stages literal path and restore reloads clean open tab" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var root_buf: [160]u8 = undefined;
+    const root = try std.fmt.bufPrint(&root_buf, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    try runModelTestGit(root, &.{ "git", "init", "-q" });
+    try runModelTestGit(root, &.{ "git", "config", "user.email", "model-scm@example.invalid" });
+    try runModelTestGit(root, &.{ "git", "config", "user.name", "Model SCM Test" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "tracked.txt", .data = "original\n" });
+    try runModelTestGit(root, &.{ "git", "add", "--", "tracked.txt" });
+    try runModelTestGit(root, &.{ "git", "commit", "-q", "-m", "initial" });
+
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    const literal_path = "space ;$' file.txt";
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = literal_path, .data = "literal\n" });
+    main.update(&model, .refresh_git);
+    var literal_id: u32 = 0;
+    for (model.git_entries) |entry| {
+        if (std.mem.eql(u8, entry.path, literal_path)) literal_id = entry.id;
+    }
+    try testing.expect(literal_id != 0);
+    main.update(&model, .{ .stage_git_entry = literal_id });
+    var staged_literal = false;
+    for (model.git_entries) |entry| {
+        if (std.mem.eql(u8, entry.path, literal_path)) {
+            staged_literal = std.mem.eql(u8, entry.status, "A ");
+        }
+    }
+    try testing.expect(staged_literal);
+
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "tracked.txt", .data = "modified\n" });
+    main.update(&model, .refresh_disk_sync);
+    try testing.expectEqualStrings("modified\n", model.document.text());
+    main.update(&model, .refresh_git);
+    var tracked_id: u32 = 0;
+    for (model.git_entries) |entry| {
+        if (std.mem.eql(u8, entry.path, "tracked.txt")) tracked_id = entry.id;
+    }
+    try testing.expect(tracked_id != 0);
+    main.update(&model, .{ .restore_git_entry = tracked_id });
+    try testing.expect(std.mem.startsWith(u8, model.toast, "Restore selected file"));
+    main.update(&model, .{ .restore_git_entry = tracked_id });
+    try testing.expectEqualStrings("restored", model.toast);
+    try testing.expectEqualStrings("original\n", model.document.text());
+    try testing.expect(!model.document_dirty);
 }

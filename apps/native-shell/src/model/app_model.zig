@@ -2423,6 +2423,18 @@ fn openWorkspaceFile(model: *Model, ws: *workspace_store.WorkspaceBuffers, id: u
             return false;
         };
     }
+    if (model.disk_checker.isStale(id) and !ws.tabIsDirty(id)) {
+        ws.reloadFileById(modelIo(model), id) catch |err| {
+            model.toast = switch (err) {
+                error.FileTooLarge => "File exceeds the 16 KiB editor limit; active tab was not changed",
+                else => "Unable to reload changed file; active tab was not changed",
+            };
+            return false;
+        };
+        model.disk_checker.clearStale(id);
+        ws.setTabStale(id, false);
+        return true;
+    }
     ws.openFileById(modelIo(model), id) catch |err| {
         model.toast = switch (err) {
             error.AllTabsDirty => "All 8 tabs have unsaved changes; save or close one before opening another",
@@ -2448,12 +2460,26 @@ fn refreshDiskSync(model: *Model, manual: bool) void {
     if (batch.event_count > 0) {
         var active_changed = false;
         for (batch.eventSlice()) |event| {
-            if (event.tab_id == model.active_tab_id) active_changed = true;
+            ws.setTabStale(event.tab_id, true);
+            if (!ws.tabIsDirty(event.tab_id)) {
+                _ = ws.invalidateCleanTabById(event.tab_id);
+                if (event.tab_id == model.active_tab_id) {
+                    if (ws.reloadFileById(modelIo(model), event.tab_id)) |_| {
+                        model.disk_checker.clearStale(event.tab_id);
+                        ws.setTabStale(event.tab_id, false);
+                        syncDocumentFromWorkspace(model);
+                    } else |_| {}
+                }
+            } else if (event.tab_id == model.active_tab_id) {
+                active_changed = true;
+            }
         }
+        model.open_tabs = ws.tabsSlice();
+        model.disk_changed = model.active_tab_id != 0 and model.disk_checker.isStale(model.active_tab_id);
         model.toast = if (active_changed)
             "Active file changed externally — Compare or Revert; edits were preserved"
         else
-            "An open file changed externally; edits were preserved";
+            "An open file changed externally; clean tabs reload when selected";
     } else if (manual) {
         model.toast = if (model.disk_changed) "Active file still differs from disk" else "Disk state up to date";
     }
@@ -2577,6 +2603,17 @@ fn syncActiveTabDirty(model: *Model) void {
         ws.setTabDirty(model.active_tab_id, model.document_dirty);
         model.open_tabs = ws.tabsSlice();
     }
+}
+
+fn reloadCleanOpenPath(model: *Model, path: []const u8) void {
+    const ws = model.workspace orelse return;
+    const node = ws.findNodeByPath(path) orelse return;
+    const was_active = node.id == model.active_tab_id;
+    if (!ws.reloadCleanTabByPath(modelIo(model), path)) return;
+    model.disk_checker.clearStale(node.id);
+    ws.setTabStale(node.id, false);
+    model.open_tabs = ws.tabsSlice();
+    if (was_active) syncDocumentFromWorkspace(model);
 }
 
 /// Test helper — same as syncActiveTabDirty.
@@ -3669,6 +3706,7 @@ fn previewWorkspaceReplace(model: *Model) void {
         ws,
         needle,
         model.replace_text.text(),
+        model.search_case_sensitive,
     ) catch |err| {
         model.replace_previews = &.{};
         model.replace_status = switch (err) {
@@ -3725,12 +3763,15 @@ fn applyWorkspaceReplace(model: *Model) void {
         ws,
         model.search_query.text(),
         model.replace_text.text(),
+        model.search_case_sensitive,
     ) catch {
         model.toast = "Workspace replace failed; rescan before retrying";
         return;
     };
+    for (model.replace_previews) |preview| {
+        reloadCleanOpenPath(model, preview.path);
+    }
     invalidateWorkspaceReplace(model);
-    refreshExplorer(model);
     model.selected_activity = .search;
     model.show_sidebar = true;
     runWorkspaceSearch(model);
@@ -3877,6 +3918,13 @@ fn restoreGitEntry(model: *Model, entry_id: u32) void {
         model.toast = "Select a Git file to restore";
         return;
     };
+    var restored_path_buf: [git_status.max_path]u8 = undefined;
+    if (entry.path.len > restored_path_buf.len) {
+        model.toast = "Restore failed: path is too long";
+        return;
+    }
+    @memcpy(restored_path_buf[0..entry.path.len], entry.path);
+    const restored_path = restored_path_buf[0..entry.path.len];
     if (entry.status.len > 0 and (entry.status[0] == '?' or (entry.status.len > 1 and entry.status[1] == '?'))) {
         model.toast = "Restore refused: untracked files are never removed";
         return;
@@ -3884,7 +3932,7 @@ fn restoreGitEntry(model: *Model, entry_id: u32) void {
     syncActiveTabDirty(model);
     if (model.workspace) |ws| {
         for (ws.tabsSlice()) |tab| {
-            if (std.mem.eql(u8, tab.path, entry.path) and tab.dirty) {
+            if (std.mem.eql(u8, tab.path, restored_path) and tab.dirty) {
                 model.toast = "Restore refused: matching open tab has unsaved changes";
                 return;
             }
@@ -3896,12 +3944,17 @@ fn restoreGitEntry(model: *Model, entry_id: u32) void {
     }
     const bufs = model.git_bufs.?;
     _ = model.governor.spawn("feature.scm", "git checkout path") catch {};
-    const status = bufs.restorePath(modelIo(model), model.project_path, entry.path);
+    const status = bufs.restorePath(modelIo(model), model.project_path, restored_path);
     model.governor.killFeature("feature.scm");
     model.process_count = model.governor.aliveCount();
     syncGitModel(model, bufs);
     if (std.mem.eql(u8, status, "restored")) {
-        refreshExplorer(model);
+        reloadCleanOpenPath(model, restored_path);
+        if (model.workspace) |ws| {
+            if (ws.findNodeByPath(restored_path) == null) {
+                refreshExplorer(model);
+            }
+        }
         model.selected_activity = .scm;
         model.show_sidebar = true;
         refreshGitStatus(model);
@@ -4244,6 +4297,7 @@ fn createNewFile(model: *Model) void {
         model.toast = "Enter a relative path";
         return;
     }
+    syncActiveTabDirty(model);
     const id = ws.createFile(modelIo(model), rel, "") catch {
         model.toast = "Create file failed";
         return;
@@ -4277,16 +4331,17 @@ fn deleteSelectedFile(model: *Model) void {
         model.toast = "No file selected";
         return;
     };
-    if (node.is_dir) {
-        model.toast = "Cannot delete directories yet";
-        return;
-    }
     if (!std.mem.startsWith(u8, model.toast, "Delete ")) {
         const msg = std.fmt.bufPrint(&model.action_toast_buf, "Delete {s}? Del again to confirm", .{node.name}) catch "Delete again to confirm";
         model.toast = msg;
         return;
     }
-    ws.deleteFileById(modelIo(model), id) catch {
+    syncActiveTabDirty(model);
+    const delete_result = if (node.is_dir)
+        ws.deleteEmptyFolderById(modelIo(model), id)
+    else
+        ws.deleteFileById(modelIo(model), id);
+    delete_result catch {
         model.toast = "Delete failed";
         return;
     };
@@ -4296,9 +4351,14 @@ fn deleteSelectedFile(model: *Model) void {
     refreshWorkspaceFileCount(model);
     applyExplorerFilter(model);
     if (ws.tab_count > 0) {
-        model.active_tab_id = ws.tabs[0].id;
-        model.selected_file_id = ws.tabs[0].id;
-        model.status_language = ws.tabs[0].language;
+        const next_id = if (ws.findNodeByPath(ws.editorPath())) |active_node|
+            active_node.id
+        else
+            ws.tabs[0].id;
+        model.active_tab_id = next_id;
+        model.selected_file_id = next_id;
+        ws.openFileById(modelIo(model), next_id) catch {};
+        model.status_language = workspace_store.scannerLanguage(ws.editorPath());
         syncDocumentFromWorkspace(model);
     } else {
         model.document.clear();
@@ -4306,7 +4366,7 @@ fn deleteSelectedFile(model: *Model) void {
         model.selected_file_id = 0;
         model.active_tab_id = 0;
     }
-    model.toast = "File deleted";
+    model.toast = if (node.is_dir) "Folder deleted" else "File deleted";
 }
 
 fn revealInExplorer(model: *Model) void {
@@ -4376,6 +4436,7 @@ fn renameSelectedFile(model: *Model) void {
         model.toast = "Enter new path in New field";
         return;
     }
+    syncActiveTabDirty(model);
     const id = ws.renameFileById(modelIo(model), model.selected_file_id, new_rel) catch {
         model.toast = "Rename failed";
         return;
@@ -4964,14 +5025,8 @@ fn refreshExplorer(model: *Model) void {
         model.toast = "No workspace";
         return;
     };
+    syncActiveTabDirty(model);
     const active_path = Model.activeTabPath(model);
-    var keep_doc: [max_document]u8 = undefined;
-    const keep_len = if (model.document_dirty) blk: {
-        const n = @min(model.document.text().len, keep_doc.len);
-        @memcpy(keep_doc[0..n], model.document.text()[0..n]);
-        break :blk n;
-    } else 0;
-    const was_dirty = model.document_dirty;
 
     const new_id = ws.rescanPreserveTabs(modelIo(model), active_path) catch {
         model.toast = "Refresh failed";
@@ -4989,17 +5044,7 @@ fn refreshExplorer(model: *Model) void {
         if (ws.findNode(new_id)) |node| {
             model.status_language = workspace_store.scannerLanguage(node.path);
         }
-        if (was_dirty and keep_len > 0) {
-            ws.setEditorText(keep_doc[0..keep_len]);
-            ws.setTabDirty(new_id, true);
-            model.document.set(keep_doc[0..keep_len]);
-            model.document_dirty = true;
-            refreshDocStats(model);
-            refreshBreadcrumb(model);
-            syncActiveTabDirty(model);
-        } else {
-            syncDocumentFromWorkspace(model);
-        }
+        syncDocumentFromWorkspace(model);
     } else {
         model.document.clear();
         model.document_dirty = false;
@@ -5229,6 +5274,7 @@ fn createFolder(model: *Model) void {
         model.toast = "Enter a folder path";
         return;
     }
+    syncActiveTabDirty(model);
     const id = ws.createFolder(modelIo(model), rel) catch {
         model.toast = "Create folder failed";
         return;

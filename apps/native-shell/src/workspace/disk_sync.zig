@@ -73,6 +73,15 @@ pub const Checker = struct {
         return false;
     }
 
+    pub fn clearStale(self: *Checker, tab_id: u32) void {
+        for (&self.known_ids, &self.stale) |*known_id, *stale| {
+            if (known_id.* == tab_id) {
+                stale.* = false;
+                return;
+            }
+        }
+    }
+
     pub fn reset(self: *Checker) void {
         self.* = .{};
     }

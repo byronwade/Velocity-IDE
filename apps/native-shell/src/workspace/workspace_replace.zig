@@ -2,7 +2,6 @@
 //! Preview validates every matching file before apply performs disk writes.
 
 const std = @import("std");
-const replace = @import("replace.zig");
 const scanner = @import("scanner.zig");
 const workspace_store = @import("workspace_store.zig");
 
@@ -64,6 +63,7 @@ pub const WorkspaceReplace = struct {
         workspace: *workspace_store.WorkspaceBuffers,
         needle: []const u8,
         replacement: []const u8,
+        case_sensitive: bool,
     ) ReplaceError!PreviewSummary {
         self.clear();
         errdefer self.clear();
@@ -78,7 +78,7 @@ pub const WorkspaceReplace = struct {
         for (workspace.fileNodesSlice()) |node| {
             if (node.is_dir) continue;
             const text = (try readBoundedText(root, io, node.path, file_buf[0..])) orelse continue;
-            const count = countLiteral(text, needle);
+            const count = countLiteral(text, needle, case_sensitive);
             if (count == 0) continue;
             const bytes_after = try projectedSize(text.len, count, needle.len, replacement.len);
             try self.pushPreview(node.path, count, text.len, bytes_after);
@@ -98,8 +98,9 @@ pub const WorkspaceReplace = struct {
         workspace: *workspace_store.WorkspaceBuffers,
         needle: []const u8,
         replacement: []const u8,
+        case_sensitive: bool,
     ) ReplaceError!ApplySummary {
-        _ = try self.preview(io, workspace, needle, replacement);
+        _ = try self.preview(io, workspace, needle, replacement, case_sensitive);
         if (self.preview_count == 0) return .{};
 
         var root = std.Io.Dir.cwd().openDir(io, workspace.rootPath(), .{}) catch return error.WorkspaceUnavailable;
@@ -111,11 +112,10 @@ pub const WorkspaceReplace = struct {
         for (self.previewsSlice()) |item| {
             // Re-read and revalidate so a changed file can never overflow the output pool.
             const text = (try readBoundedText(root, io, item.path, file_buf[0..])) orelse continue;
-            const count = countLiteral(text, needle);
+            const count = countLiteral(text, needle, case_sensitive);
             if (count == 0) continue;
             _ = try projectedSize(text.len, count, needle.len, replacement.len);
-            const result = replace.replaceAll(text, needle, replacement, output_buf[0..]) orelse
-                return error.OutputTooLarge;
+            const result = replaceLiteral(text, needle, replacement, case_sensitive, output_buf[0..]) orelse return error.OutputTooLarge;
             root.writeFile(io, .{
                 .sub_path = item.path,
                 .data = output_buf[0..result.out_len],
@@ -174,15 +174,55 @@ fn readBoundedText(
     return text;
 }
 
-fn countLiteral(text: []const u8, needle: []const u8) usize {
+fn countLiteral(text: []const u8, needle: []const u8, case_sensitive: bool) usize {
     var count: usize = 0;
     var offset: usize = 0;
     while (offset < text.len) {
-        const relative = std.mem.indexOf(u8, text[offset..], needle) orelse break;
+        const relative = indexLiteral(text[offset..], needle, case_sensitive) orelse break;
         count += 1;
         offset += relative + needle.len;
     }
     return count;
+}
+
+const ReplaceResult = struct {
+    out_len: usize,
+    count: u32,
+};
+
+fn replaceLiteral(
+    text: []const u8,
+    needle: []const u8,
+    replacement: []const u8,
+    case_sensitive: bool,
+    out: []u8,
+) ?ReplaceResult {
+    var source_offset: usize = 0;
+    var output_offset: usize = 0;
+    var count: u32 = 0;
+    while (source_offset < text.len) {
+        const relative = indexLiteral(text[source_offset..], needle, case_sensitive) orelse break;
+        const match_start = source_offset + relative;
+        const prefix_len = match_start - source_offset;
+        if (output_offset + prefix_len + replacement.len > out.len) return null;
+        @memcpy(out[output_offset..][0..prefix_len], text[source_offset..match_start]);
+        output_offset += prefix_len;
+        @memcpy(out[output_offset..][0..replacement.len], replacement);
+        output_offset += replacement.len;
+        source_offset = match_start + needle.len;
+        count += 1;
+    }
+    const tail = text[source_offset..];
+    if (output_offset + tail.len > out.len) return null;
+    @memcpy(out[output_offset..][0..tail.len], tail);
+    return .{ .out_len = output_offset + tail.len, .count = count };
+}
+
+fn indexLiteral(text: []const u8, needle: []const u8, case_sensitive: bool) ?usize {
+    return if (case_sensitive)
+        std.mem.indexOf(u8, text, needle)
+    else
+        std.ascii.indexOfIgnoreCase(text, needle);
 }
 
 fn projectedSize(
@@ -223,6 +263,7 @@ test "previews literal replacements in fixture without writing" {
         workspace,
         "createSession",
         "openSession",
+        true,
     );
     try std.testing.expect(summary.files > 0);
     try std.testing.expect(summary.replacements > 0);
@@ -261,10 +302,10 @@ test "applies bounded literal replacements across workspace files" {
     _ = try workspace.openPath(std.testing.io, root_path);
 
     var workflow: WorkspaceReplace = .{};
-    const preview_summary = try workflow.preview(std.testing.io, workspace, "foo", "longer");
+    const preview_summary = try workflow.preview(std.testing.io, workspace, "foo", "longer", true);
     try std.testing.expectEqual(@as(u32, 2), preview_summary.files);
     try std.testing.expectEqual(@as(u32, 3), preview_summary.replacements);
-    const apply_summary = try workflow.apply(std.testing.io, workspace, "foo", "longer");
+    const apply_summary = try workflow.apply(std.testing.io, workspace, "foo", "longer", true);
     try std.testing.expectEqual(@as(u32, 2), apply_summary.files);
     try std.testing.expectEqual(@as(u32, 3), apply_summary.replacements);
 
@@ -281,6 +322,37 @@ test "applies bounded literal replacements across workspace files" {
         disk_buf[0..],
     );
     try std.testing.expectEqualStrings("two longer\n", b_disk);
+}
+
+test "case insensitive preview and apply use identical match semantics" {
+    const root_path = "zig-out/test-workspace-replace-ignore-case";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root_path) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root_path) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root_path);
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{
+        .sub_path = root_path ++ "/a.txt",
+        .data = "Alpha alpha ALPHA\n",
+    });
+
+    const workspace = try std.testing.allocator.create(workspace_store.WorkspaceBuffers);
+    defer std.testing.allocator.destroy(workspace);
+    workspace.* = .{};
+    _ = try workspace.openPath(std.testing.io, root_path);
+
+    var workflow: WorkspaceReplace = .{};
+    const preview_summary = try workflow.preview(std.testing.io, workspace, "alpha", "beta", false);
+    try std.testing.expectEqual(@as(u32, 3), preview_summary.replacements);
+    const apply_summary = try workflow.apply(std.testing.io, workspace, "alpha", "beta", false);
+    try std.testing.expectEqual(preview_summary.files, apply_summary.files);
+    try std.testing.expectEqual(preview_summary.replacements, apply_summary.replacements);
+
+    var disk_buf: [32]u8 = undefined;
+    const disk = try std.Io.Dir.cwd().readFile(
+        std.testing.io,
+        root_path ++ "/a.txt",
+        disk_buf[0..],
+    );
+    try std.testing.expectEqualStrings("beta beta beta\n", disk);
 }
 
 test "rejects oversized replacement output before changing disk" {
@@ -303,7 +375,7 @@ test "rejects oversized replacement output before changing disk" {
     var workflow: WorkspaceReplace = .{};
     try std.testing.expectError(
         error.OutputTooLarge,
-        workflow.apply(std.testing.io, workspace, "a", "aa"),
+        workflow.apply(std.testing.io, workspace, "a", "aa", true),
     );
     try std.testing.expectEqual(@as(u32, 0), workflow.preview_count);
 
