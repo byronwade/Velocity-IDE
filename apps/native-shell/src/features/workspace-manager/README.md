@@ -2,16 +2,18 @@
 
 - **id:** `feature.workspace-manager`
 - **mode:** `core`
-- **status:** `stub`
-- **implementation:** `native`
-- **startupAllowed:** `False`
+- **status:** `prototype`
+- **startupAllowed:** `false`
 - **memoryBudgetMB:** `8`
-- **maxProcesses:** `0`
-- **activation:** `onWorkspaceOpen`
 
-## Rules
+## Behavior (M2)
 
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+- `Open Folder` / recent **acme-dashboard** opens `fixtures/acme-dashboard` via path (no OS dialog yet).
+- Scan + document buffers live in heap-allocated `WorkspaceBuffers` (not on the Model stack).
+- Workspace Trust remains false until Trust Plus is implemented.
+
+## Next
+
+- Native open-directory dialog (`showOpenDialog`) with `filesystem` permission.
+- Multi-root workspaces.
+- File watchers (process-budgeted).

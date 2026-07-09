@@ -2,16 +2,20 @@
 
 - **id:** `feature.file-explorer`
 - **mode:** `core`
-- **status:** `stub`
-- **implementation:** `native`
-- **startupAllowed:** `False`
+- **status:** `prototype`
+- **startupAllowed:** `false` — tree loads on workspace open only
 - **memoryBudgetMB:** `16`
 - **maxProcesses:** `0`
-- **activation:** `onWorkspaceOpen`
+
+## Behavior (M2)
+
+- Renders bounded file tree from `workspace/scanner.zig` (max 256 nodes, depth 8).
+- Skips `node_modules`, `.git`, `vendor`, build caches by default.
+- Selecting a file reads up to 16KB text into the editor island placeholder.
+- No file watchers yet.
 
 ## Rules
 
 - Lazy by default unless `startupAllowed`.
 - Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
 - See `docs/velocity/14-feature-parity-matrix.md`.

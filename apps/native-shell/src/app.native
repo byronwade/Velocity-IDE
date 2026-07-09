@@ -68,8 +68,10 @@
             <row gap="8" cross="center">
               <text grow="1" wrap="false">{project_name}</text>
               <badge variant="secondary">{project_branch}</badge>
+              <badge variant="secondary">{workspaceStatus}</badge>
             </row>
             <text size="sm" foreground="text_muted" wrap="false">{project_path}</text>
+            <text size="sm" foreground="text_muted" wrap="false">nodes={workspace_node_count}</text>
             <separator />
             <scroll grow="1" label="File explorer">
               <column gap="1">

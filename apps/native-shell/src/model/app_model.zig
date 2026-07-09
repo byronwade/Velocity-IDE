@@ -1,10 +1,12 @@
-//! Velocity IDE application model — explicit TEA state for the mock shell.
-//! No network, no plugins, no secrets. Mock data only.
+//! Velocity IDE application model — explicit TEA state.
+//! Workspace folder open reads from disk (bounded scan). No network/plugins/secrets.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const native_sdk = @import("native_sdk");
 const canvas = native_sdk.canvas;
 const theme = @import("../theme/tokens.zig");
+const workspace_store = @import("../workspace/workspace_store.zig");
 
 pub const header_natural_height: f32 = 44;
 pub const max_command_query = 64;
@@ -14,21 +16,8 @@ pub const ViewKind = enum { launch, ide, plugins, settings, perf, features, proc
 pub const Activity = enum { explorer, search, scm, agents, terminal, plugins, settings, debug, testing, features, processes };
 pub const AgentStatus = enum { running, planning, ready_for_review, failed, completed };
 
-pub const FileNode = struct {
-    id: u32,
-    name: []const u8,
-    path: []const u8,
-    depth: u8,
-    is_dir: bool,
-};
-
-pub const Tab = struct {
-    id: u32,
-    title: []const u8,
-    path: []const u8,
-    language: []const u8,
-    dirty: bool = false,
-};
+pub const FileNode = workspace_store.FileNode;
+pub const Tab = workspace_store.Tab;
 
 pub const AgentTask = struct {
     id: u32,
@@ -121,6 +110,12 @@ pub const Model = struct {
     plugin_process_count: u32 = 0,
     terminal_scrollback_lines: u32 = 2000,
     mock_label: []const u8 = "mock",
+    workspace_from_disk: bool = false,
+    workspace_node_count: u32 = 0,
+    workspace_scan_error: []const u8 = "",
+    workspace: ?*workspace_store.WorkspaceBuffers = null,
+    /// Runtime Io from process.Init; tests fall back to std.testing.io.
+    io: ?std.Io = null,
     theme_preference: theme.ThemePreference = .dark,
     appearance: native_sdk.Appearance = .{},
     chrome_leading: f32 = 0,
@@ -185,6 +180,10 @@ pub const Model = struct {
         "activeTabTitle",
         "features_enabled",
         "showPlaceholderPanel",
+        "workspace",
+        "workspace_from_disk",
+        "workspace_scan_error",
+        "io",
     };
 
     pub fn commandQuery(model: *const Model) []const u8 {
@@ -302,6 +301,13 @@ pub const Model = struct {
     }
 
     pub fn activeTabTitle(model: *const Model) []const u8 {
+        if (model.workspace_from_disk) {
+            if (model.workspace) |ws| {
+                for (ws.tabsSlice()) |tab| {
+                    if (tab.id == model.active_tab_id) return tab.title;
+                }
+            }
+        }
         for (tabs) |tab| {
             if (tab.id == model.active_tab_id) return tab.title;
         }
@@ -309,6 +315,15 @@ pub const Model = struct {
     }
 
     pub fn activeTabPath(model: *const Model) []const u8 {
+        if (model.workspace_from_disk) {
+            if (model.workspace) |ws| {
+                const p = ws.editorPath();
+                if (p.len > 0) return p;
+                for (ws.tabsSlice()) |tab| {
+                    if (tab.id == model.active_tab_id) return tab.path;
+                }
+            }
+        }
         for (tabs) |tab| {
             if (tab.id == model.active_tab_id) return tab.path;
         }
@@ -316,8 +331,19 @@ pub const Model = struct {
     }
 
     pub fn editorBody(model: *const Model) []const u8 {
-        _ = model;
+        if (model.workspace_from_disk) {
+            if (model.workspace) |ws| {
+                const body = ws.editorText();
+                if (body.len > 0 or ws.editor_path_len > 0) return body;
+            }
+        }
         return editor_placeholder;
+    }
+
+    pub fn workspaceStatus(model: *const Model) []const u8 {
+        if (model.workspace_scan_error.len > 0) return model.workspace_scan_error;
+        if (model.workspace_from_disk) return "disk";
+        return "mock";
     }
 
     pub fn themeLabel(model: *const Model) []const u8 {
@@ -343,7 +369,7 @@ pub const Model = struct {
 };
 
 pub const recent_projects = [_]RecentProject{
-    .{ .name = "acme-dashboard", .path = "~/src/acme-dashboard", .branch = "main" },
+    .{ .name = "acme-dashboard", .path = "fixtures/acme-dashboard", .branch = "main" },
     .{ .name = "velocity-ide", .path = "~/src/velocity-ide", .branch = "feat/shell" },
     .{ .name = "payments-api", .path = "~/src/payments-api", .branch = "develop" },
 };
@@ -460,7 +486,7 @@ pub fn update(model: *Model, msg: Msg) void {
             } else if (std.mem.eql(u8, id, "go_launch")) {
                 model.current_view = .launch;
             } else if (std.mem.eql(u8, id, "open_folder")) {
-                model.current_view = .ide;
+                openFixtureWorkspace(model, "acme-dashboard");
             } else if (std.mem.eql(u8, id, "open_feature_matrix")) {
                 model.current_view = .features;
                 model.selected_activity = .features;
@@ -506,24 +532,54 @@ pub fn update(model: *Model, msg: Msg) void {
         .toggle_agent_panel => model.show_agent_panel = !model.show_agent_panel,
         .select_file => |id| {
             model.selected_file_id = id;
+            model.current_view = .ide;
+            model.selected_activity = .explorer;
+            if (model.workspace_from_disk) {
+                if (model.workspace) |ws| {
+                    ws.openFileById(modelIo(model), id) catch {};
+                    model.active_tab_id = id;
+                    model.open_tabs = ws.tabsSlice();
+                    if (ws.findNode(id)) |node| {
+                        if (!node.is_dir) {
+                            model.status_language = workspace_store.scannerLanguage(node.path);
+                        }
+                    }
+                    return;
+                }
+            }
             for (tabs) |tab| {
                 if (std.mem.eql(u8, tab.path, pathForFile(id))) {
                     model.active_tab_id = tab.id;
                     break;
                 }
             }
-            model.current_view = .ide;
         },
         .open_tab => |id| {
             model.active_tab_id = id;
             model.current_view = .ide;
         },
         .close_tab => {},
-        .select_tab => |id| model.active_tab_id = id,
+        .select_tab => |id| {
+            model.active_tab_id = id;
+            if (model.workspace_from_disk) {
+                if (model.workspace) |ws| {
+                    ws.openFileById(modelIo(model), id) catch {};
+                    model.open_tabs = ws.tabsSlice();
+                }
+            }
+        },
         .open_project => |name| {
-            model.project_name = name;
-            model.current_view = .ide;
-            model.selected_activity = .explorer;
+            if (std.mem.eql(u8, name, "scratch")) {
+                model.project_name = "scratch";
+                model.project_path = "(scratch)";
+                model.workspace_from_disk = false;
+                model.file_nodes = &file_tree;
+                model.open_tabs = &tabs;
+                model.current_view = .ide;
+                model.selected_activity = .explorer;
+            } else {
+                openFixtureWorkspace(model, name);
+            }
         },
         .go_launch => model.current_view = .launch,
         .create_agent_task => createTask(model),
@@ -569,6 +625,58 @@ pub fn update(model: *Model, msg: Msg) void {
         },
         .set_appearance => |appearance| model.appearance = appearance,
     }
+}
+
+
+fn modelIo(model: *const Model) std.Io {
+    if (model.io) |io| return io;
+    // Tests may omit model.io; release builds always set it from process.Init.
+    if (comptime builtin.is_test) return std.testing.io;
+    @panic("model.io not set");
+}
+
+fn ensureWorkspaceBuffers(model: *Model) !*workspace_store.WorkspaceBuffers {
+    if (model.workspace) |ws| return ws;
+    const ws = try std.heap.page_allocator.create(workspace_store.WorkspaceBuffers);
+    ws.* = .{};
+    model.workspace = ws;
+    return ws;
+}
+
+fn openFixtureWorkspace(model: *Model, key: []const u8) void {
+    const path = workspace_store.fixturePathForKey(key) orelse {
+        model.project_name = key;
+        model.current_view = .ide;
+        model.selected_activity = .explorer;
+        return;
+    };
+    const ws = ensureWorkspaceBuffers(model) catch {
+        model.workspace_scan_error = "Allocator failed";
+        model.current_view = .ide;
+        return;
+    };
+    const meta = ws.openPath(modelIo(model), path) catch {
+        model.workspace_scan_error = "Open failed";
+        model.current_view = .ide;
+        model.selected_activity = .explorer;
+        return;
+    };
+    model.workspace_from_disk = meta.from_disk;
+    model.workspace_node_count = meta.node_count;
+    model.workspace_scan_error = meta.scan_error;
+    model.project_name = ws.projectName();
+    model.project_path = ws.rootPath();
+    model.project_branch = meta.branch;
+    model.file_nodes = ws.fileNodesSlice();
+    model.open_tabs = ws.tabsSlice();
+    if (ws.tab_count > 0) {
+        model.active_tab_id = ws.tabs[0].id;
+        model.selected_file_id = ws.tabs[0].id;
+        model.status_language = ws.tabs[0].language;
+    }
+    model.current_view = .ide;
+    model.selected_activity = .explorer;
+    model.features_loaded = @max(model.features_loaded, 9);
 }
 
 fn pathForFile(id: u32) []const u8 {

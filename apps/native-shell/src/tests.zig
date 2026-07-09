@@ -104,3 +104,33 @@ test "feature matrix command switches view" {
     main.update(&model, .open_feature_matrix);
     try testing.expect(model.current_view == .features);
 }
+
+test "open fixture workspace scans disk and skips node_modules" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    try testing.expect(model.current_view == .ide);
+    try testing.expect(model.workspace_from_disk);
+    try testing.expect(model.workspace_node_count > 0);
+    try testing.expectEqualStrings("", model.workspace_scan_error);
+    for (model.file_nodes) |n| {
+        try testing.expect(!std.mem.eql(u8, n.name, "node_modules"));
+        try testing.expect(!std.mem.startsWith(u8, n.path, "node_modules/"));
+    }
+    // Editor should have loaded a real file from disk
+    const body = model.editorBody();
+    try testing.expect(body.len > 0);
+    try testing.expect(std.mem.indexOf(u8, body, "Unable to read file") == null);
+}
+
+test "selecting a disk file loads contents" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    var auth_id: ?u32 = null;
+    for (model.file_nodes) |n| {
+        if (std.mem.eql(u8, n.path, "src/server/auth.ts")) auth_id = n.id;
+    }
+    try testing.expect(auth_id != null);
+    main.update(&model, .{ .select_file = auth_id.? });
+    try testing.expect(std.mem.indexOf(u8, model.editorBody(), "createSession") != null);
+    try testing.expectEqualStrings("TypeScript", model.status_language);
+}

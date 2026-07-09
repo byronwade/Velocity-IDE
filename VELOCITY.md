@@ -10,6 +10,7 @@ This repository contains:
 | Area | Status |
 |---|---|
 | Native SDK mock shell | Runs (`native check` / `test` / `build`) |
+| Workspace file I/O (M2) | Fixture folder open + bounded scan + text read |
 | Feature modules | 200 stubs under `src/features/` |
 | Feature registry + activation policy | Scaffold |
 | Process Governor | Scaffold (no OS spawn yet) |
@@ -40,7 +41,7 @@ npm run dev
 
 ## Next
 
-1. Real folder open / workspace core  
+1. Native open-directory dialog (beyond fixture path)  
 2. Monaco editor island after first paint  
 3. Native terminal PTY via Process Governor  
 4. Git provider + LSP broker  

@@ -10,15 +10,22 @@
 8. Process Governor — **scaffold**
 9. Performance HUD — **UI + model**
 10. Terminal scaffold + RAM strategy — **docs + mock**
-11. File explorer/search/editor placeholders — **mock**
+11. File explorer/search/editor placeholders — **M2: real fixture folder open + bounded scan**
 12. LSP broker scaffold — **stub**
 13. SCM/debug/tasks/testing placeholders — **UI**
 14. Plugin runtime/registry placeholders — **stub**
 15. Agent panel/task board — **mock**
 16. Real terminal PTY
 17. Monaco editor island bridge
-18. Real file/search/workspace
+18. Real file/search/workspace — **partial: disk scan + read (fixture path; no OS dialog)**
 19. Real Git provider
 20. Real LSP broker
 21. Native plugin MVP
 22. Legacy VSIX research only
+
+## M2 notes (workspace file I/O)
+
+- Open Folder / recent `acme-dashboard` scans `fixtures/acme-dashboard` via Zig 0.16 `std.Io`
+- Caps: 256 nodes, depth 8, 16KB text read; skips `node_modules` / `.git` / vendor dirs
+- Editor placeholder shows real file bytes; Monaco still deferred
+- No OS folder dialog yet — fixture path only

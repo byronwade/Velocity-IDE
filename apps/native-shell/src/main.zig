@@ -105,6 +105,7 @@ pub fn main(init: std.process.Init) !void {
     });
     defer app_state.destroy();
     app_state.model = initialModel();
+    app_state.model.io = init.io;
 
     try runner.runWithOptions(app_state.app(), .{
         .app_name = "velocity-ide",
@@ -126,4 +127,6 @@ test {
     _ = @import("tests.zig");
     _ = @import("core/feature_registry.zig");
     _ = @import("processes/process_governor.zig");
+    _ = @import("workspace/scanner.zig");
+    _ = @import("workspace/workspace_store.zig");
 }
