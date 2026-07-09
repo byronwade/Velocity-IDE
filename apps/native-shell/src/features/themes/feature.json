@@ -1,0 +1,22 @@
+{
+  "id": "feature.themes",
+  "name": "Themes",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onStartupCritical"
+  ],
+  "startupAllowed": true,
+  "memoryBudgetMB": 2,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "workbench"
+}

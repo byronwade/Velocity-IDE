@@ -1,0 +1,22 @@
+{
+  "id": "feature.problems",
+  "name": "Problems",
+  "mode": "dev",
+  "defaultEnabled": true,
+  "activation": [
+    "onFileOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 16,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "editor"
+}

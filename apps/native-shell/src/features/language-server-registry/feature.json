@@ -1,0 +1,23 @@
+{
+  "id": "feature.language-server-registry",
+  "name": "Language Server Registry",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onLanguage",
+    "onFileOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 4,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "lsp"
+}

@@ -1,0 +1,22 @@
+{
+  "id": "feature.bracket-matching",
+  "name": "Bracket Matching",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onFileOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 2,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P1",
+  "category": "editor"
+}

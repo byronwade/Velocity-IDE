@@ -1,0 +1,23 @@
+{
+  "id": "feature.plugin-scorecard",
+  "name": "Plugin Scorecard",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onPluginInstall",
+    "onCommand:plugin-scorecard.open"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 4,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P1",
+  "category": "plugins"
+}

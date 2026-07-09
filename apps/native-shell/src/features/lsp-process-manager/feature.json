@@ -1,0 +1,23 @@
+{
+  "id": "feature.lsp-process-manager",
+  "name": "LSP Process Manager",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onLanguage",
+    "onFileOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 8,
+  "processBudget": {
+    "maxProcesses": 4,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "process",
+  "priority": "P0",
+  "category": "lsp"
+}

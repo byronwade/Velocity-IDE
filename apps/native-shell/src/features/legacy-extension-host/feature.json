@@ -1,0 +1,22 @@
+{
+  "id": "feature.legacy-extension-host",
+  "name": "Legacy Extension Host",
+  "mode": "legacy",
+  "defaultEnabled": false,
+  "activation": [
+    "never"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 128,
+  "processBudget": {
+    "maxProcesses": 1,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "legacy",
+  "priority": "P3",
+  "category": "plugins"
+}

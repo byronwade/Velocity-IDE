@@ -1,0 +1,22 @@
+{
+  "id": "feature.test-discovery",
+  "name": "Test Discovery",
+  "mode": "dev",
+  "defaultEnabled": true,
+  "activation": [
+    "onTestRun"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 16,
+  "processBudget": {
+    "maxProcesses": 1,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "process",
+  "priority": "P1",
+  "category": "debug"
+}

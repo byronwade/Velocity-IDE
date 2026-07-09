@@ -1,0 +1,23 @@
+{
+  "id": "feature.workspace-trust-plus",
+  "name": "Workspace Trust Plus",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onCommand:workspace-trust-plus.open",
+    "onFirstPaintDone"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 4,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "velocity"
+}

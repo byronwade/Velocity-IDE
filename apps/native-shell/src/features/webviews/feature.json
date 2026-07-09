@@ -1,0 +1,22 @@
+{
+  "id": "feature.webviews",
+  "name": "Webviews",
+  "mode": "heavy",
+  "defaultEnabled": false,
+  "activation": [
+    "onCommand:webviews.open"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 48,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "webview",
+  "priority": "P2",
+  "category": "heavy"
+}

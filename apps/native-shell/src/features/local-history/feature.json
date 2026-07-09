@@ -1,0 +1,22 @@
+{
+  "id": "feature.local-history",
+  "name": "Local History",
+  "mode": "heavy",
+  "defaultEnabled": false,
+  "activation": [
+    "onCommand:local-history.open"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 32,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P3",
+  "category": "heavy"
+}

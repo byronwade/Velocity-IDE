@@ -81,3 +81,26 @@ test "model module exports mock project data" {
     try testing.expect(model_mod.file_tree.len >= 5);
     try testing.expect(model_mod.agent_tasks.len == 4);
 }
+
+test "feature registry catalogs modules" {
+    const registry = @import("core/feature_registry.zig");
+    try testing.expect(registry.catalog.len == registry.registered_count);
+    try testing.expect(registry.startup_critical_count < 30);
+    try testing.expect(registry.assertNoStartupNonCritical(&registry.catalog));
+}
+
+test "process governor records without OS spawn" {
+    const gov = @import("processes/process_governor.zig");
+    var g: gov.Governor = .{};
+    const id = try g.spawn("feature.terminal", "mock-pty");
+    try testing.expect(g.aliveCount() == 1);
+    g.killFeature("feature.terminal");
+    try testing.expect(g.aliveCount() == 0);
+    _ = id;
+}
+
+test "feature matrix command switches view" {
+    var model = main.initialModel();
+    main.update(&model, .open_feature_matrix);
+    try testing.expect(model.current_view == .features);
+}

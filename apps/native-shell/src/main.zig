@@ -124,4 +124,6 @@ pub fn main(init: std.process.Init) !void {
 
 test {
     _ = @import("tests.zig");
+    _ = @import("core/feature_registry.zig");
+    _ = @import("processes/process_governor.zig");
 }

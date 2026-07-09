@@ -1,0 +1,23 @@
+{
+  "id": "feature.kill-all-workspace-processes",
+  "name": "Kill All Workspace Processes",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onCommand:kill-all-workspace-processes.open",
+    "onFirstPaintDone"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 2,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "velocity"
+}

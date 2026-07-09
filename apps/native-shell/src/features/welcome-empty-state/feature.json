@@ -1,0 +1,23 @@
+{
+  "id": "feature.welcome-empty-state",
+  "name": "Welcome / Empty State",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onFirstPaintDone",
+    "onCommand:welcome-empty-state.toggle"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 2,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P2",
+  "category": "workbench"
+}

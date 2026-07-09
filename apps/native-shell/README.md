@@ -28,20 +28,27 @@ native dev
 native build
 ```
 
-## Layout
+# Layout
 
 | Path | Role |
 |---|---|
 | `src/app.native` | Declarative IDE shell UI |
 | `src/main.zig` | Window / tokens / shortcuts wiring |
 | `src/model/app_model.zig` | TEA model + mock data |
+| `src/core/` | Feature registry, activation, commands, settings |
+| `src/features/` | One module per VS Code/Velocity feature category |
+| `src/processes/` | Process Governor |
 | `src/theme/tokens.zig` | Design tokens |
+| `src/perf/` | Perf snapshot + budgets |
 | `src/plugins/` | Manifest + permissions stubs |
-| `src/registry/` | Registry preview stub |
 | `src/lsp/` | LSP broker boundary |
 | `src/terminal/` | Terminal stub + pty notes |
-| `src/bridge/` | Editor island / Monaco notes |
-| `src/perf/` | Perf snapshot struct |
+
+## Feature modules
+
+200 stubs under `src/features/` with `feature.json`, README, model, messages, perf budget.
+See `docs/velocity/14-feature-parity-matrix.md`.
+
 
 ## Product docs
 

@@ -1,0 +1,22 @@
+{
+  "id": "feature.workspace-manager",
+  "name": "Workspace Manager",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onWorkspaceOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 8,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "files"
+}

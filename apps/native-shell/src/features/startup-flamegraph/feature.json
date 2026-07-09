@@ -1,0 +1,23 @@
+{
+  "id": "feature.startup-flamegraph",
+  "name": "Startup Flamegraph View",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onCommand:startup-flamegraph.open",
+    "onFirstPaintDone"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 8,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P1",
+  "category": "velocity"
+}

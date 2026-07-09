@@ -1,0 +1,13 @@
+---
+description: Memory strategy and bounded buffers
+globs:
+  - apps/native-shell/**
+alwaysApply: true
+---
+
+# Memory
+
+- No unbounded caches, terminal scrollback, output, diagnostics, or search lists.
+- Terminal default scrollback 2000; hard max 10000; ring/segment buffer.
+- Virtualize large trees; do not scan node_modules/.git by default.
+- Memory Pressure Mode must be able to freeze terminals and suspend idle LSPs.

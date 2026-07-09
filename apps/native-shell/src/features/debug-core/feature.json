@@ -1,0 +1,22 @@
+{
+  "id": "feature.debug-core",
+  "name": "Debug Core",
+  "mode": "dev",
+  "defaultEnabled": true,
+  "activation": [
+    "onDebugStart"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 24,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P1",
+  "category": "debug"
+}

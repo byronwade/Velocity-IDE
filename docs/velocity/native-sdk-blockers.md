@@ -36,3 +36,8 @@
 ```bash
 sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
 ```
+
+## Feature parity pass (2026-07-09)
+
+- `native check` / `native test` (13) / `native build` still pass after feature registry + Process Governor scaffold.
+- Zig reserved word: enum member cannot be named `suspend` — use `suspend_idle`.

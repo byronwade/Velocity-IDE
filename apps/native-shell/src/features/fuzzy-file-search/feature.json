@@ -1,0 +1,23 @@
+{
+  "id": "feature.fuzzy-file-search",
+  "name": "Fuzzy File Search",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onSearch",
+    "onCommand:fuzzy-file-search.run"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 16,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "search"
+}

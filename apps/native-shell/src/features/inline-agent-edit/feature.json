@@ -1,0 +1,23 @@
+{
+  "id": "feature.inline-agent-edit",
+  "name": "Inline Agent Edit",
+  "mode": "agent",
+  "defaultEnabled": true,
+  "activation": [
+    "onAgentStart",
+    "onViewVisible:agents"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 16,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P1",
+  "category": "agent"
+}

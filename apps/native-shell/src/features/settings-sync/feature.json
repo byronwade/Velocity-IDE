@@ -1,0 +1,22 @@
+{
+  "id": "feature.settings-sync",
+  "name": "Settings Sync",
+  "mode": "heavy",
+  "defaultEnabled": false,
+  "activation": [
+    "onCommand:settings-sync.open"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 16,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P3",
+  "category": "heavy"
+}

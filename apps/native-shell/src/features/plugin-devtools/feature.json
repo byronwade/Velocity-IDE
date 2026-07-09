@@ -1,0 +1,23 @@
+{
+  "id": "feature.plugin-devtools",
+  "name": "Plugin Devtools",
+  "mode": "dev",
+  "defaultEnabled": false,
+  "activation": [
+    "onPluginInstall",
+    "onCommand:plugin-devtools.open"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 16,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P2",
+  "category": "plugins"
+}

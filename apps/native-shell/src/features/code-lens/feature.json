@@ -1,0 +1,22 @@
+{
+  "id": "feature.code-lens",
+  "name": "Code Lens",
+  "mode": "dev",
+  "defaultEnabled": false,
+  "activation": [
+    "onFileOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 8,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "process",
+  "priority": "P2",
+  "category": "editor"
+}

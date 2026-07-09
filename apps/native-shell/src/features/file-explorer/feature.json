@@ -1,0 +1,22 @@
+{
+  "id": "feature.file-explorer",
+  "name": "File Explorer",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onWorkspaceOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 16,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "files"
+}

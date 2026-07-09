@@ -1,0 +1,22 @@
+{
+  "id": "feature.legacy-vsix-bridge",
+  "name": "Legacy VSIX Bridge",
+  "mode": "legacy",
+  "defaultEnabled": false,
+  "activation": [
+    "never"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 64,
+  "processBudget": {
+    "maxProcesses": 1,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "legacy",
+  "priority": "P3",
+  "category": "plugins"
+}

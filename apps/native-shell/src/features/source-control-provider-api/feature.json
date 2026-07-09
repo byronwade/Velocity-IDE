@@ -1,0 +1,23 @@
+{
+  "id": "feature.source-control-provider-api",
+  "name": "SCM Provider API",
+  "mode": "dev",
+  "defaultEnabled": true,
+  "activation": [
+    "onViewVisible:scm",
+    "onWorkspaceOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 8,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P2",
+  "category": "scm"
+}

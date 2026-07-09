@@ -9,9 +9,10 @@ alwaysApply: true
 
 # Velocity Product
 
-- The product is **Velocity**, a native IDE — not a VS Code theme/skin.
-- The Code-OSS tree under `src/` is a reference/compatibility bunker. Do **not** rewrite the Electron workbench for Velocity features.
+- Product is **Velocity**, a native IDE — not a VS Code theme/skin.
+- Code-OSS under `src/` is reference / feature oracle / compatibility bunker / perf baseline only.
 - New work lives in `apps/native-shell` and `packages/*`.
-- Prioritize a running app and measurable progress over abstract refactors.
+- Feature parity means modular lazy features, not bloat parity.
 - No telemetry, surveys, Copilot, or Microsoft marketplace by default.
 - Codename is rename-ready; do not hardcode irreversible branding.
+- Prioritize a running app and measurable progress.

@@ -1,0 +1,23 @@
+{
+  "id": "feature.ram-budget-dashboard",
+  "name": "RAM Budget Dashboard",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onCommand:ram-budget-dashboard.open",
+    "onFirstPaintDone"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 4,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "velocity"
+}

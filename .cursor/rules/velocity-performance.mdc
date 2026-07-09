@@ -1,14 +1,14 @@
 ---
-description: Velocity performance budgets
+description: Performance budgets and first-paint rules
 globs:
   - apps/native-shell/**
-  - docs/velocity/06-performance-budget.md
 alwaysApply: true
 ---
 
 # Performance
 
 - No feature without a performance budget.
-- First paint must not wait on plugins, agents, terminal init, or network.
-- Lazy-load everything heavy.
-- Measure or stub measurement (`perf/` + Run Performance Check).
+- First paint must not wait on plugins, agents, terminal, LSP, git, debug, or network.
+- No startup plugin activation; no star-activation equivalent.
+- Lazy everything heavy; measure or stub measurement (label mocks clearly).
+- Budgets: window under 300ms, shell under 500ms, palette under 50ms, terminal panel under 50ms.

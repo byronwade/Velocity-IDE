@@ -1,0 +1,23 @@
+{
+  "id": "feature.task-runner",
+  "name": "Task Runner",
+  "mode": "dev",
+  "defaultEnabled": true,
+  "activation": [
+    "onTaskRun",
+    "onCommand:task-runner.run"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 16,
+  "processBudget": {
+    "maxProcesses": 2,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "process",
+  "priority": "P1",
+  "category": "terminal"
+}

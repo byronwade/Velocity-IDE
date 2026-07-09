@@ -1,0 +1,23 @@
+{
+  "id": "feature.rust-language-pack",
+  "name": "Rust Language Pack",
+  "mode": "heavy",
+  "defaultEnabled": false,
+  "activation": [
+    "onLanguage",
+    "onFileOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 64,
+  "processBudget": {
+    "maxProcesses": 1,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "process",
+  "priority": "P2",
+  "category": "lsp"
+}

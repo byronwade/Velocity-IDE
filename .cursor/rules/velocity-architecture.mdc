@@ -8,7 +8,8 @@ alwaysApply: true
 
 # Architecture
 
-- Keep native shell, workspace core, plugins, terminal, LSP, and editor island as separate modules.
+- Keep native shell, workspace core, plugins, terminal, LSP, and editor island as separate modules under `src/features/` and `src/core/`.
 - Prefer small modules and explicit TEA (Model/Msg/update) state.
 - Do not import VS Code workbench code into the native shell.
-- WebView is allowed only for the editor island, never the whole shell.
+- WebView is allowed only for the editor island (and later heavy previews), never the whole shell.
+- Every feature declares a manifest (`feature.json`) with mode, activation, memory, and process budgets.

@@ -1,0 +1,22 @@
+{
+  "id": "feature.editor-groups",
+  "name": "Editor Groups",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onStartupCritical"
+  ],
+  "startupAllowed": true,
+  "memoryBudgetMB": 8,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "workbench"
+}

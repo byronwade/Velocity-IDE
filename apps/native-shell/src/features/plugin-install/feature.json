@@ -1,0 +1,23 @@
+{
+  "id": "feature.plugin-install",
+  "name": "Plugin Install",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onPluginInstall",
+    "onCommand:plugin-install.open"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 8,
+  "processBudget": {
+    "maxProcesses": 1,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "process",
+  "priority": "P1",
+  "category": "plugins"
+}

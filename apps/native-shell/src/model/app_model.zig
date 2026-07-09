@@ -10,8 +10,8 @@ pub const header_natural_height: f32 = 44;
 pub const max_command_query = 64;
 pub const max_agent_prompt = 160;
 
-pub const ViewKind = enum { launch, ide, plugins, settings, perf };
-pub const Activity = enum { explorer, search, scm, agents, terminal, plugins, settings };
+pub const ViewKind = enum { launch, ide, plugins, settings, perf, features, processes, search, scm, debug, testing };
+pub const Activity = enum { explorer, search, scm, agents, terminal, plugins, settings, debug, testing, features, processes };
 pub const AgentStatus = enum { running, planning, ready_for_review, failed, completed };
 
 pub const FileNode = struct {
@@ -78,7 +78,11 @@ pub const Msg = union(enum) {
     switch_theme,
     open_plugin_registry,
     open_settings,
+    open_feature_matrix,
+    open_process_governor,
     run_perf_check_placeholder,
+    kill_all_workspace_processes,
+    instant_safe_mode,
     chrome_changed: native_sdk.WindowChrome,
     set_appearance: native_sdk.Appearance,
 
@@ -89,6 +93,10 @@ pub const Msg = union(enum) {
         "close_tab",
         "open_plugin_registry",
         "open_settings",
+        "open_feature_matrix",
+        "open_process_governor",
+        "kill_all_workspace_processes",
+        "instant_safe_mode",
     };
 };
 
@@ -101,6 +109,18 @@ pub const Model = struct {
     show_terminal: bool = true,
     show_agent_panel: bool = true,
     show_perf_hud: bool = false,
+    safe_mode: bool = false,
+    runtime_mode_label: []const u8 = "Core",
+    features_registered: u32 = 200,
+    features_loaded: u32 = 8,
+    features_enabled: u32 = 0,
+    process_count: u32 = 0,
+    process_leaked: u32 = 0,
+    terminal_process_count: u32 = 0,
+    lsp_process_count: u32 = 0,
+    plugin_process_count: u32 = 0,
+    terminal_scrollback_lines: u32 = 2000,
+    mock_label: []const u8 = "mock",
     theme_preference: theme.ThemePreference = .dark,
     appearance: native_sdk.Appearance = .{},
     chrome_leading: f32 = 0,
@@ -132,6 +152,10 @@ pub const Model = struct {
     activity_terminal: Activity = .terminal,
     activity_plugins: Activity = .plugins,
     activity_settings: Activity = .settings,
+    activity_debug: Activity = .debug,
+    activity_testing: Activity = .testing,
+    activity_features: Activity = .features,
+    activity_processes: Activity = .processes,
     project_acme: []const u8 = "acme-dashboard",
     project_scratch: []const u8 = "scratch",
 
@@ -153,9 +177,14 @@ pub const Model = struct {
         "command_query",
         "agent_prompt",
         "appearance",
+        "safe_mode",
+        "mock_label",
+        "perf_first_window_ms",
         "isIde",
         "isPerf",
         "activeTabTitle",
+        "features_enabled",
+        "showPlaceholderPanel",
     };
 
     pub fn commandQuery(model: *const Model) []const u8 {
@@ -218,6 +247,60 @@ pub const Model = struct {
         return model.selected_activity == .settings;
     }
 
+    pub fn debugSelected(model: *const Model) bool {
+        return model.selected_activity == .debug;
+    }
+
+    pub fn testingSelected(model: *const Model) bool {
+        return model.selected_activity == .testing;
+    }
+
+    pub fn featuresSelected(model: *const Model) bool {
+        return model.selected_activity == .features;
+    }
+
+    pub fn processesSelected(model: *const Model) bool {
+        return model.selected_activity == .processes;
+    }
+
+    pub fn isFeatures(model: *const Model) bool {
+        return model.current_view == .features;
+    }
+
+    pub fn isProcesses(model: *const Model) bool {
+        return model.current_view == .processes;
+    }
+
+    pub fn isSearch(model: *const Model) bool {
+        return model.current_view == .search or model.selected_activity == .search;
+    }
+
+    pub fn isScm(model: *const Model) bool {
+        return model.current_view == .scm or model.selected_activity == .scm;
+    }
+
+    pub fn isDebug(model: *const Model) bool {
+        return model.current_view == .debug;
+    }
+
+    pub fn isTesting(model: *const Model) bool {
+        return model.current_view == .testing;
+    }
+
+    pub fn showPlaceholderPanel(model: *const Model) bool {
+        return model.current_view == .search or model.current_view == .scm or model.current_view == .debug or model.current_view == .testing or model.current_view == .features or model.current_view == .processes;
+    }
+
+    pub fn featureMatrixSummary(model: *const Model) []const u8 {
+        _ = model;
+        return "Registered 200 / Loaded 8 (mock) / Startup-critical only at boot";
+    }
+
+    pub fn processGovernorSummary(model: *const Model) []const u8 {
+        _ = model;
+        return "Processes 0 / Leaks 0 / Terminal PTY pending (mock)";
+    }
+
     pub fn activeTabTitle(model: *const Model) []const u8 {
         for (tabs) |tab| {
             if (tab.id == model.active_tab_id) return tab.title;
@@ -246,7 +329,7 @@ pub const Model = struct {
     }
 
     pub fn showLeftPanel(model: *const Model) bool {
-        return model.current_view == .ide and (model.selected_activity == .explorer or model.selected_activity == .search or model.selected_activity == .scm);
+        return model.current_view == .ide and model.selected_activity == .explorer;
     }
 
     pub fn showIdeChrome(model: *const Model) bool {
@@ -255,7 +338,7 @@ pub const Model = struct {
 
     pub fn perfSummary(model: *const Model) []const u8 {
         _ = model;
-        return "Mock perf: window 118ms / paint 186ms / RSS 48MB / plugins 0";
+        return "MOCK perf: startup 312ms / paint 184ms / palette 21ms / terminal panel 18ms / RSS 48MB / featuresLoaded 8 / processes 0";
     }
 };
 
@@ -272,6 +355,8 @@ pub const file_tree = [_]FileNode{
     .{ .id = 4, .name = "Chart.tsx", .path = "src/components/Chart.tsx", .depth = 2, .is_dir = false },
     .{ .id = 5, .name = "server", .path = "src/server", .depth = 1, .is_dir = true },
     .{ .id = 6, .name = "auth.ts", .path = "src/server/auth.ts", .depth = 2, .is_dir = false },
+    .{ .id = 11, .name = "lib", .path = "src/lib", .depth = 1, .is_dir = true },
+    .{ .id = 12, .name = "db.ts", .path = "src/lib/db.ts", .depth = 2, .is_dir = false },
     .{ .id = 7, .name = "package.json", .path = "package.json", .depth = 0, .is_dir = false },
     .{ .id = 8, .name = "README.md", .path = "README.md", .depth = 0, .is_dir = false },
     .{ .id = 9, .name = "tests", .path = "tests", .depth = 0, .is_dir = true },
@@ -314,6 +399,10 @@ pub const commands = [_]CommandItem{
     .{ .id = "open_plugins", .title = "Open Plugin Registry", .hint = "" },
     .{ .id = "open_settings", .title = "Open Settings", .hint = "Cmd+," },
     .{ .id = "run_perf", .title = "Run Performance Check", .hint = "" },
+    .{ .id = "open_feature_matrix", .title = "Open Feature Toggle Matrix", .hint = "" },
+    .{ .id = "open_process_governor", .title = "Open Process Governor", .hint = "" },
+    .{ .id = "kill_all_workspace_processes", .title = "Kill All Workspace Processes", .hint = "" },
+    .{ .id = "instant_safe_mode", .title = "Instant Safe Mode", .hint = "" },
     .{ .id = "switch_theme", .title = "Switch Theme", .hint = "" },
     .{ .id = "new_agent_task", .title = "New Agent Task", .hint = "" },
     .{ .id = "go_launch", .title = "Back to Launch Screen", .hint = "" },
@@ -372,6 +461,23 @@ pub fn update(model: *Model, msg: Msg) void {
                 model.current_view = .launch;
             } else if (std.mem.eql(u8, id, "open_folder")) {
                 model.current_view = .ide;
+            } else if (std.mem.eql(u8, id, "open_feature_matrix")) {
+                model.current_view = .features;
+                model.selected_activity = .features;
+            } else if (std.mem.eql(u8, id, "open_process_governor")) {
+                model.current_view = .processes;
+                model.selected_activity = .processes;
+            } else if (std.mem.eql(u8, id, "kill_all_workspace_processes")) {
+                model.process_count = 0;
+                model.terminal_process_count = 0;
+                model.lsp_process_count = 0;
+                model.plugin_process_count = 0;
+                model.process_leaked = 0;
+            } else if (std.mem.eql(u8, id, "instant_safe_mode")) {
+                model.safe_mode = true;
+                model.runtime_mode_label = "Safe";
+                model.show_agent_panel = false;
+                model.features_loaded = 3;
             }
         },
         .select_activity => |activity| {
@@ -379,6 +485,12 @@ pub fn update(model: *Model, msg: Msg) void {
             switch (activity) {
                 .plugins => model.current_view = .plugins,
                 .settings => model.current_view = .settings,
+                .search => model.current_view = .search,
+                .scm => model.current_view = .scm,
+                .debug => model.current_view = .debug,
+                .testing => model.current_view = .testing,
+                .features => model.current_view = .features,
+                .processes => model.current_view = .processes,
                 .terminal => {
                     model.current_view = .ide;
                     model.show_terminal = true;
@@ -430,6 +542,27 @@ pub fn update(model: *Model, msg: Msg) void {
             model.show_perf_hud = true;
             model.current_view = .perf;
         },
+        .open_feature_matrix => {
+            model.current_view = .features;
+            model.selected_activity = .features;
+        },
+        .open_process_governor => {
+            model.current_view = .processes;
+            model.selected_activity = .processes;
+        },
+        .kill_all_workspace_processes => {
+            model.process_count = 0;
+            model.terminal_process_count = 0;
+            model.lsp_process_count = 0;
+            model.plugin_process_count = 0;
+            model.process_leaked = 0;
+        },
+        .instant_safe_mode => {
+            model.safe_mode = true;
+            model.runtime_mode_label = "Safe";
+            model.show_agent_panel = false;
+            model.features_loaded = 3;
+        },
         .chrome_changed => |chrome| {
             model.chrome_leading = chrome.insets.left;
             model.header_height = @max(header_natural_height, chrome.insets.top);
@@ -460,15 +593,23 @@ fn createTask(model: *Model) void {
 }
 
 fn applyPerfPlaceholder(model: *Model) void {
-    model.perf_app_start_ms = 42;
-    model.perf_first_window_ms = 118;
-    model.perf_first_paint_ms = 186;
-    model.perf_palette_ms = 8;
-    model.perf_terminal_ms = 12;
+    // Labeled mock values for HUD scaffolding — not measured.
+    model.perf_app_start_ms = 312;
+    model.perf_first_window_ms = 280;
+    model.perf_first_paint_ms = 184;
+    model.perf_palette_ms = 21;
+    model.perf_terminal_ms = 18;
     model.perf_rss_mb = 48;
     model.perf_plugins_loaded = 0;
+    model.features_registered = 200;
+    model.features_loaded = 8;
+    model.process_count = 0;
+    model.terminal_process_count = 0;
+    model.lsp_process_count = 0;
+    model.plugin_process_count = 0;
+    model.process_leaked = 0;
     model.status_memory = "Memory: 48 MB (mock)";
-    model.status_startup = "Startup: 186 ms (mock)";
+    model.status_startup = "Startup: 312 ms (mock)";
     model.status_agent = "Agent: idle";
 }
 

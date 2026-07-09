@@ -1,0 +1,23 @@
+{
+  "id": "feature.dialogs",
+  "name": "Dialogs",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onFirstPaintDone",
+    "onCommand:dialogs.toggle"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 4,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P1",
+  "category": "workbench"
+}

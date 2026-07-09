@@ -1,0 +1,22 @@
+{
+  "id": "feature.compare-files",
+  "name": "Compare Files",
+  "mode": "dev",
+  "defaultEnabled": false,
+  "activation": [
+    "onWorkspaceOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 8,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P2",
+  "category": "files"
+}

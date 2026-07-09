@@ -1,0 +1,23 @@
+{
+  "id": "feature.language-client",
+  "name": "Language Client",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onLanguage",
+    "onFileOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 16,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "lsp"
+}

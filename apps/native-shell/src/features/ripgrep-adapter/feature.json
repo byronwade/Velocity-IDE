@@ -1,0 +1,23 @@
+{
+  "id": "feature.ripgrep-adapter",
+  "name": "Ripgrep Adapter",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onSearch",
+    "onCommand:ripgrep-adapter.run"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 8,
+  "processBudget": {
+    "maxProcesses": 1,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "process",
+  "priority": "P0",
+  "category": "search"
+}

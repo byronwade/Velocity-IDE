@@ -1,0 +1,22 @@
+{
+  "id": "feature.diagnostics",
+  "name": "Diagnostics",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onFileOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 16,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "process",
+  "priority": "P0",
+  "category": "editor"
+}

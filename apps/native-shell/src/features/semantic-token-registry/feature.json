@@ -1,0 +1,23 @@
+{
+  "id": "feature.semantic-token-registry",
+  "name": "Semantic Token Registry",
+  "mode": "dev",
+  "defaultEnabled": true,
+  "activation": [
+    "onLanguage",
+    "onFileOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 4,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P1",
+  "category": "lsp"
+}

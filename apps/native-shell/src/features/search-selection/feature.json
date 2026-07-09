@@ -1,0 +1,22 @@
+{
+  "id": "feature.search-selection",
+  "name": "Search Selection",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onFileOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 2,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P2",
+  "category": "editor"
+}

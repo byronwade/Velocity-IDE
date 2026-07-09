@@ -1,0 +1,23 @@
+{
+  "id": "feature.agent-context",
+  "name": "Agent Context",
+  "mode": "agent",
+  "defaultEnabled": true,
+  "activation": [
+    "onAgentStart",
+    "onViewVisible:agents"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 24,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "agent"
+}

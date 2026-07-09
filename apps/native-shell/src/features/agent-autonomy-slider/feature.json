@@ -1,0 +1,23 @@
+{
+  "id": "feature.agent-autonomy-slider",
+  "name": "Agent Autonomy Slider",
+  "mode": "agent",
+  "defaultEnabled": true,
+  "activation": [
+    "onCommand:agent-autonomy-slider.open",
+    "onFirstPaintDone"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 2,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "velocity"
+}

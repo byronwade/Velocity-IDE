@@ -1,0 +1,23 @@
+{
+  "id": "feature.quick-search",
+  "name": "Quick Search",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onSearch",
+    "onCommand:quick-search.run"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 8,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "search"
+}

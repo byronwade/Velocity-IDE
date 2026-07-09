@@ -1,0 +1,14 @@
+---
+description: Terminal RAM and process rules
+globs:
+  - apps/native-shell/src/features/terminal/**
+  - apps/native-shell/src/terminal/**
+alwaysApply: true
+---
+
+# Terminal
+
+- Panel visible without starting a PTY; process starts only on explicit open/task.
+- Bounded scrollback; viewport render only; no images/ligatures by default.
+- Close kills process tree unless detached.
+- See `docs/velocity/12-terminal-ram-and-process-management.md`.

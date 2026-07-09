@@ -1,0 +1,22 @@
+{
+  "id": "feature.custom-editors",
+  "name": "Custom Editors",
+  "mode": "heavy",
+  "defaultEnabled": false,
+  "activation": [
+    "onCommand:custom-editors.open"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 48,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "webview",
+  "priority": "P3",
+  "category": "heavy"
+}

@@ -1,0 +1,23 @@
+{
+  "id": "feature.symbol-search",
+  "name": "Symbol Search",
+  "mode": "dev",
+  "defaultEnabled": true,
+  "activation": [
+    "onSearch",
+    "onCommand:symbol-search.run"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 16,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P1",
+  "category": "search"
+}

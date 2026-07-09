@@ -1,0 +1,22 @@
+{
+  "id": "feature.terminal-links",
+  "name": "Terminal Links",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onTerminalOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 4,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P1",
+  "category": "terminal"
+}

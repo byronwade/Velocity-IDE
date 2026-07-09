@@ -1,0 +1,22 @@
+{
+  "id": "feature.find-replace",
+  "name": "Find Replace",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onFileOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 8,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "editor"
+}

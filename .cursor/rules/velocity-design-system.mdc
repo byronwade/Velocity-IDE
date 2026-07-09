@@ -1,14 +1,14 @@
 ---
-description: Velocity design system rules
+description: Tokenized original design system
 globs:
-  - apps/native-shell/**
-  - docs/velocity/03-design-system.md
+  - apps/native-shell/src/**/*.native
+  - apps/native-shell/src/theme/**
 alwaysApply: true
 ---
 
-# Design
+# Design System
 
+- Cursor/Vercel-inspired but original — no brand asset copying.
+- Tokenized styling only (`src/theme/tokens.zig`).
 - Dark-first, high contrast, hairline borders, compact panels, keyboard-first.
-- Tokenized styling only (`theme/tokens.zig`).
-- Cursor/Vercel are inspiration only — no brand assets, logos, or trade dress.
-- Agent surface: task cards, status labels, calm typography.
+- Agent surface: task cards, composer, status labels — original layout.

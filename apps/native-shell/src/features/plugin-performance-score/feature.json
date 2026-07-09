@@ -1,0 +1,23 @@
+{
+  "id": "feature.plugin-performance-score",
+  "name": "Plugin Performance Score",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onCommand:plugin-performance-score.open",
+    "onFirstPaintDone"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 4,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P1",
+  "category": "velocity"
+}

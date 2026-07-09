@@ -1,0 +1,22 @@
+{
+  "id": "feature.inline-suggestions",
+  "name": "Inline Suggestions",
+  "mode": "agent",
+  "defaultEnabled": false,
+  "activation": [
+    "onFileOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 16,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "plugin",
+  "priority": "P1",
+  "category": "editor"
+}

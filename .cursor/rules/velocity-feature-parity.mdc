@@ -1,0 +1,15 @@
+---
+description: Feature parity means modular lazy features
+globs:
+  - apps/native-shell/src/features/**
+  - docs/velocity/**
+alwaysApply: true
+---
+
+# Feature Parity
+
+- Scaffold VS Code feature categories as Velocity modules; implement progressively.
+- Every feature needs mode (core/dev/heavy/agent/remote/legacy), activation policy, and budgets.
+- Disabled by default unless part of the core editing loop.
+- Independently killable via Feature Toggle Matrix.
+- See `docs/velocity/11-vscode-feature-parity-research.md` and `14-feature-parity-matrix.md`.

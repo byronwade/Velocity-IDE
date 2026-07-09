@@ -1,0 +1,23 @@
+{
+  "id": "feature.no-agents-mode",
+  "name": "No-Agents Mode",
+  "mode": "core",
+  "defaultEnabled": true,
+  "activation": [
+    "onCommand:no-agents-mode.open",
+    "onFirstPaintDone"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 2,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P0",
+  "category": "velocity"
+}

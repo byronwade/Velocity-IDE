@@ -1,0 +1,23 @@
+{
+  "id": "feature.search-editor",
+  "name": "Search Editor",
+  "mode": "heavy",
+  "defaultEnabled": false,
+  "activation": [
+    "onSearch",
+    "onCommand:search-editor.run"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 32,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P3",
+  "category": "search"
+}

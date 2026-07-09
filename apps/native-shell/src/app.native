@@ -50,9 +50,13 @@
           <button size="sm" variant="ghost" selected="{explorerSelected}" on-press="select_activity:{activity_explorer}" label="Explorer">Ex</button>
           <button size="sm" variant="ghost" selected="{searchSelected}" on-press="select_activity:{activity_search}" label="Search">Se</button>
           <button size="sm" variant="ghost" selected="{scmSelected}" on-press="select_activity:{activity_scm}" label="Source Control">Sc</button>
+          <button size="sm" variant="ghost" selected="{debugSelected}" on-press="select_activity:{activity_debug}" label="Debug">Db</button>
+          <button size="sm" variant="ghost" selected="{testingSelected}" on-press="select_activity:{activity_testing}" label="Testing">Ts</button>
           <button size="sm" variant="ghost" selected="{agentsSelected}" on-press="select_activity:{activity_agents}" label="Agents">Ag</button>
           <button size="sm" variant="ghost" selected="{terminalSelected}" on-press="select_activity:{activity_terminal}" label="Terminal">Te</button>
           <spacer grow="1" />
+          <button size="sm" variant="ghost" selected="{featuresSelected}" on-press="select_activity:{activity_features}" label="Features">Ft</button>
+          <button size="sm" variant="ghost" selected="{processesSelected}" on-press="select_activity:{activity_processes}" label="Processes">Pr</button>
           <button size="sm" variant="ghost" selected="{pluginsSelected}" on-press="select_activity:{activity_plugins}" label="Plugins">Pl</button>
           <button size="sm" variant="ghost" selected="{settingsSelected}" on-press="select_activity:{activity_settings}" label="Settings">St</button>
         </column>
@@ -158,6 +162,67 @@
             </if>
           </if>
 
+          <!-- Search placeholder -->
+          <if test="{isSearch}">
+            <column grow="1" gap="10" padding="16">
+              <text>Search</text>
+              <badge variant="secondary">placeholder</badge>
+              <text foreground="text_muted">Workspace search / ripgrep adapter — activates onSearch only. No index before interactive shell.</text>
+            </column>
+          </if>
+
+          <!-- SCM placeholder -->
+          <if test="{isScm}">
+            <column grow="1" gap="10" padding="16">
+              <text>Source Control</text>
+              <badge variant="secondary">placeholder</badge>
+              <text foreground="text_muted">Git provider is Dev mode. No git process until SCM is visible or queried.</text>
+            </column>
+          </if>
+
+          <!-- Debug placeholder -->
+          <if test="{isDebug}">
+            <column grow="1" gap="10" padding="16">
+              <text>Debug</text>
+              <badge variant="secondary">placeholder</badge>
+              <text foreground="text_muted">DAP adapters start only onDebugStart via Process Governor.</text>
+            </column>
+          </if>
+
+          <!-- Testing placeholder -->
+          <if test="{isTesting}">
+            <column grow="1" gap="10" padding="16">
+              <text>Testing</text>
+              <badge variant="secondary">placeholder</badge>
+              <text foreground="text_muted">Test discovery is lazy. No scanner before testing panel or command.</text>
+            </column>
+          </if>
+
+          <!-- Feature toggle matrix -->
+          <if test="{isFeatures}">
+            <column grow="1" gap="10" padding="16">
+              <text>Feature Toggle Matrix</text>
+              <badge variant="secondary">mock</badge>
+              <text foreground="text_muted">{featureMatrixSummary}</text>
+              <text size="sm" foreground="text_muted">Mode: {runtime_mode_label} / Registered: {features_registered} / Loaded: {features_loaded}</text>
+              <text size="sm" foreground="text_muted">Non-core features are killable. Startup-critical subset only before first paint.</text>
+              <button variant="secondary" on-press="instant_safe_mode">Instant Safe Mode</button>
+              <button variant="ghost" on-press="run_perf_check_placeholder">Open Performance HUD</button>
+            </column>
+          </if>
+
+          <!-- Process governor -->
+          <if test="{isProcesses}">
+            <column grow="1" gap="10" padding="16">
+              <text>Process Governor</text>
+              <badge variant="secondary">mock</badge>
+              <text foreground="text_muted">{processGovernorSummary}</text>
+              <text size="sm" foreground="text_muted">alive={process_count} leaked={process_leaked} terminal={terminal_process_count} lsp={lsp_process_count} plugins={plugin_process_count}</text>
+              <text size="sm" foreground="text_muted">Terminal scrollback budget: {terminal_scrollback_lines} lines (hard max 10000)</text>
+              <button variant="secondary" on-press="kill_all_workspace_processes">Kill All Workspace Processes</button>
+            </column>
+          </if>
+
           <!-- Plugins view -->
           <if test="{isPlugins}">
             <column grow="1" gap="10" padding="16">
@@ -186,6 +251,8 @@
               <text>Settings</text>
               <text foreground="text_muted">Telemetry off / Surveys off / Plugins locked until trusted</text>
               <button variant="secondary" on-press="switch_theme">Theme: {themeLabel}</button>
+              <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
+              <button variant="ghost" on-press="open_process_governor">Process Governor</button>
               <button variant="ghost" on-press="run_perf_check_placeholder">Run Performance Check</button>
               <button variant="ghost" on-press="go_launch">Back to Launch</button>
             </column>
@@ -194,9 +261,13 @@
           <!-- Perf HUD -->
           <if test="{show_perf_hud}">
             <column gap="6" padding="10" background="surface_subtle">
-              <text size="sm">Performance HUD (mock)</text>
+              <row gap="8" cross="center">
+                <text size="sm">Performance HUD</text>
+                <badge variant="secondary">mock values</badge>
+              </row>
               <text size="sm" foreground="text_muted">{perfSummary}</text>
-              <text size="sm" foreground="text_muted">app_start={perf_app_start_ms}ms window={perf_first_window_ms}ms paint={perf_first_paint_ms}ms palette={perf_palette_ms}ms terminal={perf_terminal_ms}ms rss={perf_rss_mb}MB plugins={perf_plugins_loaded}</text>
+              <text size="sm" foreground="text_muted">startup={perf_app_start_ms}ms paint={perf_first_paint_ms}ms palette={perf_palette_ms}ms terminalPanel={perf_terminal_ms}ms rss={perf_rss_mb}MB</text>
+              <text size="sm" foreground="text_muted">featuresRegistered={features_registered} featuresLoaded={features_loaded} pluginsLoaded={perf_plugins_loaded} processes={process_count} mode={runtime_mode_label}</text>
             </column>
           </if>
         </column>

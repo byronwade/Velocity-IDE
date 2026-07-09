@@ -1,0 +1,22 @@
+{
+  "id": "feature.remote-ssh",
+  "name": "Remote SSH",
+  "mode": "remote",
+  "defaultEnabled": false,
+  "activation": [
+    "onCommand:remote-ssh.open"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 32,
+  "processBudget": {
+    "maxProcesses": 0,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "native",
+  "priority": "P3",
+  "category": "heavy"
+}

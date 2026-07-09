@@ -1,0 +1,23 @@
+{
+  "id": "feature.git-history",
+  "name": "Git History",
+  "mode": "heavy",
+  "defaultEnabled": false,
+  "activation": [
+    "onViewVisible:scm",
+    "onWorkspaceOpen"
+  ],
+  "startupAllowed": false,
+  "memoryBudgetMB": 32,
+  "processBudget": {
+    "maxProcesses": 1,
+    "killOnWorkspaceClose": true,
+    "idleSuspend": true
+  },
+  "dependencies": [],
+  "permissions": [],
+  "status": "stub",
+  "implementation": "process",
+  "priority": "P2",
+  "category": "scm"
+}

@@ -1,0 +1,14 @@
+---
+description: Process Governor is the only spawn path
+globs:
+  - apps/native-shell/**
+alwaysApply: true
+---
+
+# Process Governor
+
+- No direct child process spawning from features.
+- All launches go through `src/processes/process_governor.zig`.
+- Kill on feature disable / workspace close / owner close as policy requires.
+- Surface leaks in Performance HUD.
+- No shell prewarm by default.
