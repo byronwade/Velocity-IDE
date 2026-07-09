@@ -323,6 +323,119 @@ pub fn ensureFinalNewline(text: []const u8, out: []u8) ?usize {
     return text.len + 1;
 }
 
+fn lastLineRange(text: []const u8) struct { start: usize, end: usize, has_nl: bool } {
+    if (text.len == 0) return .{ .start = 0, .end = 0, .has_nl = false };
+    var end = text.len;
+    var has_nl = false;
+    if (text[end - 1] == '\n') {
+        has_nl = true;
+        end -= 1;
+    }
+    var start = end;
+    while (start > 0 and text[start - 1] != '\n') start -= 1;
+    return .{ .start = start, .end = end, .has_nl = has_nl };
+}
+
+/// Delete the last line (MVP stand-in for delete line without a caret API).
+pub fn deleteLastLine(text: []const u8, out: []u8) ?usize {
+    if (text.len == 0) return 0;
+    const range = lastLineRange(text);
+    const keep = range.start;
+    // Drop the newline before the last line when present.
+    var cut = keep;
+    if (cut > 0 and text[cut - 1] == '\n') cut -= 1;
+    if (cut > out.len) return null;
+    @memcpy(out[0..cut], text[0..cut]);
+    return cut;
+}
+
+/// Join all lines with a single space (collapses newlines).
+pub fn joinLines(text: []const u8, out: []u8) ?usize {
+    var dst: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    var first = true;
+    while (i <= text.len) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            const raw = text[start..i];
+            const line = std.mem.trim(u8, raw, " \t\r");
+            if (line.len > 0) {
+                if (!first) {
+                    if (dst + 1 > out.len) return null;
+                    out[dst] = ' ';
+                    dst += 1;
+                }
+                if (dst + line.len > out.len) return null;
+                @memcpy(out[dst..][0..line.len], line);
+                dst += line.len;
+                first = false;
+            }
+            start = i + 1;
+        }
+    }
+    return dst;
+}
+
+/// Swap the last two lines (MVP stand-in for move line up).
+pub fn moveLastLineUp(text: []const u8, out: []u8) ?usize {
+    const max_lines = 512;
+    var starts: [max_lines]usize = undefined;
+    var lens: [max_lines]usize = undefined;
+    var count: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    const has_trailing_nl = text.len > 0 and text[text.len - 1] == '\n';
+    while (i <= text.len and count < max_lines) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            if (i == text.len and has_trailing_nl and start == text.len) break;
+            starts[count] = start;
+            lens[count] = i - start;
+            count += 1;
+            start = i + 1;
+            if (i == text.len) break;
+        }
+    }
+    if (count < 2) {
+        if (text.len > out.len) return null;
+        @memcpy(out[0..text.len], text);
+        return text.len;
+    }
+    const a = count - 2;
+    const b = count - 1;
+    const tmp_s = starts[a];
+    const tmp_l = lens[a];
+    starts[a] = starts[b];
+    lens[a] = lens[b];
+    starts[b] = tmp_s;
+    lens[b] = tmp_l;
+    var dst: usize = 0;
+    var li: usize = 0;
+    while (li < count) : (li += 1) {
+        const line = text[starts[li]..][0..lens[li]];
+        if (dst + line.len > out.len) return null;
+        @memcpy(out[dst..][0..line.len], line);
+        dst += line.len;
+        if (li + 1 < count or has_trailing_nl) {
+            if (dst + 1 > out.len) return null;
+            out[dst] = '\n';
+            dst += 1;
+        }
+    }
+    return dst;
+}
+
+/// Rotate last line to the front of the last-two pair (MVP move line down = swap again).
+pub fn moveLastLineDown(text: []const u8, out: []u8) ?usize {
+    // With only last-line awareness, down == up (swap last two).
+    return moveLastLineUp(text, out);
+}
+
+pub fn detectEol(text: []const u8) []const u8 {
+    if (std.mem.indexOf(u8, text, "\r\n") != null) return "CRLF";
+    if (std.mem.indexOfScalar(u8, text, '\n') != null) return "LF";
+    return "LF";
+}
+
 test "case and sort transforms" {
     var out: [128]u8 = undefined;
     const u = toUpperCase("AbC", &out).?;
@@ -341,4 +454,16 @@ test "trim trailing and final newline" {
     try std.testing.expectEqualStrings("a\nb\n", out[0..t]);
     const n = ensureFinalNewline("hi", &out).?;
     try std.testing.expectEqualStrings("hi\n", out[0..n]);
+}
+
+test "delete join and move last line" {
+    var out: [128]u8 = undefined;
+    const d = deleteLastLine("a\nb\nc\n", &out).?;
+    try std.testing.expectEqualStrings("a\nb", out[0..d]);
+    const j = joinLines("a\nb\nc", &out).?;
+    try std.testing.expectEqualStrings("a b c", out[0..j]);
+    const m = moveLastLineUp("a\nb\nc\n", &out).?;
+    try std.testing.expectEqualStrings("a\nc\nb\n", out[0..m]);
+    try std.testing.expectEqualStrings("CRLF", detectEol("a\r\nb\n"));
+    try std.testing.expectEqualStrings("LF", detectEol("a\nb"));
 }

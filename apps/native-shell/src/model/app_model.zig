@@ -146,6 +146,13 @@ pub const Msg = union(enum) {
     transform_reverse_lines,
     toggle_trim_trailing,
     toggle_final_newline,
+    delete_last_line,
+    join_lines,
+    move_line_up,
+    move_line_down,
+    undo_edit,
+    revert_file,
+    copy_absolute_path,
     update_replace_text: canvas.TextInputEvent,
     replace_once,
     replace_all,
@@ -211,6 +218,13 @@ pub const Msg = union(enum) {
         "transform_reverse_lines",
         "toggle_trim_trailing",
         "toggle_final_newline",
+        "delete_last_line",
+        "join_lines",
+        "move_line_up",
+        "move_line_down",
+        "undo_edit",
+        "revert_file",
+        "copy_absolute_path",
         "replace_once",
         "replace_all",
         "copy_active_path",
@@ -266,6 +280,10 @@ pub const Model = struct {
     io: ?std.Io = null,
     document: canvas.TextBuffer(max_document) = .{},
     document_dirty: bool = false,
+    /// Single-level undo snapshot (heap; allocated on first edit).
+    undo_storage: ?[]u8 = null,
+    undo_len: usize = 0,
+    undo_available: bool = false,
     open_path: canvas.TextBuffer(max_open_path) = .{},
     terminal_command: canvas.TextBuffer(max_terminal_command) = .{},
     terminal: ?*terminal_session.TerminalBuffers = null,
@@ -316,10 +334,10 @@ pub const Model = struct {
     goto_line_label: []const u8 = "",
     goto_line_buf: [32]u8 = undefined,
     replace_text: canvas.TextBuffer(max_replace) = .{},
-    doc_stats: []const u8 = "0 lines · 0 bytes",
-    doc_stats_buf: [48]u8 = undefined,
+    doc_stats: []const u8 = "0 lines · 0 bytes · LF",
+    doc_stats_buf: [64]u8 = undefined,
     path_toast: []const u8 = "",
-    path_toast_buf: [260]u8 = undefined,
+    path_toast_buf: [520]u8 = undefined,
     action_toast_buf: [48]u8 = undefined,
     recent_dynamic: [prefs_mod.max_recent]RecentProject = [_]RecentProject{.{ .name = "", .path = "", .branch = "" }} ** prefs_mod.max_recent,
     recent_name_pool: [prefs_mod.max_recent][64]u8 = undefined,
@@ -411,6 +429,9 @@ pub const Model = struct {
         "io",
         "document",
         "document_dirty",
+        "undo_storage",
+        "undo_len",
+        "undo_available",
         "open_path",
         "terminal_command",
         "terminal",
@@ -864,6 +885,13 @@ pub const commands = [_]CommandItem{
     .{ .id = "transform_lower", .title = "Transform: Lower Case", .hint = "" },
     .{ .id = "transform_sort_lines", .title = "Transform: Sort Lines", .hint = "" },
     .{ .id = "transform_reverse_lines", .title = "Transform: Reverse Lines", .hint = "" },
+    .{ .id = "delete_last_line", .title = "Delete Last Line", .hint = "Cmd+Shift+K" },
+    .{ .id = "join_lines", .title = "Join Lines", .hint = "" },
+    .{ .id = "move_line_up", .title = "Move Last Line Up", .hint = "Alt+Up" },
+    .{ .id = "move_line_down", .title = "Move Last Line Down", .hint = "Alt+Down" },
+    .{ .id = "undo_edit", .title = "Undo Last Edit", .hint = "Cmd+Z" },
+    .{ .id = "revert_file", .title = "Revert File from Disk", .hint = "" },
+    .{ .id = "copy_absolute_path", .title = "Copy Absolute Path", .hint = "" },
     .{ .id = "toggle_trim_trailing", .title = "Toggle Trim Trailing Whitespace", .hint = "" },
     .{ .id = "toggle_final_newline", .title = "Toggle Insert Final Newline", .hint = "" },
     .{ .id = "toggle_terminal", .title = "Toggle Terminal", .hint = "Ctrl+`" },
@@ -1013,6 +1041,20 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 runTextTransform(model, .sort);
             } else if (std.mem.eql(u8, id, "transform_reverse_lines")) {
                 runTextTransform(model, .reverse);
+            } else if (std.mem.eql(u8, id, "delete_last_line")) {
+                deleteLastLine(model);
+            } else if (std.mem.eql(u8, id, "join_lines")) {
+                joinDocumentLines(model);
+            } else if (std.mem.eql(u8, id, "move_line_up")) {
+                moveDocumentLine(model, true);
+            } else if (std.mem.eql(u8, id, "move_line_down")) {
+                moveDocumentLine(model, false);
+            } else if (std.mem.eql(u8, id, "undo_edit")) {
+                undoLastEdit(model);
+            } else if (std.mem.eql(u8, id, "revert_file")) {
+                revertActiveFile(model);
+            } else if (std.mem.eql(u8, id, "copy_absolute_path")) {
+                copyAbsolutePath(model);
             } else if (std.mem.eql(u8, id, "toggle_trim_trailing")) {
                 toggleTrimTrailing(model);
             } else if (std.mem.eql(u8, id, "toggle_final_newline")) {
@@ -1146,6 +1188,13 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .transform_reverse_lines => runTextTransform(model, .reverse),
         .toggle_trim_trailing => toggleTrimTrailing(model),
         .toggle_final_newline => toggleFinalNewline(model),
+        .delete_last_line => deleteLastLine(model),
+        .join_lines => joinDocumentLines(model),
+        .move_line_up => moveDocumentLine(model, true),
+        .move_line_down => moveDocumentLine(model, false),
+        .undo_edit => undoLastEdit(model),
+        .revert_file => revertActiveFile(model),
+        .copy_absolute_path => copyAbsolutePath(model),
         .select_tab => |id| {
             model.active_tab_id = id;
             if (model.workspace_from_disk) {
@@ -1219,6 +1268,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.features_loaded = 3;
         },
         .edit_document => |edit| {
+            pushUndoSnapshot(model);
             model.document.apply(edit);
             model.document_dirty = true;
             model.toast = "";
@@ -1371,6 +1421,8 @@ fn syncDocumentFromWorkspace(model: *Model) void {
     if (model.workspace) |ws| {
         model.document.set(ws.editorText());
         model.document_dirty = false;
+        model.undo_available = false;
+        model.undo_len = 0;
         model.editor_mode_label = "editable";
         model.toast = "";
         refreshDocStats(model);
@@ -1398,7 +1450,8 @@ pub fn refreshDocStats(model: *Model) void {
         if (c == '\n') lines += 1;
     }
     if (text.len == 0) lines = 0;
-    const label = std.fmt.bufPrint(&model.doc_stats_buf, "{d} lines · {d} bytes", .{ lines, text.len }) catch "stats";
+    const eol = edit_transforms.detectEol(text);
+    const label = std.fmt.bufPrint(&model.doc_stats_buf, "{d} lines · {d} bytes · {s}", .{ lines, text.len, eol }) catch "stats";
     model.doc_stats = label;
 }
 
@@ -1472,11 +1525,12 @@ fn replaceOnceInDocument(model: *Model) void {
         model.toast = "No match to replace";
         return;
     };
-    model.document.set(out[0..result.out_len]);
-    model.document_dirty = true;
-    refreshDocStats(model);
+    applyDocumentTransform(model, out[0..result.out_len], "Replaced 1");
+    var toast_keep: [48]u8 = undefined;
+    const tn = @min(model.toast.len, toast_keep.len);
+    @memcpy(toast_keep[0..tn], model.toast[0..tn]);
     runFindInDocument(model);
-    model.toast = "Replaced 1";
+    model.toast = toast_keep[0..tn];
 }
 
 fn replaceAllInDocument(model: *Model) void {
@@ -1491,12 +1545,14 @@ fn replaceAllInDocument(model: *Model) void {
         model.toast = "No matches to replace";
         return;
     };
-    model.document.set(out[0..result.out_len]);
-    model.document_dirty = true;
-    refreshDocStats(model);
-    runFindInDocument(model);
     const msg = std.fmt.bufPrint(&model.action_toast_buf, "Replaced {d}", .{result.count}) catch "Replaced";
-    model.toast = msg;
+    applyDocumentTransform(model, out[0..result.out_len], msg);
+    var toast_keep: [48]u8 = undefined;
+    const tn = @min(model.toast.len, toast_keep.len);
+    @memcpy(toast_keep[0..tn], model.toast[0..tn]);
+    runFindInDocument(model);
+    @memcpy(model.action_toast_buf[0..tn], toast_keep[0..tn]);
+    model.toast = model.action_toast_buf[0..tn];
 }
 
 fn copyActivePath(model: *Model) void {
@@ -1510,6 +1566,112 @@ fn copyActivePath(model: *Model) void {
     @memcpy(model.path_toast_buf[0..n], path[0..n]);
     model.path_toast = model.path_toast_buf[0..n];
     model.toast = model.path_toast;
+}
+
+fn copyAbsolutePath(model: *Model) void {
+    const rel = Model.activeTabPath(model);
+    if (rel.len == 0) {
+        model.toast = "No active path";
+        model.path_toast = "";
+        return;
+    }
+    const root = model.project_path;
+    if (root.len == 0 or std.mem.eql(u8, root, "(scratch)")) {
+        copyActivePath(model);
+        return;
+    }
+    const sep: u8 = if (root.len > 0 and root[root.len - 1] == '/') 0 else '/';
+    const need = root.len + (if (sep == 0) @as(usize, 0) else 1) + rel.len;
+    if (need > model.path_toast_buf.len) {
+        model.toast = "Path too long";
+        return;
+    }
+    @memcpy(model.path_toast_buf[0..root.len], root);
+    var dst = root.len;
+    if (sep != 0) {
+        model.path_toast_buf[dst] = sep;
+        dst += 1;
+    }
+    @memcpy(model.path_toast_buf[dst..][0..rel.len], rel);
+    dst += rel.len;
+    model.path_toast = model.path_toast_buf[0..dst];
+    model.toast = model.path_toast;
+}
+
+fn pushUndoSnapshot(model: *Model) void {
+    const text = model.document.text();
+    const storage = model.undo_storage orelse blk: {
+        const buf = std.heap.page_allocator.alloc(u8, max_document) catch return;
+        model.undo_storage = buf;
+        break :blk buf;
+    };
+    if (text.len > storage.len) return;
+    @memcpy(storage[0..text.len], text);
+    model.undo_len = text.len;
+    model.undo_available = true;
+}
+
+fn undoLastEdit(model: *Model) void {
+    if (!model.undo_available) {
+        model.toast = "Nothing to undo";
+        return;
+    }
+    const storage = model.undo_storage orelse {
+        model.toast = "Nothing to undo";
+        return;
+    };
+    const prev = storage[0..model.undo_len];
+    const cur = model.document.text();
+    const scratch = std.heap.page_allocator.alloc(u8, cur.len) catch {
+        model.toast = "Undo failed";
+        return;
+    };
+    defer std.heap.page_allocator.free(scratch);
+    @memcpy(scratch[0..cur.len], cur);
+    const cur_len = cur.len;
+    model.document.set(prev);
+    @memcpy(storage[0..cur_len], scratch[0..cur_len]);
+    model.undo_len = cur_len;
+    model.document_dirty = true;
+    refreshDocStats(model);
+    syncActiveTabDirty(model);
+    model.toast = "Undone";
+}
+
+fn revertActiveFile(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Nothing to revert";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    if (model.active_tab_id == 0) {
+        model.toast = "No active file";
+        return;
+    }
+    pushUndoSnapshot(model);
+    const keep_storage = model.undo_storage;
+    const keep_len = model.undo_len;
+    const keep_avail = model.undo_available;
+    ws.openFileById(modelIo(model), model.active_tab_id) catch {
+        model.toast = "Revert failed";
+        return;
+    };
+    model.open_tabs = ws.tabsSlice();
+    if (model.workspace) |w| {
+        model.document.set(w.editorText());
+        model.document_dirty = false;
+        model.editor_mode_label = "editable";
+        refreshDocStats(model);
+        refreshBreadcrumb(model);
+        syncActiveTabDirty(model);
+    }
+    model.undo_storage = keep_storage;
+    model.undo_len = keep_len;
+    model.undo_available = keep_avail;
+    model.toast = "Reverted from disk";
 }
 
 fn applyWorkspaceMeta(model: *Model, ws: *workspace_store.WorkspaceBuffers, meta: workspace_store.Workspace) void {
@@ -1919,29 +2081,57 @@ fn duplicateDocumentTail(model: *Model) void {
         model.toast = "Empty last line";
         return;
     }
-    var out: [max_document]u8 = undefined;
-    if (text.len + 1 + last_line.len > out.len) {
+    const need = text.len + 1 + last_line.len;
+    if (need > edit_transforms.max_out) {
         model.toast = "Document too large";
         return;
     }
+    var out: [edit_transforms.max_out]u8 = undefined;
     @memcpy(out[0..text.len], text);
     out[text.len] = '\n';
     @memcpy(out[text.len + 1 ..][0..last_line.len], last_line);
-    model.document.set(out[0 .. text.len + 1 + last_line.len]);
-    model.document_dirty = true;
-    refreshDocStats(model);
-    syncActiveTabDirty(model);
-    if (model.auto_save and model.workspace_from_disk) saveActiveDocument(model);
-    model.toast = "Duplicated last line";
+    applyDocumentTransform(model, out[0..need], "Duplicated last line");
 }
 
 fn applyDocumentTransform(model: *Model, new_text: []const u8, ok_toast: []const u8) void {
+    pushUndoSnapshot(model);
     model.document.set(new_text);
     model.document_dirty = true;
     refreshDocStats(model);
     syncActiveTabDirty(model);
     if (model.auto_save and model.workspace_from_disk) saveActiveDocument(model);
     model.toast = ok_toast;
+}
+
+fn deleteLastLine(model: *Model) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = edit_transforms.deleteLastLine(model.document.text(), &out) orelse {
+        model.toast = "Delete line failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..n], "Deleted last line");
+}
+
+fn joinDocumentLines(model: *Model) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = edit_transforms.joinLines(model.document.text(), &out) orelse {
+        model.toast = "Join lines failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..n], "Joined lines");
+}
+
+fn moveDocumentLine(model: *Model, up: bool) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = if (up)
+        edit_transforms.moveLastLineUp(model.document.text(), &out)
+    else
+        edit_transforms.moveLastLineDown(model.document.text(), &out);
+    const len = n orelse {
+        model.toast = "Move line failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..len], if (up) "Moved line up" else "Moved line down");
 }
 
 fn toggleLineComment(model: *Model) void {

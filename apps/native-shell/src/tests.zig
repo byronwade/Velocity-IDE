@@ -623,6 +623,9 @@ test "pin blocks close until unpinned" {
 test "save hygiene trims trailing whitespace" {
     var model = main.initialModel();
     main.update(&model, .{ .open_project = "acme-dashboard" });
+    // Use a disposable file so we never overwrite fixture sources.
+    model.new_file_path.set("src/hygiene_tmp.ts");
+    main.update(&model, .create_new_file);
     model.trim_trailing_ws = true;
     model.insert_final_newline = true;
     model.document.set("hello  ");
@@ -630,4 +633,36 @@ test "save hygiene trims trailing whitespace" {
     main.update(&model, .save_file);
     try testing.expectEqualStrings("hello\n", model.document.text());
     try testing.expect(!model.document_dirty);
+    // Soft-confirm delete the temp file.
+    main.update(&model, .delete_selected_file);
+    main.update(&model, .delete_selected_file);
+}
+
+test "delete join move lines and undo" {
+    var model = main.initialModel();
+    model.document.set("a\nb\nc\n");
+    main.update(&model, .delete_last_line);
+    try testing.expectEqualStrings("a\nb", model.document.text());
+    main.update(&model, .undo_edit);
+    try testing.expectEqualStrings("a\nb\nc\n", model.document.text());
+    main.update(&model, .join_lines);
+    try testing.expectEqualStrings("a b c", model.document.text());
+    model.document.set("a\nb\nc\n");
+    main.update(&model, .move_line_up);
+    try testing.expectEqualStrings("a\nc\nb\n", model.document.text());
+}
+
+test "copy absolute path joins root" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .copy_absolute_path);
+    try testing.expect(model.path_toast.len > 0);
+    try testing.expect(std.mem.indexOf(u8, model.path_toast, "/") != null);
+}
+
+test "doc stats include eol" {
+    var model = main.initialModel();
+    model.document.set("a\r\nb\n");
+    model_mod.refreshDocStats(&model);
+    try testing.expect(std.mem.indexOf(u8, model.doc_stats, "CRLF") != null);
 }

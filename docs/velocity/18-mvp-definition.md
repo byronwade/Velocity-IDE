@@ -49,6 +49,11 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
 | Text transforms | Upper / lower / sort lines / reverse lines on active document. |
 | Focus mode | Hides left panel, agent, and terminal chrome for editing. |
 | Shortcuts help | Overlay lists core keybindings (Cmd+Shift+/). |
+| Delete / join / move lines | Last-line MVP ops (no caret API yet); Cmd+Shift+K deletes. |
+| Undo last edit | Single-level undo for transforms, replace, and textarea edits (Cmd+Z). |
+| Revert file | Reload active file from disk; undo restores discarded buffer. |
+| Copy absolute path | Join workspace root + relative path into toast. |
+| EOL in status | Document stats show LF / CRLF. |
 | Command palette | Filtered by query; Open Folder, Save, Search, Git, Terminal, theme, safe mode. |
 | Terminal | Pipe-based shell via Process Governor; runtime uses async `fx.spawn` (tests sync). |
 | Agent panel | Local task board only — no network AI. |
