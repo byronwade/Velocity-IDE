@@ -18,6 +18,7 @@ used only as an external research reference.
 | Prefs + Recent | Theme / last path / panels / recent / auto-save / find-case |
 | Document stats | Status bar line + byte counts |
 | Breadcrumb | Active relative path in editor header |
+| Layout perspectives | Customize Layout menu + palette: Coding / Focus / Review / Debug / Terminal presets, Save Custom, Restore Previous, Reset; region toggles; presentation-only, so open files and running processes are preserved |
 | Problems | Marker + terminal/test diagnostics, severity/source filters |
 | Diff review | Read-only, bounded line review for saved and staged/unstaged Git changes; not an editable diff editor |
 | Snippets | Versioned, bounded workspace/user literal snippets; no dynamic placeholders |

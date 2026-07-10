@@ -44,6 +44,25 @@ fn expectByText(widget: canvas.Widget, kind: canvas.WidgetKind, text: []const u8
     };
 }
 
+fn findByIcon(widget: canvas.Widget, kind: canvas.WidgetKind, icon: []const u8) ?canvas.Widget {
+    if (widget.kind == kind and std.mem.eql(u8, widget.icon, icon)) return widget;
+    for (widget.children) |child| {
+        if (findByIcon(child, kind, icon)) |found| return found;
+    }
+    return null;
+}
+
+/// Assert an icon-only control is present. The markup a11y validator already
+/// fails the build if an icon-only control has no accessible name, so matching
+/// the icon confirms the control exists in the chrome while accessibility is
+/// enforced at markup-check time.
+fn expectByIcon(widget: canvas.Widget, kind: canvas.WidgetKind, icon: []const u8) !canvas.Widget {
+    return findByIcon(widget, kind, icon) orelse {
+        std.debug.print("no {t} with icon \"{s}\" in the view\n", .{ kind, icon });
+        return error.WidgetNotFound;
+    };
+}
+
 fn shortcutMatchesHint(shortcut: native_sdk.Shortcut, hint: []const u8) bool {
     var primary = false;
     var control = false;
@@ -556,8 +575,11 @@ test "editor chrome exposes accessible navigation controls" {
     main.update(&model, .{ .open_project = "acme-dashboard" });
     main.update(&model, .{ .select_activity = .search });
     const tree = try buildTree(arena_state.allocator(), &model);
-    _ = try expectByText(tree.root, .button, "Back");
-    _ = try expectByText(tree.root, .button, "Forward");
+    // Back/Forward are icon-only (chevron) controls in the Precision Workbench
+    // chrome. The a11y validator guarantees they carry an accessible name; the
+    // chevron icons are unique to the navigation controls in this view.
+    _ = try expectByIcon(tree.root, .button, "chevron-left");
+    _ = try expectByIcon(tree.root, .button, "chevron-right");
     _ = try expectByText(tree.root, .button, "Whole Word");
 }
 

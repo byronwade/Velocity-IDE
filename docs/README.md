@@ -1,5 +1,14 @@
 # Velocity documentation
 
+## Precision Workbench design
+
+- [Precision Workbench design language](design/precision-workbench.md)
+- [Workbench surface audit](design/workbench-surface-audit.md)
+- [Control / command inventory](design/control-command-inventory.md)
+- [Layout contract](design/layout-contract.md)
+
+## Product docs
+
 - [Master plan](velocity/00-master-plan.md)
 - [Architecture](velocity/01-architecture.md)
 - [Native SDK approach](velocity/02-native-sdk-migration.md)

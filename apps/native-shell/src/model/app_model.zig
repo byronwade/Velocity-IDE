@@ -99,6 +99,43 @@ pub const ClosedTab = struct {
 pub const ViewKind = enum { launch, ide, plugins, settings, perf, features, processes, search, scm, debug, testing, problems };
 pub const Activity = enum { explorer, search, scm, agents, terminal, plugins, settings, debug, testing, features, processes, problems, outline };
 pub const BottomPanelTab = enum { terminal, output, problems };
+
+/// Built-in Precision Workbench layout perspectives. A preset changes only the
+/// presentation of the stable region landmarks (primary sidebar, editor,
+/// secondary sidebar, bottom panel) — never the user's open files, buffers, or
+/// running processes.
+pub const LayoutPreset = enum {
+    coding,
+    focus,
+    review,
+    debug,
+    terminal,
+    custom,
+
+    pub fn label(value: LayoutPreset) []const u8 {
+        return switch (value) {
+            .coding => "Coding",
+            .focus => "Focus",
+            .review => "Review",
+            .debug => "Debug",
+            .terminal => "Terminal",
+            .custom => "Custom",
+        };
+    }
+};
+
+/// A bounded, UI-independent snapshot of the workbench region visibility. It is
+/// proportional to the number of region landmarks — never to file, search, or
+/// terminal content — so capturing and restoring it is a constant-time op.
+pub const LayoutSnapshot = struct {
+    show_sidebar: bool = true,
+    show_agent_panel: bool = false,
+    bottom_panel_open: bool = false,
+    focus_mode: bool = false,
+    selected_activity: Activity = .explorer,
+    bottom_panel_tab: BottomPanelTab = .terminal,
+};
+
 pub const TestStatus = enum { idle, running, passed, failed, cancelled };
 pub const AgentStatus = enum { running, planning, ready_for_review, failed, completed };
 
@@ -729,6 +766,34 @@ pub const Model = struct {
     problem_source_marker: problems_mod.SourceFilter = .marker,
     project_acme: []const u8 = "acme-dashboard",
 
+    // Customize Layout menu plus the canonical command IDs its controls
+    // dispatch. Literals are not allowed in markup on-press bindings, so each
+    // preset command is exposed as a constant string field (mirroring
+    // `project_acme`). All route through the existing `run_command` handler.
+    layout_menu_open: bool = false,
+    layout_cmd_open: []const u8 = "open_layout_menu",
+    layout_cmd_close: []const u8 = "close_layout_menu",
+    layout_cmd_coding: []const u8 = "layout_preset_coding",
+    layout_cmd_focus: []const u8 = "layout_preset_focus",
+    layout_cmd_review: []const u8 = "layout_preset_review",
+    layout_cmd_debug: []const u8 = "layout_preset_debug",
+    layout_cmd_terminal: []const u8 = "layout_preset_terminal",
+    layout_cmd_save_custom: []const u8 = "save_layout_custom",
+    layout_cmd_restore_prev: []const u8 = "restore_previous_layout",
+    layout_cmd_reset: []const u8 = "reset_layout",
+
+    // Editor toolbar overflow: low-frequency actions collapse into an ellipsis
+    // menu so the breadcrumb toolbar never collides at the minimum window size.
+    editor_more_open: bool = false,
+    editor_cmd_more_open: []const u8 = "open_editor_more",
+    editor_cmd_more_close: []const u8 = "close_editor_more",
+    perf_cmd_close: []const u8 = "close_perf_hud",
+
+    // Layout state (not directly markup-bound; projected via layoutPresetLabel).
+    active_layout_preset: LayoutPreset = .custom,
+    prev_layout: ?LayoutSnapshot = null,
+    custom_layout: LayoutSnapshot = .{},
+
     // Static mock collections exposed for markup `for each=...`
     file_nodes: []const FileNode = &file_tree,
     open_tabs: []const Tab = &tabs,
@@ -940,6 +1005,9 @@ pub const Model = struct {
         "recent_files",
         "recent_file_lens",
         "recent_file_count",
+        "active_layout_preset",
+        "prev_layout",
+        "custom_layout",
     };
 
     pub fn commandQuery(model: *const Model) []const u8 {
@@ -948,6 +1016,10 @@ pub const Model = struct {
 
     pub fn agentPrompt(model: *const Model) []const u8 {
         return model.agent_prompt.text();
+    }
+
+    pub fn layoutPresetLabel(model: *const Model) []const u8 {
+        return model.active_layout_preset.label();
     }
 
     pub fn isLaunch(model: *const Model) bool {
@@ -1862,6 +1934,34 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 pinActiveTab(model);
             } else if (std.mem.eql(u8, id, "toggle_focus_mode")) {
                 toggleFocusMode(model);
+            } else if (std.mem.eql(u8, id, "open_layout_menu")) {
+                model.layout_menu_open = true;
+            } else if (std.mem.eql(u8, id, "close_layout_menu")) {
+                model.layout_menu_open = false;
+            } else if (std.mem.eql(u8, id, "open_editor_more")) {
+                model.editor_more_open = true;
+            } else if (std.mem.eql(u8, id, "close_editor_more")) {
+                model.editor_more_open = false;
+            } else if (std.mem.eql(u8, id, "close_perf_hud")) {
+                model.show_perf_hud = false;
+                model.current_view = .ide;
+            } else if (std.mem.eql(u8, id, "layout_preset_coding")) {
+                applyLayoutPreset(model, .coding);
+            } else if (std.mem.eql(u8, id, "layout_preset_focus")) {
+                applyLayoutPreset(model, .focus);
+            } else if (std.mem.eql(u8, id, "layout_preset_review")) {
+                applyLayoutPreset(model, .review);
+            } else if (std.mem.eql(u8, id, "layout_preset_debug")) {
+                applyLayoutPreset(model, .debug);
+            } else if (std.mem.eql(u8, id, "layout_preset_terminal")) {
+                applyLayoutPreset(model, .terminal);
+            } else if (std.mem.eql(u8, id, "save_layout_custom")) {
+                saveCustomLayout(model);
+            } else if (std.mem.eql(u8, id, "restore_previous_layout")) {
+                restorePreviousLayout(model);
+            } else if (std.mem.eql(u8, id, "reset_layout")) {
+                applyLayoutPreset(model, .coding);
+                model.toast = "Layout reset to Coding default";
             } else if (std.mem.eql(u8, id, "toggle_shortcuts_help")) {
                 model.shortcuts_help_visible = !model.shortcuts_help_visible;
             } else if (std.mem.eql(u8, id, "transform_upper")) {
@@ -3425,6 +3525,7 @@ fn revertActiveFile(model: *Model) void {
 }
 
 fn restoreActiveBackup(model: *Model) void {
+    model.editor_more_open = false;
     if (!model.workspace_from_disk) {
         model.backup_restore_status = "Open a workspace first";
         model.toast = model.backup_restore_status;
@@ -4054,6 +4155,10 @@ fn openBottomPanel(model: *Model, tab: BottomPanelTab) void {
     model.bottom_panel_open = true;
     model.bottom_panel_tab = tab;
     model.show_terminal = tab == .terminal;
+    // The Performance HUD is a fixed-height diagnostic panel; keep it mutually
+    // exclusive with the bottom panel so the two never over-subscribe the
+    // editor column's vertical space and overlap.
+    model.show_perf_hud = false;
     if (tab == .problems and
         model.workspace_from_disk and
         model.problems.len == 0 and
@@ -4883,6 +4988,16 @@ fn dismissOverlay(model: *Model) void {
         closeSnippetPicker(model);
         return;
     }
+    if (model.layout_menu_open) {
+        model.layout_menu_open = false;
+        model.toast = "";
+        return;
+    }
+    if (model.editor_more_open) {
+        model.editor_more_open = false;
+        model.toast = "";
+        return;
+    }
     if (model.symbol_palette_open) {
         model.symbol_palette_open = false;
         model.symbol_query.clear();
@@ -5666,6 +5781,7 @@ fn findNavigate(model: *Model, forward: bool) void {
 }
 
 fn showQuickOpen(model: *Model) void {
+    model.editor_more_open = false;
     if (!model.workspace_from_disk) {
         model.toast = "Open a workspace first";
         return;
@@ -5892,6 +6008,133 @@ fn pinActiveTab(model: *Model) void {
         model.pinned_tab_id = model.active_tab_id;
         model.toast = "Tab pinned";
     }
+}
+
+/// Capture the current workbench region visibility. Constant-time: proportional
+/// to the number of region landmarks, not to any panel's content.
+fn captureLayout(model: *const Model) LayoutSnapshot {
+    return .{
+        .show_sidebar = model.show_sidebar,
+        .show_agent_panel = model.show_agent_panel,
+        .bottom_panel_open = model.bottom_panel_open,
+        .focus_mode = model.focus_mode,
+        .selected_activity = model.selected_activity,
+        .bottom_panel_tab = model.bottom_panel_tab,
+    };
+}
+
+/// Apply a validated layout snapshot to the region landmarks. Presentation
+/// only — open files, unsaved buffers, and running processes are untouched.
+fn applyLayoutSnapshot(model: *Model, snap: LayoutSnapshot) void {
+    model.current_view = .ide;
+    model.focus_mode = snap.focus_mode;
+    model.show_sidebar = snap.show_sidebar;
+    model.show_agent_panel = snap.show_agent_panel;
+    model.selected_activity = snap.selected_activity;
+    if (snap.bottom_panel_open) {
+        openBottomPanel(model, snap.bottom_panel_tab);
+    } else {
+        model.bottom_panel_open = false;
+        model.bottom_panel_tab = snap.bottom_panel_tab;
+        model.show_terminal = false;
+    }
+    persistPrefs(model);
+}
+
+/// The region layout for each built-in perspective. Only the stable landmarks
+/// move; the editor always remains the visual center of gravity.
+fn presetSnapshot(preset: LayoutPreset) LayoutSnapshot {
+    return switch (preset) {
+        // Explorer + dominant editor; bottom and secondary panels hidden.
+        .coding => .{
+            .show_sidebar = true,
+            .selected_activity = .explorer,
+            .show_agent_panel = false,
+            .bottom_panel_open = false,
+            .focus_mode = false,
+        },
+        // Editor only, minimal chrome; one command restores everything.
+        .focus => .{
+            .show_sidebar = false,
+            .show_agent_panel = false,
+            .bottom_panel_open = false,
+            .focus_mode = true,
+            .selected_activity = .explorer,
+        },
+        // Source Control in the primary sidebar, diff/editor visible, review
+        // results (Problems) in the bottom panel.
+        .review => .{
+            .show_sidebar = true,
+            .selected_activity = .scm,
+            .show_agent_panel = false,
+            .bottom_panel_open = true,
+            .bottom_panel_tab = .problems,
+            .focus_mode = false,
+        },
+        // Explorer + editor with the terminal/console visible in the bottom
+        // panel for run/debug output.
+        .debug => .{
+            .show_sidebar = true,
+            .selected_activity = .explorer,
+            .show_agent_panel = false,
+            .bottom_panel_open = true,
+            .bottom_panel_tab = .terminal,
+            .focus_mode = false,
+        },
+        // Editor visible with an enlarged terminal; unrelated panels hidden.
+        .terminal => .{
+            .show_sidebar = false,
+            .selected_activity = .explorer,
+            .show_agent_panel = false,
+            .bottom_panel_open = true,
+            .bottom_panel_tab = .terminal,
+            .focus_mode = false,
+        },
+        .custom => .{},
+    };
+}
+
+fn applyLayoutPreset(model: *Model, preset: LayoutPreset) void {
+    model.layout_menu_open = false;
+    if (preset == .custom) {
+        model.active_layout_preset = .custom;
+        applyLayoutSnapshot(model, model.custom_layout);
+        model.toast = "Custom layout restored";
+        return;
+    }
+    model.prev_layout = captureLayout(model);
+    model.active_layout_preset = preset;
+    applyLayoutSnapshot(model, presetSnapshot(preset));
+    // Static literals only: model.toast is copied into toast_buf after this
+    // frame returns, so it must not reference stack-local memory.
+    model.toast = switch (preset) {
+        .coding => "Coding layout applied",
+        .focus => "Focus layout applied",
+        .review => "Review layout applied",
+        .debug => "Debug layout applied",
+        .terminal => "Terminal layout applied",
+        .custom => "Custom layout applied",
+    };
+}
+
+fn restorePreviousLayout(model: *Model) void {
+    model.layout_menu_open = false;
+    const prev = model.prev_layout orelse {
+        model.toast = "No previous layout to restore";
+        return;
+    };
+    const current = captureLayout(model);
+    applyLayoutSnapshot(model, prev);
+    model.prev_layout = current;
+    model.active_layout_preset = .custom;
+    model.toast = "Previous layout restored";
+}
+
+fn saveCustomLayout(model: *Model) void {
+    model.layout_menu_open = false;
+    model.custom_layout = captureLayout(model);
+    model.active_layout_preset = .custom;
+    model.toast = "Current layout saved as Custom";
 }
 
 fn toggleFocusMode(model: *Model) void {
@@ -6206,6 +6449,7 @@ fn filterSnippets(model: *Model) void {
 }
 
 fn openSnippetPicker(model: *Model) void {
+    model.editor_more_open = false;
     if (!model.workspace_from_disk) {
         model.toast = "Open a workspace before appending a snippet";
         return;
@@ -6863,6 +7107,9 @@ fn refreshPerformanceMetrics(model: *Model) void {
     refreshPerformanceSnapshot(model);
     model.show_perf_hud = true;
     model.current_view = .perf;
+    // Mutually exclusive with the bottom panel (see openBottomPanel).
+    model.bottom_panel_open = false;
+    model.show_terminal = false;
 }
 
 fn refreshPerformanceSnapshot(model: *Model) void {
