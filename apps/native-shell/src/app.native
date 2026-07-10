@@ -105,6 +105,11 @@
                 <button size="sm" variant="primary" icon="search" on-press="run_search" label="Run workspace search immediately">Search</button>
               </row>
               <text size="sm" foreground="text_muted" wrap="true">Path scopes are comma-separated. * matches any characters; patterns without * match a path prefix or suffix.</text>
+              <row cross="center" gap="8">
+                <text size="sm" grow="1">Ripgrep engine</text>
+                <switch checked="{search_use_ripgrep}" on-toggle="toggle_search_engine" label="Use the ripgrep search engine" />
+              </row>
+              <text size="sm" foreground="text_muted" wrap="true">Ripgrep honors ignore files and rg glob scopes; the built-in engine searches the bounded workspace tree.</text>
               <separator />
               <text size="sm" foreground="text_muted">Replace Across Workspace</text>
               <text-field text="{replaceText}" placeholder="Replacement text..." on-input="update_replace_text" label="Workspace replacement text" />

@@ -1544,7 +1544,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "search",
     "implementation": "process",
     "priority": "P0"

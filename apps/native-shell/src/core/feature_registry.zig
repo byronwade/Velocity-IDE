@@ -95,7 +95,7 @@ pub const catalog = [_]FeatureEntry{
     .{ .id = "feature.quick-search", .name = "Quick Search", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 0, .status = .stub, .enabled = true },
     .{ .id = "feature.search-results", .name = "Search Results", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .status = .stub, .enabled = true },
     .{ .id = "feature.search-replace", .name = "Search Replace", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .status = .working, .enabled = true },
-    .{ .id = "feature.ripgrep-adapter", .name = "Ripgrep Adapter", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 1, .status = .stub, .enabled = true },
+    .{ .id = "feature.ripgrep-adapter", .name = "Ripgrep Adapter", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 1, .status = .working, .enabled = true },
     .{ .id = "feature.search-index", .name = "Search Index", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 64, .max_processes = 1, .status = .stub, .enabled = true },
     .{ .id = "feature.search-editor", .name = "Search Editor", .mode = .heavy, .default_enabled = false, .startup_allowed = false, .memory_budget_mb = 32, .max_processes = 0, .status = .stub, .enabled = false },
     .{ .id = "feature.fuzzy-file-search", .name = "Fuzzy File Search", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .status = .working, .enabled = true },

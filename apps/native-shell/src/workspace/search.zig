@@ -107,7 +107,9 @@ pub const SearchBuffers = struct {
         }
     }
 
-    fn pushHit(self: *SearchBuffers, path: []const u8, line: u32, preview_src: []const u8) void {
+    /// Appends one bounded hit (also the mapping API for external engines
+    /// like the ripgrep adapter, so every engine shares panel semantics).
+    pub fn pushHit(self: *SearchBuffers, path: []const u8, line: u32, preview_src: []const u8) void {
         if (self.hit_count >= max_hits) return;
         const idx = self.hit_count;
         const plen = @min(path.len, self.path_pool[idx].len);

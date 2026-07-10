@@ -461,6 +461,28 @@ test "workspace search finds auth helper" {
     try testing.expect(model.selected_activity == .search);
 }
 
+test "ripgrep engine toggle searches or falls back honestly" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.search_query.set("createSession");
+
+    try testing.expect(!model.search_use_ripgrep);
+    main.update(&model, .toggle_search_engine);
+    try testing.expect(model.search_use_ripgrep);
+
+    // With rg installed this exercises the governed adapter; without it the
+    // scanner fallback answers. Either way the search must produce hits and
+    // never crash or blank the panel.
+    main.update(&model, .run_search);
+    try testing.expect(model.search_hits.len > 0);
+    try testing.expect(model.selected_activity == .search);
+
+    // Toggling back re-runs on the built-in engine with identical wiring.
+    main.update(&model, .toggle_search_engine);
+    try testing.expect(!model.search_use_ripgrep);
+    try testing.expect(model.search_hits.len > 0);
+}
+
 test "incremental workspace search uses one fixed one-shot timer and manual fire" {
     var fx = model_mod.Effects.init(testing.allocator);
     defer fx.deinit();

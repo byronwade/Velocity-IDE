@@ -9,6 +9,7 @@ const theme = @import("../theme/tokens.zig");
 const workspace_store = @import("../workspace/workspace_store.zig");
 const explorer_projection = @import("../workspace/explorer_projection.zig");
 const workspace_search = @import("../workspace/search.zig");
+const rg_search = @import("../workspace/rg_search.zig");
 const find_in_doc = @import("../workspace/find_in_doc.zig");
 const quick_open = @import("../workspace/quick_open.zig");
 const navigation_history = @import("../workspace/navigation_history.zig");
@@ -170,6 +171,7 @@ pub const Msg = union(enum) {
     update_search_query: canvas.TextInputEvent,
     update_search_include: canvas.TextInputEvent,
     update_search_exclude: canvas.TextInputEvent,
+    toggle_search_engine,
     run_search,
     search_debounce_timer: native_sdk.EffectTimer,
     open_search_hit: u32,
@@ -533,6 +535,12 @@ pub const Model = struct {
     search_exclude: canvas.TextBuffer(workspace_search.max_path_pattern) = .{},
     search_hits: []const SearchHit = &.{},
     search_debounce_armed: bool = false,
+    /// Explicit engine choice: ripgrep honors .gitignore and rg glob syntax,
+    /// the built-in scanner searches the bounded workspace tree. Never
+    /// switched silently; the toggle lives in the search panel.
+    search_use_ripgrep: bool = false,
+    rg_probe: rg_search.Probe = .{},
+    rg_results: ?*rg_search.Results = null,
     workspace_tasks: []const WorkspaceTask = &.{},
     launch_profiles: []const LaunchProfile = &.{},
     replace_previews: []const ReplacePreview = &.{},
@@ -825,6 +833,8 @@ pub const Model = struct {
         "terminal_command",
         "terminal",
         "search_bufs",
+        "rg_probe",
+        "rg_results",
         "git_bufs",
         "task_bufs",
         "launch_bufs",
@@ -2470,6 +2480,12 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .create_folder => createFolder(model),
         .show_file_size => showFileSize(model),
         .toggle_word_wrap => toggleWordWrap(model),
+        .toggle_search_engine => {
+            model.search_use_ripgrep = !model.search_use_ripgrep;
+            if (std.mem.trim(u8, model.search_query.text(), " \t").len > 0) {
+                runWorkspaceSearch(model);
+            }
+        },
         .open_outline => {
             model.selected_activity = .outline;
             model.current_view = .ide;
@@ -4534,12 +4550,64 @@ fn runWorkspaceSearch(model: *Model) void {
         model.toast = "";
         return;
     }
+    if (model.search_use_ripgrep and model.workspace_from_disk) {
+        if (tryRipgrepSearch(model, ws, bufs)) {
+            model.search_hits = bufs.hitsSlice();
+            model.toast = bufs.status;
+            model.current_view = .ide;
+            model.selected_activity = .search;
+            model.show_sidebar = true;
+            return;
+        }
+        // rg missing or failed to allocate: fall through to the built-in
+        // scanner so the search still answers, and say so honestly.
+        model.toast = "ripgrep unavailable; used built-in search";
+    }
     bufs.searchScoped(modelIo(model), ws, model.search_query.text(), workspaceSearchOptions(model));
     model.search_hits = bufs.hitsSlice();
-    model.toast = bufs.status;
+    if (!(model.search_use_ripgrep and model.workspace_from_disk)) model.toast = bufs.status;
     model.current_view = .ide;
     model.selected_activity = .search;
     model.show_sidebar = true;
+}
+
+/// Runs the explicit-opt-in ripgrep engine and maps its bounded results into
+/// the shared search buffers (same panel, same hit ids/open path). Returns
+/// false when rg is unavailable so the caller can fall back to the scanner.
+fn tryRipgrepSearch(
+    model: *Model,
+    ws: *workspace_store.WorkspaceBuffers,
+    bufs: *workspace_search.SearchBuffers,
+) bool {
+    const results = model.rg_results orelse blk: {
+        const created = std.heap.page_allocator.create(rg_search.Results) catch return false;
+        created.* = .{};
+        model.rg_results = created;
+        break :blk created;
+    };
+    const query = std.mem.trim(u8, model.search_query.text(), " \t");
+    const status = rg_search.runSearch(
+        results,
+        &model.rg_probe,
+        modelIo(model),
+        ws.rootPath(),
+        query,
+        .{
+            .mode = .literal,
+            .case_sensitive = model.search_case_sensitive,
+            .whole_word = model.search_whole_word,
+            .include_glob = model.search_include.text(),
+            .exclude_glob = model.search_exclude.text(),
+            .max_results = @intCast(workspace_search.max_hits),
+        },
+    );
+    if (model.rg_probe.state == .unavailable) return false;
+    bufs.clear();
+    for (results.hitsSlice()) |hit| {
+        bufs.pushHit(results.filePath(hit.file_index), hit.line, hit.preview);
+    }
+    bufs.status = status;
+    return true;
 }
 
 fn workspaceSearchOptions(model: *const Model) workspace_search.Options {
