@@ -74,6 +74,22 @@ palette-exposed actions, to `core/command_registry.zig`. Keybindings live in
 | 4 | Added an upper-right **Customize Layout** control (`ellipsis`, tooltip "Customize Layout") opening a keyboard-accessible menu with five perspectives (Coding, Focus, Review, Debug, Terminal), Save Current as Custom, Restore Previous Layout, Reset Layout, and live region toggles. All routes go through the canonical `run_command` path and appear in the command palette. |
 | 5 | New controls use distinct, semantically stable glyphs: `panel-left` (primary sidebar), `panel-right` (secondary sidebar), `ellipsis` (layout/more). No glyph carries two meanings in the editor chrome. |
 
+Two further defects were found during the CI screenshot tour (headless GTK)
+and fixed:
+
+6. **Editor toolbar collided at the minimum window size.** The breadcrumb
+   toolbar carried too many text buttons. Go to File, Append Snippet, and
+   Restore Backup now collapse into an ellipsis "More editor actions" overflow;
+   only back/forward, breadcrumb, go-to-symbol, and Save remain in the compact
+   bar (progressive disclosure).
+7. **Performance HUD could not be dismissed and overlapped the bottom panel.**
+   `show_perf_hud` was only ever set true — there was no close affordance, so
+   once opened the 360 px HUD permanently occupied the editor column and, with
+   the 280 px bottom panel also open, over-subscribed the vertical space and the
+   editor toolbar overlapped the panel below. Added a close control on the HUD
+   header (`close_perf_hud`) and made the HUD and the bottom panel mutually
+   exclusive (opening either closes the other), so the two can never overlap.
+
 ## Not yet addressed (tracked for follow-up)
 
 - True editor-group **splitting** and moving editors between groups (the model

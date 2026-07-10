@@ -787,6 +787,7 @@ pub const Model = struct {
     editor_more_open: bool = false,
     editor_cmd_more_open: []const u8 = "open_editor_more",
     editor_cmd_more_close: []const u8 = "close_editor_more",
+    perf_cmd_close: []const u8 = "close_perf_hud",
 
     // Layout state (not directly markup-bound; projected via layoutPresetLabel).
     active_layout_preset: LayoutPreset = .custom,
@@ -1941,6 +1942,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 model.editor_more_open = true;
             } else if (std.mem.eql(u8, id, "close_editor_more")) {
                 model.editor_more_open = false;
+            } else if (std.mem.eql(u8, id, "close_perf_hud")) {
+                model.show_perf_hud = false;
+                model.current_view = .ide;
             } else if (std.mem.eql(u8, id, "layout_preset_coding")) {
                 applyLayoutPreset(model, .coding);
             } else if (std.mem.eql(u8, id, "layout_preset_focus")) {
@@ -4151,6 +4155,10 @@ fn openBottomPanel(model: *Model, tab: BottomPanelTab) void {
     model.bottom_panel_open = true;
     model.bottom_panel_tab = tab;
     model.show_terminal = tab == .terminal;
+    // The Performance HUD is a fixed-height diagnostic panel; keep it mutually
+    // exclusive with the bottom panel so the two never over-subscribe the
+    // editor column's vertical space and overlap.
+    model.show_perf_hud = false;
     if (tab == .problems and
         model.workspace_from_disk and
         model.problems.len == 0 and
@@ -7099,6 +7107,9 @@ fn refreshPerformanceMetrics(model: *Model) void {
     refreshPerformanceSnapshot(model);
     model.show_perf_hud = true;
     model.current_view = .perf;
+    // Mutually exclusive with the bottom panel (see openBottomPanel).
+    model.bottom_panel_open = false;
+    model.show_terminal = false;
 }
 
 fn refreshPerformanceSnapshot(model: *Model) void {

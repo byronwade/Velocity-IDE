@@ -576,7 +576,8 @@
             <column height="360" gap="8" padding="10" background="surface_subtle" label="Performance metrics">
               <row gap="8" cross="center">
                 <text size="sm" grow="1">Performance HUD</text>
-                <button size="sm" variant="secondary" on-press="run_perf">Refresh Performance Metrics</button>
+                <button size="sm" variant="secondary" icon="refresh-cw" on-press="run_perf" label="Refresh performance metrics">Refresh</button>
+                <button size="sm" variant="ghost" icon="x" on-press="run_command:{perf_cmd_close}" label="Close Performance HUD" />
               </row>
               <scroll height="300" label="Measured performance metrics">
                 <column gap="6">

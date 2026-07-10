@@ -53,10 +53,13 @@ native automate assert --timeout-ms 5000 'Terminal command'
 capture 03-terminal-dark
 native automate shortcut toggle_terminal
 
-# 4. Performance HUD.
+# 4. Performance HUD, then close it so later captures show a clean shell.
 native automate native-command run_perf main-canvas
 native automate assert --timeout-ms 5000 'Performance HUD'
 capture 04-perf-hud-dark
+PERF_CLOSE_ID="$(find_widget "Close Performance HUD")" || true
+test -n "$PERF_CLOSE_ID" && native automate widget-click main-canvas "$PERF_CLOSE_ID" || true
+native automate wait || true
 
 # 5. Command palette overlay.
 native automate shortcut command_palette
