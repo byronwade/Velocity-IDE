@@ -182,251 +182,31 @@ registerSingleton(IAllowedMcpServersService, AllowedMcpServersService, Instantia
 //#endregion
 
 
-//#region --- workbench contributions
+//#region --- workbench contributions (performance-fork gated)
 
-// Default Account
+import { getPerformanceForkMode } from '../platform/performanceFork/common/performanceForkFeatures.js';
+import { describeWorkbenchFeatureRegistry } from './workbench.featureRegistry.js';
+import { mark } from '../base/common/performance.js';
+
+// Default Account (service; kept for DI — chat entitlement no-ops without agent)
 import './services/accounts/common/defaultAccount.js';
 
-// Telemetry
-import './contrib/telemetry/browser/telemetry.contribution.js';
-
-// Preferences
-import './contrib/preferences/browser/preferences.contribution.js';
-import './contrib/preferences/browser/keybindingsEditorContribution.js';
-import './contrib/preferences/browser/preferencesSearch.js';
-
-// Performance
-import './contrib/performance/browser/performance.contribution.js';
-
-// Notebook
-import './contrib/notebook/browser/notebook.contribution.js';
-
-// Speech
-import './contrib/speech/browser/speech.contribution.js';
-
-// Chat
-import './contrib/chat/browser/chat.contribution.js';
-import './contrib/inlineChat/browser/inlineChat.contribution.js';
-import './contrib/mcp/browser/mcp.contribution.js';
-import './contrib/chat/browser/chatSessions.contribution.js';
-import './contrib/chat/browser/chatContext.contribution.js';
-
-// Interactive
-import './contrib/interactive/browser/interactive.contribution.js';
-
-// repl
-import './contrib/replNotebook/browser/repl.contribution.js';
-
-// Testing
-import './contrib/testing/browser/testing.contribution.js';
-
-// Logs
-import './contrib/logs/common/logs.contribution.js';
-
-// Quickaccess
-import './contrib/quickaccess/browser/quickAccess.contribution.js';
-
-// Explorer
-import './contrib/files/browser/explorerViewlet.js';
-import './contrib/files/browser/fileActions.contribution.js';
-import './contrib/files/browser/files.contribution.js';
-
-// Bulk Edit
-import './contrib/bulkEdit/browser/bulkEditService.js';
-import './contrib/bulkEdit/browser/preview/bulkEdit.contribution.js';
-
-// Search
-import './contrib/search/browser/search.contribution.js';
-import './contrib/search/browser/searchView.js';
-
-// Search Editor
-import './contrib/searchEditor/browser/searchEditor.contribution.js';
-
-// Sash
-import './contrib/sash/browser/sash.contribution.js';
-
-// SCM
-import './contrib/scm/browser/scm.contribution.js';
-
-// Debug
-import './contrib/debug/browser/debug.contribution.js';
-import './contrib/debug/browser/debugEditorContribution.js';
-import './contrib/debug/browser/breakpointEditorContribution.js';
-import './contrib/debug/browser/callStackEditorContribution.js';
-import './contrib/debug/browser/repl.js';
-import './contrib/debug/browser/debugViewlet.js';
-
-// Markers
-import './contrib/markers/browser/markers.contribution.js';
-
-// Process Explorer
-import './contrib/processExplorer/browser/processExplorer.contribution.js';
-
-// Merge Editor
-import './contrib/mergeEditor/browser/mergeEditor.contribution.js';
-
-// Multi Diff Editor
-import './contrib/multiDiffEditor/browser/multiDiffEditor.contribution.js';
-
-// Commands
-import './contrib/commands/common/commands.contribution.js';
-
-// Comments
-import './contrib/comments/browser/comments.contribution.js';
-
-// URL Support
-import './contrib/url/browser/url.contribution.js';
-
-// Webview
-import './contrib/webview/browser/webview.contribution.js';
-import './contrib/webviewPanel/browser/webviewPanel.contribution.js';
-import './contrib/webviewView/browser/webviewView.contribution.js';
-import './contrib/customEditor/browser/customEditor.contribution.js';
-
-// External Uri Opener
-import './contrib/externalUriOpener/common/externalUriOpener.contribution.js';
-
-// Extensions Management
-import './contrib/extensions/browser/extensions.contribution.js';
-import './contrib/extensions/browser/extensionsViewlet.js';
-
-// Output View
-import './contrib/output/browser/output.contribution.js';
-import './contrib/output/browser/outputView.js';
-
-// Terminal
-import './contrib/terminal/terminal.all.js';
-
-// External terminal
-import './contrib/externalTerminal/browser/externalTerminal.contribution.js';
-
-// Relauncher
-import './contrib/relauncher/browser/relauncher.contribution.js';
-
-// Tasks
-import './contrib/tasks/browser/task.contribution.js';
-
-// Remote
-import './contrib/remote/common/remote.contribution.js';
-import './contrib/remote/browser/remote.contribution.js';
-
-// Emmet
-import './contrib/emmet/browser/emmet.contribution.js';
-
-// CodeEditor Contributions
-import './contrib/codeEditor/browser/codeEditor.contribution.js';
-
-// Markdown
-import './contrib/markdown/browser/markdown.contribution.js';
-
-// Keybindings Contributions
-import './contrib/keybindings/browser/keybindings.contribution.js';
-
-// Snippets
-import './contrib/snippets/browser/snippets.contribution.js';
-
-// Formatter Help
-import './contrib/format/browser/format.contribution.js';
-
-// Folding
-import './contrib/folding/browser/folding.contribution.js';
-
-// Limit Indicator
-import './contrib/limitIndicator/browser/limitIndicator.contribution.js';
-
-// Inlay Hint Accessibility
-import './contrib/inlayHints/browser/inlayHintsAccessibilty.js';
-
-// Themes
-import './contrib/themes/browser/themes.contribution.js';
-
-// Update
-import './contrib/update/browser/update.contribution.js';
-
-// Surveys
-import './contrib/surveys/browser/nps.contribution.js';
-import './contrib/surveys/browser/languageSurveys.contribution.js';
-
-// Welcome
-import './contrib/welcomeGettingStarted/browser/gettingStarted.contribution.js';
-import './contrib/welcomeWalkthrough/browser/walkThrough.contribution.js';
-import './contrib/welcomeViews/common/viewsWelcome.contribution.js';
-import './contrib/welcomeViews/common/newFile.contribution.js';
-
-// Call Hierarchy
-import './contrib/callHierarchy/browser/callHierarchy.contribution.js';
-
-// Type Hierarchy
-import './contrib/typeHierarchy/browser/typeHierarchy.contribution.js';
-
-// Outline
-import './contrib/codeEditor/browser/outline/documentSymbolsOutline.js';
-import './contrib/outline/browser/outline.contribution.js';
-
-// Language Detection
-import './contrib/languageDetection/browser/languageDetection.contribution.js';
-
-// Language Status
-import './contrib/languageStatus/browser/languageStatus.contribution.js';
-
-// Authentication
-import './contrib/authentication/browser/authentication.contribution.js';
-
-// User Data Sync
-import './contrib/userDataSync/browser/userDataSync.contribution.js';
-
-// User Data Profiles
-import './contrib/userDataProfile/browser/userDataProfile.contribution.js';
-
-// Continue Edit Session
-import './contrib/editSessions/browser/editSessions.contribution.js';
-
-// Remote Coding Agents
-import './contrib/remoteCodingAgents/browser/remoteCodingAgents.contribution.js';
-
-// Code Actions
-import './contrib/codeActions/browser/codeActions.contribution.js';
-
-// Timeline
-import './contrib/timeline/browser/timeline.contribution.js';
-
-// Local History
-import './contrib/localHistory/browser/localHistory.contribution.js';
-
-// Workspace
-import './contrib/workspace/browser/workspace.contribution.js';
-
-// Workspaces
-import './contrib/workspaces/browser/workspaces.contribution.js';
-
-// List
-import './contrib/list/browser/list.contribution.js';
-
-// Accessibility Signals
-import './contrib/accessibilitySignals/browser/accessibilitySignal.contribution.js';
-
-// Bracket Pair Colorizer 2 Telemetry
-import './contrib/bracketPairColorizer2Telemetry/browser/bracketPairColorizer2Telemetry.contribution.js';
-
-// Accessibility
-import './contrib/accessibility/browser/accessibility.contribution.js';
-
-// Share
-import './contrib/share/browser/share.contribution.js';
-
-// Synchronized Scrolling
-import './contrib/scrollLocking/browser/scrollLocking.contribution.js';
-
-// Inline Completions
-import './contrib/inlineCompletions/browser/inlineCompletions.contribution.js';
-
-// Drop or paste into
-import './contrib/dropOrPasteInto/browser/dropOrPasteInto.contribution.js';
-
-// Edit Telemetry
-import './contrib/editTelemetry/browser/editTelemetry.contribution.js';
-
-// Opener
-import './contrib/opener/browser/opener.contribution.js';
+// Core Mode contributions — always loaded
+import './workbench.core.main.js';
+
+mark('code/perfFork/willLoadFeaturePacks');
+const perfForkMode = getPerformanceForkMode();
+if (perfForkMode === 'compat') {
+	await import('./workbench.compat.main.js');
+} else if (perfForkMode === 'developer') {
+	await import('./workbench.developer.main.js');
+}
+mark('code/perfFork/didLoadFeaturePacks');
+
+const perfForkEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+if (perfForkEnv?.['VSCODE_DEV'] || perfForkEnv?.['VSCODE_PERF_FORK_LOG'] === '1') {
+	const snapshot = describeWorkbenchFeatureRegistry();
+	console.info(`[perf-fork] mode=${snapshot.mode} enabledPacks=${snapshot.enabledPacks.length} disabledPacks=${snapshot.disabledPacks.length}`);
+}
 
 //#endregion

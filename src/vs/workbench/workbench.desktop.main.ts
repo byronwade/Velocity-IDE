@@ -53,8 +53,6 @@ import './services/keybinding/electron-browser/nativeKeyboardLayout.js';
 import './services/path/electron-browser/pathService.js';
 import './services/themes/electron-browser/nativeHostColorSchemeService.js';
 import './services/extensionManagement/electron-browser/extensionManagementService.js';
-import './services/mcp/electron-browser/mcpGalleryManifestService.js';
-import './services/mcp/electron-browser/mcpWorkbenchManagementService.js';
 import './services/encryption/electron-browser/encryptionService.js';
 import './services/imageResize/electron-browser/imageResizeService.js';
 import './services/browserElements/electron-browser/browserElementsService.js';
@@ -92,9 +90,15 @@ import '../platform/extensionManagement/electron-browser/extensionsProfileScanne
 import '../platform/webContentExtractor/electron-browser/webContentExtractorService.js';
 import './services/process/electron-browser/processService.js';
 
+// MCP services — register only when feature enabled (lazy import below for contrib;
+// service modules stay for DI compatibility with Null implementations when unused)
+import './services/mcp/electron-browser/mcpGalleryManifestService.js';
+import './services/mcp/electron-browser/mcpWorkbenchManagementService.js';
+
 import { registerSingleton } from '../platform/instantiation/common/extensions.js';
 import { IUserDataInitializationService, UserDataInitializationService } from './services/userData/browser/userDataInit.js';
 import { SyncDescriptor } from '../platform/instantiation/common/descriptors.js';
+import { getPerformanceForkMode, isPerformanceForkFeatureEnabled } from '../platform/performanceFork/common/performanceForkFeatures.js';
 
 registerSingleton(IUserDataInitializationService, new SyncDescriptor(UserDataInitializationService, [[]], true));
 
@@ -102,88 +106,83 @@ registerSingleton(IUserDataInitializationService, new SyncDescriptor(UserDataIni
 //#endregion
 
 
-//#region --- workbench contributions
+//#region --- workbench contributions (performance-fork gated)
 
-// Logs
+// Core desktop contributions — always
 import './contrib/logs/electron-browser/logs.contribution.js';
-
-// Localizations
 import './contrib/localization/electron-browser/localization.contribution.js';
-
-// Explorer
 import './contrib/files/electron-browser/fileActions.contribution.js';
-
-// CodeEditor Contributions
 import './contrib/codeEditor/electron-browser/codeEditor.contribution.js';
-
-// Debug
-import './contrib/debug/electron-browser/extensionHostDebugService.js';
-
-// Extensions Management
 import './contrib/extensions/electron-browser/extensions.contribution.js';
-
-// Issues
-import './contrib/issue/electron-browser/issue.contribution.js';
-
-// Process Explorer
-import './contrib/processExplorer/electron-browser/processExplorer.contribution.js';
-
-// Remote
-import './contrib/remote/electron-browser/remote.contribution.js';
-
-// Terminal
 import './contrib/terminal/electron-browser/terminal.contribution.js';
-
-// Themes
 import './contrib/themes/browser/themes.test.contribution.js';
 import './services/themes/electron-browser/themes.contribution.js';
-// User Data Sync
-import './contrib/userDataSync/electron-browser/userDataSync.contribution.js';
-
-// Tags
-import './contrib/tags/electron-browser/workspaceTagsService.js';
-import './contrib/tags/electron-browser/tags.contribution.js';
-// Performance
 import './contrib/performance/electron-browser/performance.contribution.js';
-
-// Tasks
-import './contrib/tasks/electron-browser/taskService.js';
-
-// External terminal
 import './contrib/externalTerminal/electron-browser/externalTerminal.contribution.js';
-
-// Webview
 import './contrib/webview/electron-browser/webview.contribution.js';
-
-// Splash
 import './contrib/splash/electron-browser/splash.contribution.js';
-
-// Local History
-import './contrib/localHistory/electron-browser/localHistory.contribution.js';
-
-// Merge Editor
 import './contrib/mergeEditor/electron-browser/mergeEditor.contribution.js';
-
-// Multi Diff Editor
 import './contrib/multiDiffEditor/browser/multiDiffEditor.contribution.js';
-
-// Remote Tunnel
-import './contrib/remoteTunnel/electron-browser/remoteTunnel.contribution.js';
-
-// Chat
-import './contrib/chat/electron-browser/chat.contribution.js';
-import './contrib/inlineChat/electron-browser/inlineChat.contribution.js';
-// Encryption
 import './contrib/encryption/electron-browser/encryption.contribution.js';
 
-// Emergency Alert
-import './contrib/emergencyAlert/electron-browser/emergencyAlert.contribution.js';
+const desktopMode = getPerformanceForkMode();
 
-// MCP
-import './contrib/mcp/electron-browser/mcp.contribution.js';
+if (isPerformanceForkFeatureEnabled('workbench.debug') || desktopMode !== 'core') {
+	await import('./contrib/debug/electron-browser/extensionHostDebugService.js');
+}
 
-// Policy Export
-import './contrib/policyExport/electron-browser/policyExport.contribution.js';
+if (isPerformanceForkFeatureEnabled('workbench.issueReporter')) {
+	await import('./contrib/issue/electron-browser/issue.contribution.js');
+}
+
+if (isPerformanceForkFeatureEnabled('workbench.processExplorer')) {
+	await import('./contrib/processExplorer/electron-browser/processExplorer.contribution.js');
+}
+
+if (isPerformanceForkFeatureEnabled('workbench.remote')) {
+	await import('./contrib/remote/electron-browser/remote.contribution.js');
+}
+
+if (isPerformanceForkFeatureEnabled('workbench.userDataSync')) {
+	await import('./contrib/userDataSync/electron-browser/userDataSync.contribution.js');
+}
+
+if (isPerformanceForkFeatureEnabled('workbench.tags')) {
+	await import('./contrib/tags/electron-browser/workspaceTagsService.js');
+	await import('./contrib/tags/electron-browser/tags.contribution.js');
+}
+
+if (isPerformanceForkFeatureEnabled('workbench.tasks')) {
+	await import('./contrib/tasks/electron-browser/taskService.js');
+}
+
+if (isPerformanceForkFeatureEnabled('workbench.localHistory')) {
+	await import('./contrib/localHistory/electron-browser/localHistory.contribution.js');
+}
+
+if (isPerformanceForkFeatureEnabled('workbench.remoteTunnel')) {
+	await import('./contrib/remoteTunnel/electron-browser/remoteTunnel.contribution.js');
+}
+
+if (isPerformanceForkFeatureEnabled('workbench.chat')) {
+	await import('./contrib/chat/electron-browser/chat.contribution.js');
+}
+
+if (isPerformanceForkFeatureEnabled('workbench.inlineChat')) {
+	await import('./contrib/inlineChat/electron-browser/inlineChat.contribution.js');
+}
+
+if (isPerformanceForkFeatureEnabled('workbench.emergencyAlert')) {
+	await import('./contrib/emergencyAlert/electron-browser/emergencyAlert.contribution.js');
+}
+
+if (isPerformanceForkFeatureEnabled('workbench.mcp')) {
+	await import('./contrib/mcp/electron-browser/mcp.contribution.js');
+}
+
+if (isPerformanceForkFeatureEnabled('workbench.policyExport')) {
+	await import('./contrib/policyExport/electron-browser/policyExport.contribution.js');
+}
 
 //#endregion
 

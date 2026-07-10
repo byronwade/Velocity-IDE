@@ -47,6 +47,7 @@ import type { IProgressState } from '@xterm/addon-progress';
 import type { CommandDetectionCapability } from '../../../../../platform/terminal/common/capabilities/commandDetectionCapability.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { assert } from '../../../../../base/common/assert.js';
+import { isPerformanceForkFeatureEnabled } from '../../../../../platform/performanceFork/common/performanceForkFeatures.js';
 
 const enum RenderConstants {
 	SmoothScrollDuration = 125
@@ -553,6 +554,9 @@ export class XtermTerminal extends Disposable implements IXtermTerminal, IDetach
 	}
 
 	private _shouldLoadWebgl(): boolean {
+		if (!isPerformanceForkFeatureEnabled('terminal.gpuAcceleration')) {
+			return false;
+		}
 		return (this._terminalConfigurationService.config.gpuAcceleration === 'auto' && XtermTerminal._suggestedRendererType === undefined) || this._terminalConfigurationService.config.gpuAcceleration === 'on';
 	}
 
@@ -825,6 +829,12 @@ export class XtermTerminal extends Disposable implements IXtermTerminal, IDetach
 		if (!this.raw.element) {
 			return;
 		}
+		if (!isPerformanceForkFeatureEnabled('terminal.ligaturesAddon')) {
+			if (this._ligaturesAddon.value) {
+				this._ligaturesAddon.clear();
+			}
+			return;
+		}
 		const ligaturesConfig = this._terminalConfigurationService.config.fontLigatures;
 		let shouldRecreateWebglRenderer = false;
 		if (ligaturesConfig?.enabled) {
@@ -862,7 +872,7 @@ export class XtermTerminal extends Disposable implements IXtermTerminal, IDetach
 	@debounce(100)
 	private async _refreshImageAddon(): Promise<void> {
 		// Only allow the image addon when webgl is being used to avoid possible GPU issues
-		if (this._terminalConfigurationService.config.enableImages && this._webglAddon) {
+		if (isPerformanceForkFeatureEnabled('terminal.imageAddon') && this._terminalConfigurationService.config.enableImages && this._webglAddon) {
 			if (!this._imageAddon) {
 				const AddonCtor = await this._xtermAddonLoader.importAddon('image');
 				this._imageAddon = new AddonCtor();

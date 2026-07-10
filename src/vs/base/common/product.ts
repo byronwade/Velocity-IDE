@@ -232,7 +232,16 @@ export interface IProductConfiguration {
 	readonly commonlyUsedSettings?: string[];
 	readonly aiGeneratedWorkspaceTrust?: IAiGeneratedWorkspaceTrust;
 
-	readonly defaultChatAgent: IDefaultChatAgent;
+	readonly defaultChatAgent?: IDefaultChatAgent;
+
+	/**
+	 * Performance fork product profile (Core / Developer / Compat modes).
+	 * See docs/performance-fork/product-profile.md
+	 */
+	readonly performanceFork?: {
+		readonly mode?: 'core' | 'developer' | 'compat';
+		readonly features?: { readonly [featureId: string]: boolean };
+	};
 	readonly chatParticipantRegistry?: string;
 	readonly chatSessionRecommendations?: IChatSessionRecommendation[];
 	readonly emergencyAlertUrl?: string;
