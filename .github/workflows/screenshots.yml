@@ -1,0 +1,75 @@
+name: Screenshots
+
+on:
+  push:
+    branches: ['claude/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tour:
+    runs-on: ubuntu-24.04
+    env:
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      GALLIUM_DRIVER: llvmpipe
+      GTK_A11Y: none
+      WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Linux native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            dbus-x11 \
+            libegl-mesa0 \
+            libgl1-mesa-dri \
+            libgtk-4-dev \
+            libwebkitgtk-6.0-dev \
+            mesa-vulkan-drivers \
+            ripgrep \
+            xvfb
+      - name: Install project dependencies
+        run: npm ci
+      - name: Run screenshot tour
+        run: xvfb-run -a dbus-run-session -- bash apps/native-shell/scripts/screenshot-tour.sh "$PWD/tour-output"
+      - name: Upload screenshots artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: velocity-screenshots
+          path: tour-output/*.png
+          if-no-files-found: warn
+      - name: Publish screenshots branch
+        if: always()
+        run: |
+          set -euo pipefail
+          if ! ls tour-output/*.png >/dev/null 2>&1; then
+            echo "no screenshots captured; skipping publish"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          SRC_SHA="$(git rev-parse --short HEAD)"
+          git checkout --orphan screenshots-preview-precision
+          git rm -rf --quiet .
+          mkdir -p screenshots
+          cp tour-output/*.png screenshots/
+          printf '# Velocity Precision Workbench screenshots\n\nDeterministic reference-renderer captures from %s.\n' "$SRC_SHA" > README.md
+          git add screenshots README.md
+          git commit -m "Screenshot tour for $SRC_SHA"
+          git push --force origin screenshots-preview-precision
+      - name: Print app log after failure
+        if: failure()
+        run: |
+          if test -f /tmp/velocity-screenshot-tour.out; then
+            awk '{ print }' /tmp/velocity-screenshot-tour.out
+          fi
