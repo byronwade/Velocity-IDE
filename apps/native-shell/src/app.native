@@ -23,15 +23,16 @@
           <button variant="primary" icon="folder-open" on-press="open_project:{project_acme}">Open Folder</button>
           <button variant="secondary" icon="clock" on-press="reopen_last_workspace">Reopen Last</button>
         </row>
-        <column gap="8" width="480" padding="16" background="surface_subtle">
+        <column gap="6" width="480">
           <text size="sm" foreground="text_muted">RECENT PROJECTS</text>
           <for each="recent" as="p">
-            <list-item on-press="open_project:{p.path}" padding="10" gap="10" cross="center" label="{p.name}">
+            <list-item on-press="open_project:{p.path}" padding="12" gap="10" cross="center" background="surface_subtle" label="{p.name}">
               <icon name="folder" width="16" height="16" foreground="text_muted" />
               <column gap="3" grow="1">
                 <text wrap="false">{p.name}</text>
                 <text size="sm" foreground="text_muted" wrap="false">{p.path}</text>
               </column>
+              <icon name="chevron-right" width="14" height="14" foreground="text_muted" />
             </list-item>
           </for>
         </column>
@@ -60,18 +61,20 @@
           <column width="260" gap="8" padding="10" background="surface">
             <if test="{showSidebarExplorer}">
               <row gap="2" cross="center">
-                <text size="lg" grow="1" wrap="false">{explorerHeaderLabel}</text>
+                <text size="sm" foreground="text_muted" grow="1" wrap="false">{explorerHeaderLabel}</text>
                 <button size="sm" variant="ghost" icon="chevron-up" on-press="collapse_all_explorer" label="Collapse all Explorer folders" />
                 <button size="sm" variant="ghost" icon="chevron-down" on-press="expand_all_explorer" label="Expand all Explorer folders" />
                 <button size="sm" variant="ghost" icon="refresh-cw" on-press="refresh_explorer" label="Refresh Explorer" />
-                <button size="sm" variant="ghost" icon="plus" on-press="create_new_file" label="New file" />
+                <button size="sm" variant="ghost" icon="plus" on-press="toggle_new_file_field" label="New file" />
               </row>
               <text-field text="{explorerFilterText}" placeholder="Filter files..." on-input="update_explorer_filter" label="Explorer filter" />
-              <text-field text="{newFilePathText}" placeholder="path/to/file.ts" on-input="update_new_file_path" on-submit="create_new_file" label="New file path" />
+              <if test="{new_file_field_visible}">
+                <text-field text="{newFilePathText}" placeholder="path/to/file.ts" on-input="update_new_file_path" on-submit="create_new_file" label="New file path" />
+              </if>
               <scroll grow="1" label="File explorer">
                 <column gap="1">
                   <for each="file_nodes" key="id" as="n">
-                    <list-item on-press="select_file:{n.id}" selected="{n.id == selected_file_id}" padding="4" gap="4" cross="center" label="{n.name}">
+                    <list-item on-press="select_file:{n.id}" selected="{n.id == selected_file_id}" padding="3" gap="4" cross="center" label="{n.name}">
                       <text size="sm" foreground="text_muted" wrap="false">{n.indent}</text>
                       <if test="{n.is_dir}">
                         <button size="sm" variant="ghost" icon="{n.chevron}" on-press="toggle_explorer_folder:{n.id}" label="{n.chevron_label}" />
@@ -79,7 +82,7 @@
                       <if test="{n.is_file}">
                         <icon name="file-text" width="13" height="13" foreground="text_muted" />
                       </if>
-                      <text grow="1" wrap="false">{n.name}</text>
+                      <text size="sm" grow="1" wrap="false">{n.name}</text>
                       <if test="{n.has_scm}">
                         <badge variant="secondary">{n.scm_label}</badge>
                       </if>
@@ -199,8 +202,11 @@
         <!-- Center + agent -->
         <column grow="1">
           <if test="{showIdeChrome}">
-            <!-- Tabs only -->
+            <!-- Tab strip: navigation + tabs + agent toggle -->
             <row gap="2" padding="4" background="surface" cross="center">
+              <button size="sm" variant="ghost" icon="chevron-left" on-press="navigate_back" label="{navigationBackLabel}">Back</button>
+              <button size="sm" variant="ghost" icon="chevron-right" on-press="navigate_forward" label="{navigationForwardLabel}">Forward</button>
+              <spacer width="4" />
               <for each="open_tabs" key="id" as="t">
                 <button size="sm" variant="ghost" selected="{t.id == active_tab_id}" on-press="select_tab:{t.id}">{t.title}</button>
               </for>
@@ -210,10 +216,9 @@
             </row>
             <separator />
             <row grow="1">
-              <column grow="1" gap="4" padding="8">
-                <row gap="4" cross="center">
-                  <button size="sm" variant="ghost" icon="chevron-left" on-press="navigate_back" label="{navigationBackLabel}">Back</button>
-                  <button size="sm" variant="ghost" icon="chevron-right" on-press="navigate_forward" label="{navigationForwardLabel}">Forward</button>
+              <column grow="1" gap="0">
+                <!-- Breadcrumb + document actions -->
+                <row gap="2" padding="4" cross="center" background="surface">
                   <row gap="2" grow="1" cross="center">
                     <for each="breadcrumb_segs" key="id" as="seg">
                       <button size="sm" variant="ghost" on-press="select_breadcrumb:{seg.id}">{seg.label}</button>
@@ -222,11 +227,10 @@
                   <if test="{hasPeek}">
                     <badge variant="secondary">{editorFocusLabel}</badge>
                   </if>
-                  <badge variant="secondary">{dirtyLabel}</badge>
                   <button size="sm" variant="ghost" icon="circle-dot" on-press="go_to_symbol" label="Go to symbol" />
                   <button size="sm" variant="ghost" on-press="run_quick_open">Go to</button>
-                  <button size="sm" variant="ghost" on-press="open_snippet_picker" label="Append a literal snippet at the end of the document">Append Snippet</button>
-                  <button size="sm" variant="ghost" icon="archive" on-press="restore_backup" label="Restore backup">Backup</button>
+                  <button size="sm" variant="ghost" on-press="open_snippet_picker" label="Append a literal snippet at the end of the document">Snippet</button>
+                  <button size="sm" variant="ghost" icon="archive" on-press="restore_backup" label="Restore backup" />
                   <button size="sm" variant="primary" icon="save" on-press="save_file">Save</button>
                 </row>
                 <if test="{showDiskConflict}">
@@ -247,20 +251,22 @@
                   </row>
                 </if>
                 <if test="{showFindPanel}">
-                  <row gap="4" cross="center">
-                    <text-field text="{findQueryText}" placeholder="Find..." on-input="update_find_query" on-submit="run_find" grow="1" label="Find in file" />
-                    <badge variant="secondary">{find_active_label}</badge>
-                    <button size="sm" variant="ghost" icon="chevron-up" on-press="find_prev" label="Previous match" />
-                    <button size="sm" variant="ghost" icon="chevron-down" on-press="find_next" label="Next match" />
-                    <button size="sm" variant="secondary" icon="search" on-press="run_find">Find</button>
-                    <button size="sm" variant="ghost" on-press="go_to_definition" label="Go to Definition">Definition</button>
-                    <button size="sm" variant="ghost" icon="x" on-press="clear_find" label="Close find panel" />
-                  </row>
-                  <row gap="4" cross="center">
-                    <text-field text="{replaceText}" placeholder="Replace..." on-input="update_replace_text" grow="1" label="Replace" />
-                    <button size="sm" variant="ghost" on-press="replace_once">Once</button>
-                    <button size="sm" variant="secondary" on-press="replace_all">All</button>
-                  </row>
+                  <column gap="4" padding="6" background="surface" label="Find and replace">
+                    <row gap="4" cross="center">
+                      <text-field text="{findQueryText}" placeholder="Find..." on-input="update_find_query" on-submit="run_find" grow="1" label="Find in file" />
+                      <badge variant="secondary">{find_active_label}</badge>
+                      <button size="sm" variant="ghost" icon="chevron-up" on-press="find_prev" label="Previous match" />
+                      <button size="sm" variant="ghost" icon="chevron-down" on-press="find_next" label="Next match" />
+                      <button size="sm" variant="secondary" icon="search" on-press="run_find">Find</button>
+                      <button size="sm" variant="ghost" on-press="go_to_definition" label="Go to Definition">Definition</button>
+                      <button size="sm" variant="ghost" icon="x" on-press="clear_find" label="Close find panel" />
+                    </row>
+                    <row gap="4" cross="center">
+                      <text-field text="{replaceText}" placeholder="Replace..." on-input="update_replace_text" grow="1" label="Replace" />
+                      <button size="sm" variant="ghost" on-press="replace_once">Once</button>
+                      <button size="sm" variant="secondary" on-press="replace_all">All</button>
+                    </row>
+                  </column>
                 </if>
                 <if test="{hasPeek}">
                   <column gap="1" padding="6" background="surface_subtle" label="Line peek">
@@ -269,9 +275,7 @@
                     </for>
                   </column>
                 </if>
-                <column grow="1" gap="0" padding="6" background="background">
-                  <textarea text="{documentText}" placeholder="Open a file to edit..." on-input="edit_document" grow="1" label="Editor" />
-                </column>
+                <textarea text="{documentText}" placeholder="Open a file to edit..." on-input="edit_document" grow="1" label="Editor" />
               </column>
 
               <if test="{showAgentChrome}">
@@ -325,7 +329,7 @@
                 </row>
                 <if test="{showBottomTerminal}">
                   <row gap="4" cross="center" label="Terminal and run profiles">
-                    <text>Terminal / Run Profiles</text>
+                    <text size="sm" foreground="text_muted">RUN PROFILES</text>
                     <badge variant="secondary">{launchStatus}</badge>
                     <for each="launch_profiles" key="id" as="profile">
                       <button size="sm" variant="ghost" selected="{profile.id == selected_launch_profile_id}" on-press="select_launch_profile:{profile.id}" label="{profile.command}">{profile.name}</button>
@@ -335,7 +339,7 @@
                     <button size="sm" variant="primary" icon="play" on-press="run_launch_profile" label="Run selected command profile">Run Profile</button>
                   </row>
                   <row gap="4" cross="center">
-                    <text>Workspace Tasks</text>
+                    <text size="sm" foreground="text_muted">WORKSPACE TASKS</text>
                     <badge variant="secondary">{taskStatus}</badge>
                     <spacer grow="1" />
                     <button size="sm" variant="primary" icon="play" on-press="run_workspace_tests" label="Run workspace tests using the test or first test colon task">Run Workspace Tests</button>
@@ -514,7 +518,8 @@
               </row>
               <text-field text="{settingsQueryText}" placeholder="Search settings..." on-input="update_settings_query" label="Settings search" />
               <scroll grow="1" label="Settings sections">
-                <column gap="14">
+                <column cross="center">
+                  <column gap="14" width="680">
                   <if test="{showSettingsAppearance}">
                     <column gap="6" padding="10" background="surface_subtle">
                       <row gap="6" cross="center">
@@ -598,6 +603,7 @@
                       <text size="sm" foreground="text_muted">Try a different search term.</text>
                     </column>
                   </if>
+                  </column>
                 </column>
               </scroll>
             </column>
@@ -620,6 +626,7 @@
                       </column>
                       <text wrap="false">{metric.value}</text>
                       <badge variant="secondary">{metric.status_label}</badge>
+                      <spacer width="6" />
                     </row>
                   </for>
                 </column>

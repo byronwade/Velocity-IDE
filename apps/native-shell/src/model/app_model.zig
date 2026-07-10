@@ -183,6 +183,7 @@ pub const Msg = union(enum) {
     clear_find,
     reopen_last_workspace,
     update_new_file_path: canvas.TextInputEvent,
+    toggle_new_file_field,
     create_new_file,
     delete_selected_file,
     rename_selected_file,
@@ -550,6 +551,7 @@ pub const Model = struct {
     git_summary: []const u8 = "not loaded",
     git_branch: []const u8 = "unknown",
     new_file_path: canvas.TextBuffer(max_new_file_path) = .{},
+    new_file_field_visible: bool = false,
     explorer_filter: canvas.TextBuffer(64) = .{},
     explorer_collapse: explorer_projection.CollapseStore = .{},
     explorer_projection: explorer_projection.Projection = .{},
@@ -2510,7 +2512,11 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .clear_find => clearFind(model),
         .reopen_last_workspace => reopenLastWorkspace(model),
         .update_new_file_path => |edit| model.new_file_path.apply(edit),
-        .create_new_file => createNewFile(model),
+        .toggle_new_file_field => model.new_file_field_visible = !model.new_file_field_visible,
+        .create_new_file => {
+            createNewFile(model);
+            model.new_file_field_visible = false;
+        },
         .delete_selected_file => deleteSelectedFile(model),
         .rename_selected_file => renameSelectedFile(model),
         .reveal_in_explorer => revealInExplorer(model),
