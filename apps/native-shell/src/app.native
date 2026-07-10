@@ -82,7 +82,7 @@
                       <if test="{n.is_file}">
                         <icon name="file-text" width="13" height="13" foreground="text_muted" />
                       </if>
-                      <text size="sm" grow="1" wrap="false">{n.name}</text>
+                      <text size="sm" grow="1" wrap="false" overflow="ellipsis">{n.name}</text>
                       <if test="{n.has_scm}">
                         <badge variant="secondary">{n.scm_label}</badge>
                       </if>
@@ -98,8 +98,8 @@
                 <badge variant="secondary">{searchStatus}</badge>
               </row>
               <text-field text="{searchQueryText}" placeholder="Search workspace..." on-input="update_search_query" on-submit="run_search" label="Search query" />
-              <text-field text="{searchIncludeText}" placeholder="Include paths (for example src/*,*.zig)" on-input="update_search_include" label="Search include paths" />
-              <text-field text="{searchExcludeText}" placeholder="Exclude paths (for example */vendor/*,*.test.ts)" on-input="update_search_exclude" label="Search exclude paths" />
+              <text-field text="{searchIncludeText}" placeholder="Include paths..." on-input="update_search_include" label="Search include paths" />
+              <text-field text="{searchExcludeText}" placeholder="Exclude paths..." on-input="update_search_exclude" label="Search exclude paths" />
               <row gap="4">
                 <button size="sm" variant="ghost" on-press="toggle_search_case" label="{searchCaseLabel}">Aa</button>
                 <button size="sm" variant="ghost" on-press="toggle_search_whole_word" label="{searchWholeWordLabel}">Whole Word</button>
@@ -118,7 +118,7 @@
                 <column gap="2">
                   <for each="replace_previews" key="id" as="preview">
                     <row gap="6" padding="4" background="surface_subtle" cross="center">
-                      <text size="sm" grow="1" wrap="false">{preview.path}</text>
+                      <text size="sm" grow="1" wrap="false" overflow="ellipsis">{preview.path}</text>
                       <badge variant="secondary">{preview.replacements}</badge>
                     </row>
                   </for>
@@ -129,7 +129,7 @@
                   <for each="search_hits" key="id" as="hit">
                     <list-item on-press="open_search_hit:{hit.id}" padding="6" gap="4" label="{hit.path}">
                       <column gap="2" grow="1">
-                        <text size="sm" wrap="false">{hit.path}:{hit.line}</text>
+                        <text size="sm" grow="1" wrap="false" overflow="ellipsis">{hit.path}:{hit.line}</text>
                         <text size="sm" foreground="text_muted" wrap="true">{hit.preview}</text>
                       </column>
                     </list-item>
@@ -157,7 +157,7 @@
                       <column grow="1" gap="3">
                         <row gap="5" cross="center">
                           <badge variant="secondary">{entry.status}</badge>
-                          <text grow="1" wrap="false">{entry.path}</text>
+                          <text grow="1" wrap="false" overflow="ellipsis">{entry.path}</text>
                         </row>
                         <row gap="3">
                           <button size="sm" variant="ghost" on-press="open_git_entry:{entry.id}" label="Open file">Open</button>
@@ -187,7 +187,7 @@
                     <list-item on-press="select_outline_symbol:{sym.id}" padding="6" gap="4" label="{sym.name}">
                       <badge variant="secondary">{sym.kind}</badge>
                       <column gap="2" grow="1">
-                        <text size="sm" wrap="false">{sym.name}</text>
+                        <text size="sm" grow="1" wrap="false" overflow="ellipsis">{sym.name}</text>
                         <text size="sm" foreground="text_muted" wrap="false">L{sym.line}</text>
                       </column>
                     </list-item>
@@ -777,10 +777,13 @@
           <scroll grow="1" label="Command results">
             <column gap="2">
               <for each="command_items" as="cmd">
-                <list-item on-press="run_command:{cmd.id}" padding="8" gap="8" cross="center" label="{cmd.title}">
-                  <text grow="1" wrap="false">{cmd.title}</text>
-                  <text size="sm" foreground="text_muted">{cmd.availability_label}</text>
-                  <text size="sm" foreground="text_muted">{cmd.hint}</text>
+                <list-item on-press="run_command:{cmd.id}" padding="8" gap="10" cross="center" label="{cmd.title}">
+                  <text grow="1" wrap="false" overflow="ellipsis">{cmd.title}</text>
+                  <if test="{cmd.show_availability}">
+                    <badge variant="secondary">{cmd.availability_label}</badge>
+                  </if>
+                  <text size="sm" foreground="text_muted" wrap="false">{cmd.hint}</text>
+                  <spacer width="8" />
                 </list-item>
               </for>
             </column>
@@ -799,7 +802,8 @@
             <column gap="2">
               <for each="quick_items" key="id" as="item">
                 <list-item on-press="open_quick_item:{item.id}" padding="8" gap="8" cross="center" label="{item.path}">
-                  <text grow="1" wrap="false">{item.path}</text>
+                  <text grow="1" wrap="false" overflow="ellipsis">{item.path}</text>
+                  <spacer width="8" />
                 </list-item>
               </for>
             </column>
@@ -824,8 +828,9 @@
               <for each="outline_symbols" key="id" as="sym">
                 <list-item on-press="open_symbol_item:{sym.id}" padding="8" gap="8" cross="center" label="{sym.name}">
                   <badge variant="secondary">{sym.kind}</badge>
-                  <text grow="1" wrap="false">{sym.name}</text>
+                  <text grow="1" wrap="false" overflow="ellipsis">{sym.name}</text>
                   <text size="sm" foreground="text_muted">L{sym.line}</text>
+                  <spacer width="8" />
                 </list-item>
               </for>
             </column>

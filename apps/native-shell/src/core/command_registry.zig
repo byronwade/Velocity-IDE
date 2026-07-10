@@ -41,6 +41,9 @@ pub const PaletteCommand = struct {
     hint: []const u8,
     availability: Availability,
     availability_label: []const u8,
+    /// Whether to surface the availability badge — only non-default states
+    /// (limited/unavailable) are worth the row space; "Available" is noise.
+    show_availability: bool = false,
 };
 
 pub const catalog = [_]Command{
@@ -197,6 +200,7 @@ pub const palette = blk: {
             .hint = command.hint,
             .availability = command.availability,
             .availability_label = command.availability.label(),
+            .show_availability = command.availability != .available,
         };
         index += 1;
     }
