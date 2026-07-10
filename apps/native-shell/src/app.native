@@ -225,6 +225,7 @@
                   </if>
                   <badge variant="secondary">{dirtyLabel}</badge>
                   <button size="sm" variant="ghost" icon="circle-dot" on-press="go_to_symbol" label="Go to symbol" />
+                  <button size="sm" variant="ghost" icon="edit" selected="{editor_edit_mode}" on-press="run_command:{editor_cmd_toggle_edit}" label="Toggle edit mode">{editorEditModeLabel}</button>
                   <button size="sm" variant="ghost" icon="ellipsis" on-press="run_command:{editor_cmd_more_open}" label="More editor actions" />
                   <button size="sm" variant="primary" icon="save" on-press="save_file">Save</button>
                 </row>
@@ -269,8 +270,33 @@
                     </for>
                   </column>
                 </if>
-                <column grow="1" gap="0" padding="6" background="background">
-                  <textarea text="{documentText}" placeholder="Open a file to edit..." on-input="edit_document" grow="1" label="Editor" />
+                <column grow="1" gap="0" background="background">
+                  <if test="{editor_edit_mode}">
+                    <column grow="1" padding="6">
+                      <textarea text="{documentText}" placeholder="Open a file to edit..." on-input="edit_document" grow="1" label="Editor" />
+                    </column>
+                  </if>
+                  <if test="{editorReadView}">
+                    <scroll grow="1" label="Editor syntax-highlighted read view">
+                      <column gap="0" padding="6">
+                        <for each="editor_view_lines" key="id" as="ln">
+                          <row gap="8" cross="start">
+                            <text size="sm"><span mono="true" foreground="text_muted">{ln.gutter}</span></text>
+                            <row gap="0" grow="1" cross="start">
+                              <for each="ln.tokens" key="id" as="tk">
+                                <if test="{tk.kind == hl_kind_keyword}"><text size="sm"><span mono="true" foreground="accent">{tk.text}</span></text></if>
+                                <if test="{tk.kind == hl_kind_string}"><text size="sm"><span mono="true" foreground="success">{tk.text}</span></text></if>
+                                <if test="{tk.kind == hl_kind_comment}"><text size="sm"><span mono="true" foreground="text_muted">{tk.text}</span></text></if>
+                                <if test="{tk.kind == hl_kind_number}"><text size="sm"><span mono="true" foreground="warning">{tk.text}</span></text></if>
+                                <if test="{tk.kind == hl_kind_type}"><text size="sm"><span mono="true" foreground="info">{tk.text}</span></text></if>
+                                <if test="{tk.kind == hl_kind_plain}"><text size="sm"><span mono="true" foreground="text">{tk.text}</span></text></if>
+                              </for>
+                            </row>
+                          </row>
+                        </for>
+                      </column>
+                    </scroll>
+                  </if>
                 </column>
               </column>
 

@@ -40,6 +40,7 @@ const output_registry = @import("../core/output_registry.zig");
 const notification_store = @import("../core/notification_store.zig");
 const snippets_mod = @import("../workspace/snippets.zig");
 const unified_diff = @import("../workspace/unified_diff.zig");
+const highlight = @import("../workspace/highlight.zig");
 
 pub const header_natural_height: f32 = 36;
 pub const max_command_query = 64;
@@ -90,6 +91,16 @@ pub const OutputChannel = output_registry.Channel;
 pub const NotificationItem = notification_store.Item;
 pub const Snippet = snippets_mod.Snippet;
 pub const DiffLine = unified_diff.ReviewLine;
+pub const EditorTok = highlight.Token;
+pub const EditorLine = highlight.Line;
+pub const HighlightKind = highlight.Kind;
+
+/// Bounds for the highlighted read view. The document is capped at 16 KB, which
+/// naturally bounds the work; these caps keep the widget count bounded even for
+/// pathological all-newline inputs.
+pub const max_hl_lines = 500;
+pub const max_hl_tokens = 2400;
+pub const max_hl_gutter = 6;
 
 pub const ClosedTab = struct {
     path: []const u8 = "",
@@ -789,6 +800,23 @@ pub const Model = struct {
     editor_cmd_more_close: []const u8 = "close_editor_more",
     perf_cmd_close: []const u8 = "close_perf_hud",
 
+    // Syntax-highlighted read view. `editor_edit_mode` swaps the highlighted
+    // read view for the plain editable textarea. Kind constants let the markup
+    // pick each token's color via an `==` comparison (literal colors only).
+    editor_edit_mode: bool = false,
+    editor_cmd_toggle_edit: []const u8 = "toggle_editor_edit",
+    editor_view_lines: []const EditorLine = &.{},
+    hl_kind_plain: HighlightKind = .plain,
+    hl_kind_keyword: HighlightKind = .keyword,
+    hl_kind_string: HighlightKind = .string,
+    hl_kind_comment: HighlightKind = .comment,
+    hl_kind_number: HighlightKind = .number,
+    hl_kind_type: HighlightKind = .type_name,
+    hl_line_pool: [max_hl_lines]EditorLine = [_]EditorLine{.{}} ** max_hl_lines,
+    hl_tok_pool: [max_hl_tokens]EditorTok = [_]EditorTok{.{}} ** max_hl_tokens,
+    hl_gutter_pool: [max_hl_lines][max_hl_gutter]u8 = undefined,
+    hl_truncated: bool = false,
+
     // Layout state (not directly markup-bound; projected via layoutPresetLabel).
     active_layout_preset: LayoutPreset = .custom,
     prev_layout: ?LayoutSnapshot = null,
@@ -1008,6 +1036,10 @@ pub const Model = struct {
         "active_layout_preset",
         "prev_layout",
         "custom_layout",
+        "hl_line_pool",
+        "hl_tok_pool",
+        "hl_gutter_pool",
+        "hl_truncated",
     };
 
     pub fn commandQuery(model: *const Model) []const u8 {
@@ -1214,6 +1246,16 @@ pub const Model = struct {
 
     pub fn documentText(model: *const Model) []const u8 {
         return model.document.text();
+    }
+
+    /// Show the syntax-highlighted read view whenever the editor is not in
+    /// plain edit mode. Edit mode swaps in the editable textarea.
+    pub fn editorReadView(model: *const Model) bool {
+        return !model.editor_edit_mode;
+    }
+
+    pub fn editorEditModeLabel(model: *const Model) []const u8 {
+        return if (model.editor_edit_mode) "Done Editing" else "Edit";
     }
 
     pub fn terminalCommandText(model: *const Model) []const u8 {
@@ -1565,6 +1607,7 @@ pub fn setUserSnippetsPath(model: *Model, path: []const u8) void {
 pub fn update(model: *Model, msg: Msg) void {
     updateInner(model, msg, null);
     normalizeToastState(model);
+    if (model.current_view == .ide) rebuildHighlight(model);
 }
 
 fn messageChangesWorkspace(msg: Msg) bool {
@@ -1688,6 +1731,7 @@ pub fn updateFx(model: *Model, msg: Msg, fx: *Effects) void {
     if (changes_workspace) cancelOwnedEffects(model, fx);
     updateInner(model, msg, fx);
     normalizeToastState(model);
+    if (model.current_view == .ide) rebuildHighlight(model);
 
     if (!std.mem.eql(u8, model.toast, prev_toast)) {
         armToastClearTimer(model, fx);
@@ -1945,6 +1989,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             } else if (std.mem.eql(u8, id, "close_perf_hud")) {
                 model.show_perf_hud = false;
                 model.current_view = .ide;
+            } else if (std.mem.eql(u8, id, "toggle_editor_edit")) {
+                model.editor_edit_mode = !model.editor_edit_mode;
             } else if (std.mem.eql(u8, id, "layout_preset_coding")) {
                 applyLayoutPreset(model, .coding);
             } else if (std.mem.eql(u8, id, "layout_preset_focus")) {
@@ -3129,6 +3175,64 @@ pub fn refreshDocStats(model: *Model) void {
     const enc = edit_transforms.encodingLabel(text);
     const label = std.fmt.bufPrint(&model.doc_stats_buf, "{d} lines · {d} words · {d} bytes · {s} · {s}", .{ lines, words, text.len, eol, enc }) catch "stats";
     model.doc_stats = label;
+}
+
+/// Re-tokenize the active document into `editor_view_lines` for the highlighted
+/// read view. Bounded: at most `max_hl_lines` rows and `max_hl_tokens` tokens;
+/// beyond that `hl_truncated` is set and the remainder is dropped. Token text
+/// slices point into the stable document buffer (no copies), mirroring how the
+/// view already reads `documentText()` directly.
+pub fn rebuildHighlight(model: *Model) void {
+    const text = model.document.text();
+    var line_count: usize = 0;
+    var tok_count: usize = 0;
+    var in_block = false;
+    var line_start: usize = 0;
+    var truncated = false;
+
+    var i: usize = 0;
+    while (i <= text.len) : (i += 1) {
+        if (i != text.len and text[i] != '\n') continue;
+        if (line_count >= model.hl_line_pool.len) {
+            truncated = true;
+            break;
+        }
+        const raw = text[line_start..i];
+        const line = if (raw.len > 0 and raw[raw.len - 1] == '\r') raw[0 .. raw.len - 1] else raw;
+
+        const gutter: []const u8 = std.fmt.bufPrint(
+            &model.hl_gutter_pool[line_count],
+            "{d}",
+            .{line_count + 1},
+        ) catch "";
+
+        var toks: []const EditorTok = &.{};
+        if (tok_count < model.hl_tok_pool.len) {
+            const base: u32 = @intCast(tok_count);
+            const n = highlight.tokenizeLine(line, &in_block, model.hl_tok_pool[tok_count..], base);
+            if (n == 0) {
+                model.hl_tok_pool[tok_count] = .{ .id = base, .text = highlight.blank_run, .kind = .plain };
+                toks = model.hl_tok_pool[tok_count .. tok_count + 1];
+                tok_count += 1;
+            } else {
+                toks = model.hl_tok_pool[tok_count .. tok_count + n];
+                tok_count += n;
+            }
+        } else {
+            truncated = true;
+        }
+
+        model.hl_line_pool[line_count] = .{
+            .id = @as(u32, @intCast(line_count + 1)),
+            .gutter = gutter,
+            .tokens = toks,
+        };
+        line_count += 1;
+        line_start = i + 1;
+    }
+
+    model.editor_view_lines = model.hl_line_pool[0..line_count];
+    model.hl_truncated = truncated;
 }
 
 pub fn refreshBreadcrumb(model: *Model) void {
