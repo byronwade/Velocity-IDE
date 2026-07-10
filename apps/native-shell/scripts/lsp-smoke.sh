@@ -39,6 +39,9 @@ if test -f "$PREFS"; then
   PREFS_BACKUP="$(mktemp)"
   cp "$PREFS" "$PREFS_BACKUP"
 fi
+# Boot from default prefs so the persisted LSP toggle from any earlier run
+# cannot invert the smoke's own toggle step.
+rm -f "$PREFS"
 cat >"$FIXTURE" <<'EOF'
 // lsp-smoke fixture: the assignment below is a deliberate type error.
 const answer: number = "forty-two";
@@ -74,37 +77,41 @@ widget_id_by() { # role name
   native automate snapshot | sed -n "s/.*widget @w1\/main-canvas#\([0-9]*\) role=$1 name=\"$2\".*/\1/p" | head -1
 }
 
-# Open the fixture workspace.
-OPEN_ID="$(widget_id_by listitem "acme-dashboard")"
-test -n "$OPEN_ID"
-native automate widget-click main-canvas "$OPEN_ID"
-sleep 1
+# Click widget (role, name), retrying until a marker text appears in the
+# snapshot — a click can race a frame that is still settling.
+click_until() { # role name marker
+  local role="$1" name="$2" marker="$3" attempt=0 id
+  while test "$attempt" -lt 10; do
+    id="$(widget_id_by "$role" "$name")"
+    if test -n "$id"; then
+      native automate widget-click main-canvas "$id" >/dev/null 2>&1 || true
+    fi
+    sleep 1
+    if native automate snapshot | grep -qF "$marker"; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+  done
+  echo "lsp-smoke: never reached '$marker' after clicking $role \"$name\"" >&2
+  native automate snapshot | tail -40 >&2 || true
+  return 1
+}
 
-# Enable the LSP toggle in Settings (default OFF — activation is explicit).
-SETTINGS_BTN="$(widget_id_by button "Application settings")"
-test -n "$SETTINGS_BTN"
-native automate widget-click main-canvas "$SETTINGS_BTN"
-sleep 0.5
-LSP_SWITCH="$(widget_id_by switch_control "Toggle language server (LSP)")"
+# Open the fixture workspace, enable the LSP toggle in Settings (default
+# OFF — activation is explicit), return to the workbench, open the broken
+# TypeScript file (the activation trigger: toggle ON + supported file
+# open -> governed broker spawn), and show the Problems panel (its header
+# carries the LSP status line).
+click_until listitem "acme-dashboard" 'name="Application settings"'
+click_until button "Application settings" 'name="Settings search"'
+LSP_SWITCH="$(widget_id_by switch "Toggle language server (LSP)")"
 test -n "$LSP_SWITCH"
-native automate widget-click main-canvas "$LSP_SWITCH"
-sleep 0.5
-BACK_BTN="$(widget_id_by button "Back to workbench")"
-test -n "$BACK_BTN"
-native automate widget-click main-canvas "$BACK_BTN"
-sleep 0.5
-
-# Open the broken TypeScript file: this is the activation trigger
-# (toggle ON + supported file open -> governed broker spawn).
-TS_FILE="$(widget_id_by listitem "lsp-smoke.ts")"
-test -n "$TS_FILE"
-native automate widget-click main-canvas "$TS_FILE"
+# Switches expose actions=[focus,toggle] - widget-click (press) is a no-op.
+native automate widget-action main-canvas "$LSP_SWITCH" toggle
 sleep 1
-
-# Show the Problems panel (its header carries the LSP status line).
-PROBLEMS_BTN="$(widget_id_by button "Problems and diagnostics")"
-test -n "$PROBLEMS_BTN"
-native automate widget-click main-canvas "$PROBLEMS_BTN"
+click_until button "Back to workbench" 'name="Explorer filter"'
+click_until listitem "lsp-smoke.ts" 'deliberate type error'
+click_until button "Problems and diagnostics" 'LSP:'
 
 # The broker handshake + tsserver warm-up can take a while on first run.
 native automate assert --timeout-ms 120000 'LSP: running'

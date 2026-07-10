@@ -1880,12 +1880,22 @@ fn activateLsp(model: *Model, fx: *Effects) void {
         }
     }
 
+    // The runtime Io requires a full PATH_MAX output buffer for realpath
+    // (testing.io is laxer); resolve wide, then bound into session limits.
+    var real_buf: [std.fs.max_path_bytes]u8 = undefined;
     var root_buf: [lsp_session.max_path_bytes]u8 = undefined;
-    const root_len = std.Io.Dir.cwd().realPathFile(modelIo(model), model.project_path, &root_buf) catch {
+    const real_len = std.Io.Dir.cwd().realPathFile(modelIo(model), model.project_path, &real_buf) catch {
         model.lsp_status = .failed;
         model.toast = "LSP: could not resolve the workspace root";
         return;
     };
+    if (real_len > root_buf.len) {
+        model.lsp_status = .failed;
+        model.toast = "LSP: workspace root path exceeds the session limit";
+        return;
+    }
+    @memcpy(root_buf[0..real_len], real_buf[0..real_len]);
+    const root_len = real_len;
 
     const runtime = std.heap.page_allocator.create(lsp_session.Runtime) catch {
         model.lsp_status = .failed;

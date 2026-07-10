@@ -107,14 +107,20 @@ pub fn probe(io: std.Io, path_env: []const u8, broker_buf: []u8, server_buf: []u
 
 fn findBroker(io: std.Io, path_env: []const u8, buf: []u8) ?[]const u8 {
     if (std.Io.Dir.cwd().access(io, broker_build_rel_path, .{})) |_| {
-        const n = std.Io.Dir.cwd().realPathFile(io, broker_build_rel_path, buf) catch {
-            if (broker_build_rel_path.len <= buf.len) {
-                @memcpy(buf[0..broker_build_rel_path.len], broker_build_rel_path);
-                return buf[0..broker_build_rel_path.len];
+        // The runtime Io needs a PATH_MAX-wide realpath buffer; fall back to
+        // the cwd-relative path when the resolved one exceeds session limits.
+        var real_buf: [std.fs.max_path_bytes]u8 = undefined;
+        if (std.Io.Dir.cwd().realPathFile(io, broker_build_rel_path, &real_buf)) |n| {
+            if (n <= buf.len) {
+                @memcpy(buf[0..n], real_buf[0..n]);
+                return buf[0..n];
             }
-            return null;
-        };
-        return buf[0..n];
+        } else |_| {}
+        if (broker_build_rel_path.len <= buf.len) {
+            @memcpy(buf[0..broker_build_rel_path.len], broker_build_rel_path);
+            return buf[0..broker_build_rel_path.len];
+        }
+        return null;
     } else |_| {}
     return findInPath(io, path_env, broker_binary_name, buf);
 }
