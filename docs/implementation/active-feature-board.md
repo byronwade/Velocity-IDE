@@ -28,6 +28,9 @@ today; LSP + PTY feasible via governed sidecar broker; no SDK upgrade needed).
 | W9 git branches: bounded list, `git switch`/`switch -c` via literal argv, option-injection name gate, dirty-editor refusal, post-switch tab-preserving rescan | orchestrator | real-repo module round-trip test (incl. git's own conflicting-change refusal), 279/279, strict, screenshot | green |
 | Catalog reconciliation: 26 verified status corrections (10→working incl. git-branches, 16→prototype), evidence per line in gap register | QA lane | features:generate + full suite | green |
 | LSP sidecar broker SPIKE: Content-Length↔NDJSON re-framing, token-auth POST input, chunk reassembly, process-group kill; **real typescript-language-server handshake validated** | LSP lane | 18 unit tests + spike.sh 16/16 PASS | proven (sidecar/) |
+| W4 **operational LSP vertical**: Settings toggle (default off) → governed broker spawn on supported-file open → initialize/didOpen/didChange/didSave/didClose → publishDiagnostics in the Problems panel; heartbeat liveness, TERM→KILL escalation, honest unavailable states. Two runtime-Io defects (PATH_MAX realpath contract) found by driving the real app and fixed | LSP lane + orchestrator | 348/348 tests; lsp-smoke PASS end-to-end with real typescript-language-server (SKIPs honestly without it) | green |
+| W11 fuzzy command search (subsequence ranking, 'gts' → Go to Symbol) | orchestrator | registry + app tests | green |
+| W3 language registry (display/LSP ids/comments/server candidates); transform caps scaled to editor ceiling (defect fix) | orchestrator | registry tests + 100 KiB toggle round-trip | green |
 
 ## Implementing
 
