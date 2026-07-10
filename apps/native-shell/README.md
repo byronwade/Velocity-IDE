@@ -6,7 +6,7 @@ Codename **Velocity** (rename-ready). Native SDK app shell for the new IDE.
 
 - Node.js 22
 - Linux: GTK 4 and WebKitGTK 6 development packages
-- Zig toolchain downloaded by the pinned Native SDK CLI when needed
+- Zig toolchain (the CLI may download its official pinned build when needed)
 
 Linux is the only CI-validated platform. Other manifest targets are not a claim
 of current build or runtime validation.

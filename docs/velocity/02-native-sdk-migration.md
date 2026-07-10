@@ -30,7 +30,7 @@ comparison scenarios. No local upstream source tree is required.
 |---|---|
 | Pre-1.0 SDK | APIs and Linux host deps still moving |
 | Platform gaps | Linux is CI-validated and still links GTK/WebKit even for the canvas shell; other platforms are unvalidated |
-| Toolchain | Zig pinned via CLI download |
+| Toolchain | CLI may download its official pinned Zig toolchain |
 | Editor quality | Monaco island later; native editor TBD |
 
 ## Go / no-go checklist

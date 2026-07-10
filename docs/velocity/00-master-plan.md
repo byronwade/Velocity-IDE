@@ -53,7 +53,7 @@ VS Code’s workbench is deeply coupled: contribution registration, extension ho
 | Risk | Mitigation |
 |---|---|
 | Native SDK pre-1.0 / platform gaps | Document blockers; preserve a Linux software-renderer path |
-| Zig/toolchain friction | CLI downloads pinned Zig; document setup |
+| Zig/toolchain friction | CLI may download its official pinned Zig; document setup |
 | Editor quality gap vs Monaco | Editor island WebView, not shell WebView |
 | Plugin ecosystem cold start | Trusted core plugins + clear author SDK |
 | Legal/brand confusion | Codename rename-ready; no third-party assets |

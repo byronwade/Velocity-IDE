@@ -18,7 +18,8 @@ second project CLI dependency.
 sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
 ```
 
-The CLI can download its compatible Zig toolchain when required.
+Native commands may download the CLI's official pinned Zig toolchain when it is
+missing.
 
 ## Dev
 

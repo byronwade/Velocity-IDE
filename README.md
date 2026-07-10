@@ -20,9 +20,10 @@ npm run dev
 ```
 
 `npm install` reproducibly installs Native SDK CLI 0.4.0 from `.tools`' tracked
-lockfile. `npm run check` verifies generated feature metadata, runs 252 native
-tests, and performs the strict Native SDK check. `npm test` is test-only;
-`npm run smoke` runs all eight Linux UI/process smoke suites.
+lockfile. Native commands may download the CLI's official pinned Zig toolchain
+when it is missing. `npm run check` verifies generated feature metadata, runs
+252 native tests, and performs the strict Native SDK check. `npm test` is
+test-only; `npm run smoke` runs all eight Linux UI/process smoke suites.
 
 ## Documentation
 

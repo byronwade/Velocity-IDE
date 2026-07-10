@@ -6,7 +6,7 @@ REPO_ROOT="$(cd "$SHELL_ROOT/../.." && pwd)"
 cd "$SHELL_ROOT"
 export PATH="$REPO_ROOT/.tools/node_modules/.bin:${PATH:-}"
 
-native build -Dautomation=true
+native build --yes -Dautomation=true
 rm -rf .zig-cache/native-sdk-automation
 ./zig-out/bin/velocity-ide >/tmp/velocity-explorer-smoke.out 2>&1 &
 APP_PID=$!
