@@ -79,6 +79,16 @@ pub const Problem = problems_mod.Problem;
 pub const OutlineSymbol = outline_mod.Symbol;
 pub const DefHit = go_to_def_mod.DefHit;
 pub const PeekLine = editor_view.PeekLine;
+
+/// One row of the bounded "Complete at Cursor" overlay. Slices borrow
+/// the model's completion pools (stable for the row's lifetime).
+pub const CompletionRow = struct {
+    id: u32 = 0,
+    label: []const u8 = "",
+    insert: []const u8 = "",
+};
+/// Bounded hover panel projection (max lines of the scrubbed text).
+pub const max_hover_display_lines: usize = 10;
 pub const WorkspaceTask = task_detector.Task;
 pub const LaunchProfile = launch_profiles.Profile;
 pub const ReplacePreview = workspace_replace.FilePreview;
@@ -372,6 +382,9 @@ pub const Msg = union(enum) {
     pty_send_response: native_sdk.EffectResponse,
     pty_hb_response: native_sdk.EffectResponse,
     toggle_lsp,
+    dismiss_hover_info,
+    insert_completion: u32,
+    close_completion_overlay,
     lsp_broker_line: native_sdk.EffectLine,
     lsp_broker_exit: native_sdk.EffectExit,
     lsp_heartbeat_timer: native_sdk.EffectTimer,
@@ -534,6 +547,28 @@ pub const Model = struct {
     def_bufs: ?*go_to_def_mod.GoToDefBuffers = null,
     def_hits: []const DefHit = &.{},
     def_status: []const u8 = "idle",
+    // Hover panel (LSP textDocument/hover, bounded plain text). Line
+    // slices point into hover_text_buf.
+    hover_visible: bool = false,
+    hover_text_buf: [broker_transport.max_hover_bytes]u8 = undefined,
+    hover_text_len: usize = 0,
+    hover_lines: []const PeekLine = &.{},
+    hover_line_storage: [max_hover_display_lines]PeekLine = [_]PeekLine{.{}} ** max_hover_display_lines,
+    hover_status: []const u8 = "",
+    hover_status_buf: [64]u8 = undefined,
+    // "Complete at Cursor" overlay (LSP textDocument/completion, top 12).
+    completion_open: bool = false,
+    completion_items: []const CompletionRow = &.{},
+    completion_row_storage: [broker_transport.max_completion_items]CompletionRow = [_]CompletionRow{.{}} ** broker_transport.max_completion_items,
+    completion_label_pool: [broker_transport.max_completion_items][broker_transport.max_completion_label_bytes]u8 = undefined,
+    completion_label_lens: [broker_transport.max_completion_items]usize = [_]usize{0} ** broker_transport.max_completion_items,
+    completion_insert_pool: [broker_transport.max_completion_items][broker_transport.max_completion_insert_bytes]u8 = undefined,
+    completion_insert_lens: [broker_transport.max_completion_items]usize = [_]usize{0} ** broker_transport.max_completion_items,
+    completion_status: []const u8 = "",
+    completion_status_buf: [96]u8 = undefined,
+    /// Focus line (1-based) captured when the completion request was
+    /// issued — insertion targets the END of this line (no caret API).
+    completion_line: u32 = 0,
     breadcrumb_segs: []const BreadcrumbSeg = &.{},
     breadcrumb_seg_storage: [12]BreadcrumbSeg = [_]BreadcrumbSeg{.{}} ** 12,
     breadcrumb_label_pool: [12][48]u8 = undefined,
@@ -1080,6 +1115,17 @@ pub const Model = struct {
         "def_bufs",
         "def_status",
         "def_hits",
+        "hover_text_buf",
+        "hover_text_len",
+        "hover_line_storage",
+        "hover_status_buf",
+        "completion_row_storage",
+        "completion_label_pool",
+        "completion_label_lens",
+        "completion_insert_pool",
+        "completion_insert_lens",
+        "completion_status_buf",
+        "completion_line",
         "breadcrumb_seg_storage",
         "breadcrumb_label_pool",
         "breadcrumb_path_pool",
@@ -2246,6 +2292,7 @@ fn lspDocMutatingMsg(msg: Msg) bool {
         .duplicate_line,
         .insert_timestamp,
         .insert_uuid,
+        .insert_completion,
         .revert_file,
         .restore_backup,
         .hard_wrap,
@@ -2613,6 +2660,12 @@ fn handleLspServerMessage(model: *Model, fx: ?*Effects, runtime: *lsp_session.Ru
                 if (fx) |effects| pumpLspSends(model, effects, runtime);
             } else {
                 _ = session.completeRequest(id) catch {};
+                // v2 request routing: hover/definition/completion ids
+                // registered at send time resolve here; anything else
+                // (late/unknown responses) is dropped after clearing.
+                if (runtime.takeTrackedRequest(id)) |tracked| {
+                    handleTrackedLspResponse(model, runtime, tracked, payload);
+                }
             }
         },
         .publish_diagnostics => {
@@ -2655,6 +2708,368 @@ fn ingestLspDiagnostics(model: *Model, runtime: *lsp_session.Runtime) void {
     syncProblemView(model, bufs);
 }
 
+// ------------------------------------------- LSP request/response (v2)
+// Hover / definition / completion ride the proven session: requests are
+// queued through the same serial send pump, ids are tracked in the
+// runtime's bounded registry, and responses route through the response
+// arm of handleLspServerMessage.
+
+/// The live runtime iff the session is running AND the server's open
+/// document is the active editor tab (requests are only honest then).
+fn lspReadyRuntime(model: *Model) ?*lsp_session.Runtime {
+    const runtime = model.lsp orelse return null;
+    if (model.lsp_status != .running) return null;
+    if (!runtime.transport.session.canSendDocumentEvents()) return null;
+    if (!runtime.hasOpenDoc()) return null;
+    if (!std.mem.eql(u8, runtime.openRel(), lspActivePath(model))) return null;
+    return runtime;
+}
+
+/// The active document's focus line as a slice (1-based `line_no`
+/// clamped to the document; empty document yields an empty line).
+fn documentLineSlice(text: []const u8, line_no: u32) []const u8 {
+    const target = @max(line_no, 1);
+    var current: u32 = 1;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= text.len) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            // Past-the-end targets clamp to the last line.
+            if (current == target or i == text.len) return text[start..i];
+            current += 1;
+            start = i + 1;
+        }
+    }
+    return text[0..0];
+}
+
+/// Focus position for LSP position requests (0-based). The editor has
+/// no caret API, so the documented contract is: line = the goto-line /
+/// peek focus line (1-based, default 1); character = the byte offset of
+/// `symbol` on that line when present, else the line's first non-space
+/// byte. Byte offsets equal LSP UTF-16 units for ASCII lines (honest
+/// approximation, noted in protocol_notes.md).
+fn lspFocusPosition(model: *const Model, symbol: []const u8) broker_transport.Position {
+    const focus = @max(model.editor_focus_line, 1);
+    const line = documentLineSlice(model.document.text(), focus);
+    var character: usize = 0;
+    if (symbol.len > 0) {
+        if (std.mem.indexOf(u8, line, symbol)) |at| {
+            character = at;
+        } else {
+            character = firstNonSpace(line);
+        }
+    } else {
+        character = firstNonSpace(line);
+    }
+    return .{
+        .line = focus - 1,
+        .character = @intCast(@min(character, line.len)),
+    };
+}
+
+fn firstNonSpace(line: []const u8) usize {
+    for (line, 0..) |c, index| {
+        if (c != ' ' and c != '\t') return index;
+    }
+    return 0;
+}
+
+/// Queue one position request through the serial send pump and track
+/// its id for response routing. False when the session refuses (queue
+/// or registry full, wrong phase) — nothing is left pending.
+fn sendLspPositionRequest(
+    model: *Model,
+    kind: lsp_session.RequestKind,
+    method: []const u8,
+    position: broker_transport.Position,
+) bool {
+    const runtime = lspReadyRuntime(model) orelse return false;
+    const buf = runtime.nextSlotBuf() orelse {
+        runtime.dropped_sends += 1;
+        return false;
+    };
+    const id = runtime.transport.session.beginRequest(
+        method,
+        runtime.now_ms,
+        broker_transport.default_request_timeout_ms,
+    ) catch return false;
+    const payload = broker_transport.buildPositionRequest(
+        buf,
+        id,
+        method,
+        runtime.openUri(),
+        position.line,
+        position.character,
+    ) catch {
+        _ = runtime.transport.session.completeRequest(id) catch {};
+        return false;
+    };
+    if (!runtime.trackRequest(id, kind, @max(model.editor_focus_line, 1))) {
+        _ = runtime.transport.session.completeRequest(id) catch {};
+        return false;
+    }
+    runtime.commit(payload.len);
+    return true;
+}
+
+fn requestHoverInfo(model: *Model) void {
+    if (lspReadyRuntime(model) == null) {
+        model.toast = "Hover needs the language server running (enable LSP, open a TS/JS file)";
+        return;
+    }
+    const position = lspFocusPosition(model, "");
+    if (sendLspPositionRequest(model, .hover, broker_transport.method_hover, position)) {
+        model.toast = "Hover: asking the language server...";
+    } else {
+        model.toast = "Hover request refused (send queue busy)";
+    }
+}
+
+fn requestCompletionAtCursor(model: *Model) void {
+    if (lspReadyRuntime(model) == null) {
+        model.toast = "Completion needs the language server running (enable LSP, open a TS/JS file)";
+        return;
+    }
+    // Documented contract: complete at the END of the focus line, so
+    // the server sees the line's trailing prefix.
+    const focus = @max(model.editor_focus_line, 1);
+    const line = documentLineSlice(model.document.text(), focus);
+    const position: broker_transport.Position = .{
+        .line = focus - 1,
+        .character = @intCast(@min(line.len, std.math.maxInt(u32))),
+    };
+    if (sendLspPositionRequest(model, .completion, broker_transport.method_completion, position)) {
+        model.toast = "Completion: asking the language server...";
+    } else {
+        model.toast = "Completion request refused (send queue busy)";
+    }
+}
+
+fn handleTrackedLspResponse(
+    model: *Model,
+    runtime: *lsp_session.Runtime,
+    tracked: lsp_session.TrackedRequest,
+    payload: []const u8,
+) void {
+    switch (tracked.kind) {
+        .hover => {
+            var hover: broker_transport.HoverText = .{};
+            broker_transport.extractHover(payload, &runtime.scratch, &hover) catch {
+                model.toast = "Hover response malformed";
+                return;
+            };
+            if (!hover.found) {
+                model.toast = "No hover info at the focus line";
+                return;
+            }
+            presentHover(model, &hover, tracked.line);
+        },
+        .definition => {
+            const maybe_target = broker_transport.extractDefinition(payload, &runtime.scratch) catch {
+                model.toast = "Definition response malformed";
+                return;
+            };
+            const target = maybe_target orelse {
+                model.toast = "No definition found (LSP)";
+                return;
+            };
+            openLspDefinition(model, runtime, target);
+        },
+        .completion => {
+            var page: broker_transport.CompletionPage = .{};
+            broker_transport.extractCompletion(payload, &runtime.scratch, &page) catch {
+                model.toast = "Completion response malformed";
+                return;
+            };
+            presentCompletions(model, &page, tracked.line);
+        },
+    }
+}
+
+fn presentHover(model: *Model, hover: *const broker_transport.HoverText, line: u32) void {
+    const n = @min(hover.text().len, model.hover_text_buf.len);
+    @memcpy(model.hover_text_buf[0..n], hover.text()[0..n]);
+    model.hover_text_len = n;
+    var count: usize = 0;
+    var extra_lines: usize = 0;
+    var lines = std.mem.splitScalar(u8, model.hover_text_buf[0..n], '\n');
+    while (lines.next()) |text_line| {
+        if (count >= model.hover_line_storage.len) {
+            extra_lines += 1;
+            continue;
+        }
+        model.hover_line_storage[count] = .{ .id = @intCast(count + 1), .text = text_line };
+        count += 1;
+    }
+    model.hover_lines = model.hover_line_storage[0..count];
+    model.hover_visible = true;
+    model.hover_status = std.fmt.bufPrint(&model.hover_status_buf, "L{d} via LSP{s}", .{
+        line,
+        if (hover.truncated or extra_lines > 0) " (truncated)" else "",
+    }) catch "via LSP";
+    model.toast = "Hover info";
+}
+
+fn dismissHoverInfo(model: *Model) void {
+    model.hover_visible = false;
+    model.hover_lines = &.{};
+    model.hover_text_len = 0;
+    model.hover_status = "";
+    model.toast = "";
+}
+
+fn openLspDefinition(model: *Model, runtime: *lsp_session.Runtime, target: broker_transport.DefinitionTarget) void {
+    var rel_buf: [lsp_session.max_path_bytes]u8 = undefined;
+    const rel = lsp_session.uriToWorkspaceRel(target.uri(), runtime.rootAbs(), &rel_buf) orelse {
+        model.toast = "Definition target has an unsupported URI";
+        return;
+    };
+    // uriToWorkspaceRel falls back to the decoded absolute path for
+    // out-of-workspace files; in-workspace URIs only for navigation.
+    if (rel.len == 0 or rel[0] == '/') {
+        model.toast = "Definition is outside the workspace";
+        return;
+    }
+    const ws = model.workspace orelse {
+        model.toast = "No workspace";
+        return;
+    };
+    const node = ws.findNodeByPath(rel) orelse {
+        model.toast = "Definition target is not in the workspace scan";
+        return;
+    };
+    if (node.is_dir) {
+        model.toast = "Definition target is a directory";
+        return;
+    }
+    var from_path_buf: [scanner_mod.max_rel_path_len]u8 = undefined;
+    const current_path = Model.activeTabPath(model);
+    const from_path_len = @min(current_path.len, from_path_buf.len);
+    @memcpy(from_path_buf[0..from_path_len], current_path[0..from_path_len]);
+    const from_line = currentNavigationLine(model);
+    model.selected_file_id = node.id;
+    model.current_view = .ide;
+    model.selected_activity = .explorer;
+    if (!openWorkspaceFile(model, ws, node.id)) return;
+    model.active_tab_id = node.id;
+    model.open_tabs = ws.tabsSlice();
+    model.status_language = workspace_store.scannerLanguage(node.path);
+    pushRecentFile(model, node.path);
+    syncDocumentFromWorkspace(model);
+    const target_line = target.line + 1; // LSP 0-based -> editor 1-based
+    recordCrossFileNavigation(model, from_path_buf[0..from_path_len], from_line, node.path, target_line);
+    model.navigation_replaying = true;
+    jumpToDocumentLine(model, target_line);
+    model.navigation_replaying = false;
+    model.toast = "Definition via LSP";
+}
+
+fn presentCompletions(model: *Model, page: *const broker_transport.CompletionPage, line: u32) void {
+    if (page.count == 0) {
+        model.toast = "No completions at the focus line";
+        return;
+    }
+    var index: usize = 0;
+    while (index < page.count) : (index += 1) {
+        const entry = page.item(index).?;
+        const label = entry.label();
+        const insert = entry.insertText();
+        const label_n = @min(label.len, model.completion_label_pool[index].len);
+        @memcpy(model.completion_label_pool[index][0..label_n], label[0..label_n]);
+        model.completion_label_lens[index] = label_n;
+        const insert_n = @min(insert.len, model.completion_insert_pool[index].len);
+        @memcpy(model.completion_insert_pool[index][0..insert_n], insert[0..insert_n]);
+        model.completion_insert_lens[index] = insert_n;
+        model.completion_row_storage[index] = .{
+            .id = @intCast(index + 1),
+            .label = model.completion_label_pool[index][0..label_n],
+            .insert = model.completion_insert_pool[index][0..insert_n],
+        };
+    }
+    model.completion_items = model.completion_row_storage[0..page.count];
+    model.completion_line = @max(line, 1);
+    model.completion_open = true;
+    model.completion_status = std.fmt.bufPrint(&model.completion_status_buf, "L{d} · {d} items{s}", .{
+        model.completion_line,
+        page.count,
+        if (page.is_incomplete or page.dropped > 0) " (partial)" else "",
+    }) catch "completions";
+    model.toast = "Completions ready";
+}
+
+fn closeCompletionOverlay(model: *Model) void {
+    model.completion_open = false;
+    model.completion_items = &.{};
+    model.completion_status = "";
+    model.toast = "";
+}
+
+fn isIdentifierChar(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '_' or c == '$';
+}
+
+/// Honest insertion contract (the editor has no caret API): the item
+/// targets the END of the focus line captured at request time. If that
+/// line's trailing identifier word ([A-Za-z0-9_$]+) is a prefix of the
+/// insert text, the word is replaced; otherwise the text is appended at
+/// the line's end. Documented in the overlay itself and tested.
+fn insertCompletion(model: *Model, row_id: u32) void {
+    if (!model.completion_open) return;
+    for (model.completion_items) |row| {
+        if (row.id != row_id) continue;
+        applyCompletionRow(model, row);
+        return;
+    }
+    model.toast = "Completion item not found";
+}
+
+fn applyCompletionRow(model: *Model, row: CompletionRow) void {
+    const insert = row.insert;
+    if (insert.len == 0) {
+        model.toast = "Completion item has no text";
+        return;
+    }
+    const text = model.document.text();
+    // Locate the target line's byte range.
+    const target = @max(model.completion_line, 1);
+    var current: u32 = 1;
+    var line_start: usize = 0;
+    var line_end: usize = text.len;
+    var i: usize = 0;
+    while (i <= text.len) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            if (current == target or i == text.len) {
+                line_end = i;
+                break;
+            }
+            current += 1;
+            line_start = i + 1;
+        }
+    }
+    const line = text[line_start..line_end];
+    var word_start = line.len;
+    while (word_start > 0 and isIdentifierChar(line[word_start - 1])) word_start -= 1;
+    const trailing_word = line[word_start..];
+    const cut: usize = if (trailing_word.len > 0 and std.mem.startsWith(u8, insert, trailing_word))
+        line_start + word_start
+    else
+        line_end;
+    const new_len = cut + insert.len + (text.len - line_end);
+    if (new_len > edit_transforms.max_out or new_len > max_document) {
+        model.toast = "Completion does not fit the document limit";
+        return;
+    }
+    var out: [edit_transforms.max_out]u8 = undefined;
+    @memcpy(out[0..cut], text[0..cut]);
+    @memcpy(out[cut..][0..insert.len], insert);
+    @memcpy(out[cut + insert.len ..][0 .. text.len - line_end], text[line_end..]);
+    applyDocumentTransform(model, out[0..new_len], "Completion inserted at line end");
+    model.completion_open = false;
+    model.completion_items = &.{};
+    model.completion_status = "";
+}
+
 fn handleLspHeartbeatTimer(model: *Model, fx: ?*Effects, timer: native_sdk.EffectTimer) void {
     if (timer.key != lsp_heartbeat_timer_key) return;
     const runtime = model.lsp orelse return;
@@ -2670,6 +3085,17 @@ fn handleLspHeartbeatTimer(model: *Model, fx: ?*Effects, timer: native_sdk.Effec
         teardownLsp(model, fx, .failed);
         model.toast = "LSP request timed out";
         return;
+    }
+    // Non-lifecycle expiries (hover/definition/completion) keep the
+    // session alive but surface an honest timeout toast.
+    var expired_index: usize = 0;
+    while (expired_index < expired_count) : (expired_index += 1) {
+        const tracked = runtime.takeTrackedRequest(expired[expired_index].id) orelse continue;
+        model.toast = switch (tracked.kind) {
+            .hover => "Hover timed out",
+            .definition => "Definition request timed out",
+            .completion => "Completion timed out",
+        };
     }
     if (runtime.transport.phase != .ready or runtime.hb_in_flight) return;
     const effects = fx orelse return;
@@ -3138,6 +3564,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 goToSymbol(model);
             } else if (std.mem.eql(u8, id, "go_to_definition")) {
                 runGoToDefinition(model);
+            } else if (std.mem.eql(u8, id, "hover_info")) {
+                requestHoverInfo(model);
+            } else if (std.mem.eql(u8, id, "completion_at_cursor")) {
+                requestCompletionAtCursor(model);
             } else if (std.mem.eql(u8, id, "open_outline")) {
                 model.selected_activity = .outline;
                 model.current_view = .ide;
@@ -3764,6 +4194,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .pty_send_response => |response| handlePtySendResponse(model, fx, response),
         .pty_hb_response => |response| handlePtyHbResponse(model, fx, response),
         .toggle_lsp => toggleLsp(model, fx),
+        .dismiss_hover_info => dismissHoverInfo(model),
+        .insert_completion => |row_id| insertCompletion(model, row_id),
+        .close_completion_overlay => closeCompletionOverlay(model),
         .lsp_broker_line => |line| handleLspBrokerLine(model, fx, line),
         .lsp_broker_exit => |exit| handleLspBrokerExit(model, fx, exit),
         .lsp_heartbeat_timer => |timer| handleLspHeartbeatTimer(model, fx, timer),
@@ -5116,6 +5549,20 @@ fn runGoToDefinition(model: *Model) void {
     };
     var symbol: []const u8 = model.find_query.text();
     if (symbol.len == 0) symbol = model.symbol_query.text();
+    // LSP-backed path when the session is running for the active
+    // document: position-based textDocument/definition (the Find symbol
+    // refines the column on the focus line when present). Falls back to
+    // the heuristic text search when LSP is off/unavailable, with the
+    // source named in the toast either way.
+    if (lspReadyRuntime(model) != null) {
+        const position = lspFocusPosition(model, symbol);
+        if (sendLspPositionRequest(model, .definition, broker_transport.method_definition, position)) {
+            model.toast = "Definition: asking the language server...";
+            return;
+        }
+        // Send refused (queue full / session hiccup): fall through to
+        // the honest text-search path below.
+    }
     if (symbol.len == 0) {
         model.toast = "Enter symbol in Find then Go to Definition";
         return;
@@ -5129,7 +5576,7 @@ fn runGoToDefinition(model: *Model) void {
     model.def_status = bufs.status;
     appendOutput(model, model.def_status);
     if (bufs.count == 0) {
-        model.toast = "Definition not found";
+        model.toast = "Definition not found (text search)";
         return;
     }
     openDefHit(model, bufs.hits[0].id);
@@ -5162,7 +5609,7 @@ fn openDefHit(model: *Model, hit_id: u32) void {
                     model.navigation_replaying = true;
                     jumpToDocumentLine(model, hit.line);
                     model.navigation_replaying = false;
-                    model.toast = "Definition";
+                    model.toast = "Definition via text search";
                 }
                 return;
             }
@@ -6148,6 +6595,10 @@ fn clearFind(model: *Model) void {
 }
 
 fn dismissOverlay(model: *Model) void {
+    if (model.completion_open) {
+        closeCompletionOverlay(model);
+        return;
+    }
     if (model.diff_review_open) {
         closeDiffReview(model);
         return;
@@ -6186,6 +6637,10 @@ fn dismissOverlay(model: *Model) void {
     }
     if (model.show_find_panel) {
         clearFind(model);
+        return;
+    }
+    if (model.hover_visible) {
+        dismissHoverInfo(model);
         return;
     }
     if (model.hasPeek()) {

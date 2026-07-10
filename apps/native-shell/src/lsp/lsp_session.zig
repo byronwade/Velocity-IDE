@@ -198,6 +198,22 @@ pub fn uriToWorkspaceRel(uri: []const u8, root_abs: []const u8, out: []u8) ?[]co
     return abs;
 }
 
+// ---------------------------------------------------- request registry
+
+/// The v2 request/response capabilities routed by the response arm of
+/// the app's server-message handler.
+pub const RequestKind = enum { hover, definition, completion };
+
+pub const max_tracked_requests: usize = 8;
+
+pub const TrackedRequest = struct {
+    id: u64 = 0,
+    kind: RequestKind = .hover,
+    /// Editor focus line (1-based) when the request was issued, so the
+    /// response can act on the position the user actually asked about.
+    line: u32 = 0,
+};
+
 // -------------------------------------------------------------- runtime
 
 /// Heap-resident per-session state (several MiB of fixed buffers; the
@@ -250,6 +266,11 @@ pub const Runtime = struct {
     /// Staging area for one publishDiagnostics extraction.
     diags: transport_mod.DiagnosticsPage = .{},
 
+    /// Bounded registry mapping in-flight request ids to their kind +
+    /// issued focus line (hover/definition/completion routing).
+    tracked: [max_tracked_requests]TrackedRequest = [_]TrackedRequest{.{}} ** max_tracked_requests,
+    tracked_count: usize = 0,
+
     /// In-place (re)initialization; the struct is far too large for
     /// by-value moves, so callers heap-allocate and then reset.
     pub fn reset(self: *Runtime) void {
@@ -277,6 +298,30 @@ pub const Runtime = struct {
         self.root_abs_len = 0;
         self.root_uri_len = 0;
         self.diags = .{};
+        self.tracked_count = 0;
+    }
+
+    /// Record an in-flight request for response routing. False when the
+    /// bounded registry is full (the caller should not issue the send).
+    pub fn trackRequest(self: *Runtime, id: u64, kind: RequestKind, line: u32) bool {
+        if (self.tracked_count >= max_tracked_requests) return false;
+        self.tracked[self.tracked_count] = .{ .id = id, .kind = kind, .line = line };
+        self.tracked_count += 1;
+        return true;
+    }
+
+    /// Resolve and remove a tracked request by id (response arrival or
+    /// timeout expiry); null for untracked ids.
+    pub fn takeTrackedRequest(self: *Runtime, id: u64) ?TrackedRequest {
+        var index: usize = 0;
+        while (index < self.tracked_count) : (index += 1) {
+            if (self.tracked[index].id != id) continue;
+            const found = self.tracked[index];
+            self.tracked_count -= 1;
+            if (index != self.tracked_count) self.tracked[index] = self.tracked[self.tracked_count];
+            return found;
+        }
+        return null;
     }
 
     pub fn setRoot(self: *Runtime, abs_root: []const u8) bool {
@@ -539,6 +584,36 @@ test "runtime queue overflow and rotated effect keys stay bounded" {
     const k2 = rt.takeSendKey(base);
     try testing.expect(k1 != k2);
     try testing.expectEqual(base, k1 & 0xffff_0000_0000_0000);
+}
+
+test "runtime request registry is bounded and removal-safe" {
+    const rt = try testing.allocator.create(Runtime);
+    defer testing.allocator.destroy(rt);
+    rt.reset();
+
+    try testing.expect(rt.trackRequest(10, .hover, 3));
+    try testing.expect(rt.trackRequest(11, .definition, 7));
+    try testing.expect(rt.trackRequest(12, .completion, 9));
+    try testing.expect(rt.takeTrackedRequest(99) == null);
+
+    const hover = rt.takeTrackedRequest(10).?;
+    try testing.expectEqual(RequestKind.hover, hover.kind);
+    try testing.expectEqual(@as(u32, 3), hover.line);
+    try testing.expect(rt.takeTrackedRequest(10) == null); // removed
+
+    const completion = rt.takeTrackedRequest(12).?;
+    try testing.expectEqual(RequestKind.completion, completion.kind);
+    try testing.expectEqual(@as(u32, 9), completion.line);
+    try testing.expectEqual(RequestKind.definition, rt.takeTrackedRequest(11).?.kind);
+
+    // Bounded: max_tracked_requests slots, then honest refusal.
+    var id: u64 = 100;
+    while (id < 100 + max_tracked_requests) : (id += 1) {
+        try testing.expect(rt.trackRequest(id, .hover, 1));
+    }
+    try testing.expect(!rt.trackRequest(999, .hover, 1));
+    rt.reset();
+    try testing.expectEqual(@as(usize, 0), rt.tracked_count);
 }
 
 test "runtime tracks one open document with versioning" {

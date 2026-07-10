@@ -83,6 +83,10 @@ pub fn onCommand(shortcut_id: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "outdent_document")) return .outdent_document;
     if (std.mem.eql(u8, name, "go_to_symbol")) return .go_to_symbol;
     if (std.mem.eql(u8, name, "go_to_definition")) return .go_to_definition;
+    // Palette-only LSP commands, also reachable for automation drives
+    // (`native automate native-command <id>`), like run_perf below.
+    if (std.mem.eql(u8, name, "hover_info")) return .{ .run_command = "hover_info" };
+    if (std.mem.eql(u8, name, "completion_at_cursor")) return .{ .run_command = "completion_at_cursor" };
     if (std.mem.eql(u8, name, "open_folder")) return .{ .open_project = "acme-dashboard" };
     if (std.mem.eql(u8, name, "open_settings")) return .open_settings;
     if (std.mem.eql(u8, name, "save_all")) return .save_all;

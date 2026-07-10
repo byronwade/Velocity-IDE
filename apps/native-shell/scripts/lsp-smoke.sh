@@ -42,6 +42,7 @@ fi
 # cannot invert the smoke's own toggle step.
 rm -f "$PREFS"
 cat >"$FIXTURE" <<'EOF'
+Math.max(1, 2); // hover target: the smoke asks for hover at the default focus line 1
 // lsp-smoke fixture: the assignment below is a deliberate type error.
 const answer: number = "forty-two";
 export default answer;
@@ -132,4 +133,22 @@ click_until button "Problems and diagnostics" 'LSP:'
 native automate assert --timeout-ms 120000 'LSP: running'
 native automate assert --timeout-ms 120000 'not assignable'
 native automate assert --timeout-ms 15000 'lsp-smoke.ts'
+
+# Hover round 2: dispatch the palette command "Show Hover Info"
+# (hover_info) via native-command (same route perf-smoke uses; palette
+# rows can sit outside the clickable viewport). The focus line defaults
+# to 1 (the Math.max line), so tsserver's quickinfo for `Math` must
+# land in the bounded hover panel ("Hover · L1 via LSP").
+hover_attempt=0
+until snap | grep -qF 'Hover ·'; do
+  test "$hover_attempt" -lt 15 || {
+    echo "lsp-smoke: hover panel never appeared" >&2
+    snap | tail -40 >&2 || true
+    exit 1
+  }
+  native automate native-command hover_info main-canvas >/dev/null 2>&1 || true
+  hover_attempt=$((hover_attempt + 1))
+  sleep 2
+done
+native automate assert --timeout-ms 60000 'var Math: Math'
 echo "lsp-smoke: ok"

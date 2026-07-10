@@ -38,6 +38,7 @@ today; LSP + PTY feasible via governed sidecar broker; no SDK upgrade needed).
 | W9c hunk-level stage/unstage/discard (bounded patch engine, real-repo proof, double-press discard + dirty gate) | git lane + orchestrator | 412/412; hunk_patch 11 tests + applyHunk repo test | green |
 | W5 directory watcher: per-dir mtime baseline + budgeted round-robin poll → auto explorer refresh; app-write masquerade prevented via rescan re-baseline | orchestrator | 414/414; module tests at nested depth | green |
 | Branch fully green in CI at 513e1c7 (CI + Smoke incl. lsp + Screenshots on three consecutive heads) | — | GitHub Actions | green |
+| W4r2 **LSP hover + definition (working) and completion (prototype, honest insertion contract)**: focus-line positions, bounded extractors, request tracking with timeout toasts; manual real-server drive verified all three | LSP lane + orchestrator | 430/430; lsp-smoke PASS incl. hover scenario | green |
 
 ## Implementing
 
@@ -49,13 +50,11 @@ today; LSP + PTY feasible via governed sidecar broker; no SDK upgrade needed).
 
 | Rank | Item | Class | Dependency |
 |---|---|---|---|
-| 1 | Git hunk staging: unified-diff patch builder as standalone lane module (bounded parse → single-hunk patch → git apply --cached), then SCM UI | READY | unified_diff.zig exists |
+| 1 | Terminal round 2: resize wiring, per-command exit codes (OSC-133), ANSI rendering | PARTIAL | interactive vertical (done) |
 | 2 | Workspace Trust Plus (granular read/write/run/net) | READY | needs per-workspace persistence design (prefs are app-global today) |
-| 3 | File watcher formalization: scanner records per-dir mtimes at scan; round-robin K-dirs-per-tick poll (same budget idiom as disk_sync.Checker) detects create/delete/rename at any scanned depth; change → debounced tab-preserving rescan | READY (design settled) | scanner + store + model touch |
-| 4 | LSP capabilities round 2: completion, hover, definition through the proven session | READY | LSP vertical (done) |
-| 5 | Terminal round 2: resize wiring, per-command exit codes (OSC-133), ANSI rendering | PARTIAL | interactive vertical (done) |
-| 6 | Editor island WebView spike (web_panes + bridge invoke; focus/IME on WebKitGTK) | SPIKE | none |
-| 7 | Multibuffer data model (read-only slice over search/diagnostic results) | READY | none |
+| 3 | Editor island WebView spike (web_panes + bridge invoke; focus/IME on WebKitGTK) | SPIKE | none |
+| 4 | Multibuffer data model (read-only slice over search/diagnostic results) | READY | none |
+| 5 | LSP round 3: references, rename, formatting; UTF-16 position mapping for non-ASCII lines | READY | round 2 (done) |
 
 ## Blocked
 

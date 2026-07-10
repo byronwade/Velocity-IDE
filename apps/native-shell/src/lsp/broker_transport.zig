@@ -44,6 +44,12 @@ pub const max_method_bytes: usize = 96;
 pub const max_uri_bytes: usize = 512;
 pub const max_diagnostics: usize = 64;
 pub const max_diagnostic_message_bytes: usize = 256;
+/// Hover plain-text ceiling (markdown scrubbed before bounding).
+pub const max_hover_bytes: usize = 1024;
+/// Completion list ceiling: the palette-like overlay shows top N.
+pub const max_completion_items: usize = 12;
+pub const max_completion_label_bytes: usize = 96;
+pub const max_completion_insert_bytes: usize = 128;
 pub const max_server_name_bytes: usize = 64;
 pub const max_error_detail_bytes: usize = 256;
 /// Default deadline for pending requests (`Session.beginRequest`).
@@ -732,6 +738,36 @@ pub fn buildDidClose(out: []u8, uri: []const u8) BuildError![]const u8 {
     return builder.slice();
 }
 
+/// Shared TextDocumentPositionParams request body for the v2 request
+/// set (textDocument/hover|definition|completion). LSP positions are
+/// 0-based; callers convert from the editor's 1-based focus line.
+pub fn buildPositionRequest(
+    out: []u8,
+    id: u64,
+    method: []const u8,
+    uri: []const u8,
+    line: u32,
+    character: u32,
+) BuildError![]const u8 {
+    var builder: Builder = .{ .out = out };
+    try builder.raw("{\"jsonrpc\":\"2.0\",\"id\":");
+    try builder.integer(@intCast(id));
+    try builder.raw(",\"method\":");
+    try builder.string(method);
+    try builder.raw(",\"params\":{\"textDocument\":{\"uri\":");
+    try builder.string(uri);
+    try builder.raw("},\"position\":{\"line\":");
+    try builder.integer(line);
+    try builder.raw(",\"character\":");
+    try builder.integer(character);
+    try builder.raw("}}}");
+    return builder.slice();
+}
+
+pub const method_hover = "textDocument/hover";
+pub const method_definition = "textDocument/definition";
+pub const method_completion = "textDocument/completion";
+
 pub fn buildShutdown(out: []u8, id: u64) BuildError![]const u8 {
     var builder: Builder = .{ .out = out };
     try builder.raw("{\"jsonrpc\":\"2.0\",\"id\":");
@@ -975,6 +1011,264 @@ fn extractPosition(range: std.json.ObjectMap, name: []const u8) ?Position {
         .line = std.math.cast(u32, line) orelse return null,
         .character = std.math.cast(u32, character) orelse return null,
     };
+}
+
+// ---- hover ----
+
+pub const HoverText = struct {
+    found: bool = false,
+    /// Output hit the max_hover_bytes cap (kept honest, not silent).
+    truncated: bool = false,
+    text_storage: [max_hover_bytes]u8 = undefined,
+    text_len: usize = 0,
+
+    pub fn text(self: *const HoverText) []const u8 {
+        return self.text_storage[0..self.text_len];
+    }
+
+    fn appendByte(self: *HoverText, c: u8) void {
+        if (self.text_len >= max_hover_bytes) {
+            self.truncated = true;
+            return;
+        }
+        self.text_storage[self.text_len] = c;
+        self.text_len += 1;
+    }
+
+    /// Bounded markdown scrubber: drops ``` fence lines entirely,
+    /// removes inline backticks, strips leading heading markers
+    /// (`#`-runs plus the following spaces), and normalizes CRLF.
+    /// Everything else passes through verbatim.
+    fn appendScrubbed(self: *HoverText, src: []const u8) void {
+        var lines = std.mem.splitScalar(u8, src, '\n');
+        var wrote_line = false;
+        while (lines.next()) |line_raw| {
+            const line = std.mem.trimEnd(u8, line_raw, "\r");
+            const trimmed = std.mem.trimStart(u8, line, " \t");
+            if (std.mem.startsWith(u8, trimmed, "```")) continue;
+            if (wrote_line) self.appendByte('\n');
+            wrote_line = true;
+            var body = line;
+            if (trimmed.len > 0 and trimmed[0] == '#') {
+                var run: usize = 0;
+                while (run < trimmed.len and trimmed[run] == '#') run += 1;
+                body = std.mem.trimStart(u8, trimmed[run..], " ");
+            }
+            for (body) |c| {
+                if (c == '`') continue;
+                self.appendByte(c);
+            }
+        }
+    }
+
+    fn trimOuterWhitespace(self: *HoverText) void {
+        while (self.text_len > 0 and isOuterSpace(self.text_storage[self.text_len - 1])) {
+            self.text_len -= 1;
+        }
+        var start: usize = 0;
+        while (start < self.text_len and isOuterSpace(self.text_storage[start])) start += 1;
+        if (start > 0) {
+            std.mem.copyForwards(u8, self.text_storage[0 .. self.text_len - start], self.text_storage[start..self.text_len]);
+            self.text_len -= start;
+        }
+    }
+
+    fn isOuterSpace(c: u8) bool {
+        return c == '\n' or c == '\r' or c == ' ' or c == '\t';
+    }
+};
+
+/// Extract the plain-text content of one textDocument/hover response.
+/// `contents` may be a string, an object carrying `value`
+/// (MarkedString / MarkupContent), or an array of those (parts join
+/// with a blank line; malformed array entries are skipped). A `null`
+/// result or a JSON-RPC error response yields found=false; output is
+/// scrubbed to plain text and bounded by `max_hover_bytes`.
+pub fn extractHover(payload: []const u8, scratch: []u8, out: *HoverText) ExtractError!void {
+    const root = try parseObject(payload, scratch);
+    out.* = .{};
+    if (root.get("error") != null) return; // found=false, honest miss
+    const result = root.get("result") orelse return error.MalformedMessage;
+    switch (result) {
+        .null => return,
+        .object => {},
+        else => return error.MalformedMessage,
+    }
+    const contents = result.object.get("contents") orelse return error.MalformedMessage;
+    switch (contents) {
+        .string => |s| out.appendScrubbed(s),
+        .object => |object| {
+            const value = stringField(object, "value") orelse return error.MalformedMessage;
+            out.appendScrubbed(value);
+        },
+        .array => |array| {
+            for (array.items) |entry| {
+                const part: []const u8 = switch (entry) {
+                    .string => |s| s,
+                    .object => |object| stringField(object, "value") orelse continue,
+                    else => continue,
+                };
+                if (part.len == 0) continue;
+                if (out.text_len > 0) {
+                    out.appendByte('\n');
+                    out.appendByte('\n');
+                }
+                out.appendScrubbed(part);
+            }
+        },
+        else => return error.MalformedMessage,
+    }
+    out.trimOuterWhitespace();
+    out.found = out.text_len > 0;
+}
+
+// ---- definition ----
+
+pub const DefinitionTarget = struct {
+    uri_storage: [max_uri_bytes]u8 = undefined,
+    uri_len: usize = 0,
+    /// 0-based LSP position of the definition's start.
+    line: u32 = 0,
+    character: u32 = 0,
+
+    pub fn uri(self: *const DefinitionTarget) []const u8 {
+        return self.uri_storage[0..self.uri_len];
+    }
+};
+
+/// First target of a textDocument/definition response. Accepts the
+/// three wire shapes — Location, Location[], LocationLink[] — and takes
+/// the first valid entry (malformed or oversized entries are skipped).
+/// Returns null for a null result, an empty array, a JSON-RPC error,
+/// or no valid entry.
+pub fn extractDefinition(payload: []const u8, scratch: []u8) ExtractError!?DefinitionTarget {
+    const root = try parseObject(payload, scratch);
+    if (root.get("error") != null) return null;
+    const result = root.get("result") orelse return error.MalformedMessage;
+    switch (result) {
+        .null => return null,
+        .object => |object| return definitionFromObject(object),
+        .array => |array| {
+            for (array.items) |entry| {
+                if (entry != .object) continue;
+                if (definitionFromObject(entry.object)) |target| return target;
+            }
+            return null;
+        },
+        else => return error.MalformedMessage,
+    }
+}
+
+fn definitionFromObject(object: std.json.ObjectMap) ?DefinitionTarget {
+    // Location {uri, range} or LocationLink {targetUri,
+    // targetSelectionRange | targetRange}.
+    var uri: []const u8 = undefined;
+    var range_value: ?std.json.Value = null;
+    if (stringField(object, "uri")) |location_uri| {
+        uri = location_uri;
+        range_value = object.get("range");
+    } else if (stringField(object, "targetUri")) |link_uri| {
+        uri = link_uri;
+        range_value = object.get("targetSelectionRange") orelse object.get("targetRange");
+    } else {
+        return null;
+    }
+    if (uri.len == 0 or uri.len > max_uri_bytes) return null;
+    const range = range_value orelse return null;
+    if (range != .object) return null;
+    const start = extractPosition(range.object, "start") orelse return null;
+    var target: DefinitionTarget = .{ .line = start.line, .character = start.character };
+    @memcpy(target.uri_storage[0..uri.len], uri);
+    target.uri_len = uri.len;
+    return target;
+}
+
+// ---- completion ----
+
+pub const CompletionEntry = struct {
+    label_storage: [max_completion_label_bytes]u8 = undefined,
+    label_len: usize = 0,
+    insert_storage: [max_completion_insert_bytes]u8 = undefined,
+    insert_len: usize = 0,
+
+    pub fn label(self: *const CompletionEntry) []const u8 {
+        return self.label_storage[0..self.label_len];
+    }
+
+    /// The text to insert: the server's insertText when present, else
+    /// the label (per the LSP default).
+    pub fn insertText(self: *const CompletionEntry) []const u8 {
+        if (self.insert_len > 0) return self.insert_storage[0..self.insert_len];
+        return self.label();
+    }
+};
+
+pub const CompletionPage = struct {
+    items: [max_completion_items]CompletionEntry = [_]CompletionEntry{.{}} ** max_completion_items,
+    count: usize = 0,
+    /// Items beyond max_completion_items (kept honest, not silent).
+    dropped: usize = 0,
+    /// Array entries that were not valid completion items.
+    skipped_malformed: usize = 0,
+    is_incomplete: bool = false,
+
+    pub fn item(self: *const CompletionPage, index: usize) ?*const CompletionEntry {
+        if (index >= self.count) return null;
+        return &self.items[index];
+    }
+};
+
+/// Extract a bounded snapshot of one textDocument/completion response.
+/// Accepts `CompletionItem[]`, `CompletionList {isIncomplete, items}`,
+/// or a null result (count 0). Labels/insertText are bounded copies;
+/// malformed items are skipped (and counted), never fatal.
+pub fn extractCompletion(payload: []const u8, scratch: []u8, out: *CompletionPage) ExtractError!void {
+    const root = try parseObject(payload, scratch);
+    out.* = .{};
+    if (root.get("error") != null) return; // count 0, honest miss
+    const result = root.get("result") orelse return error.MalformedMessage;
+    const list: std.json.Array = switch (result) {
+        .null => return,
+        .array => |array| array,
+        .object => |object| blk: {
+            if (object.get("isIncomplete")) |flag| {
+                if (flag == .bool) out.is_incomplete = flag.bool;
+            }
+            const items = object.get("items") orelse return error.MalformedMessage;
+            if (items != .array) return error.MalformedMessage;
+            break :blk items.array;
+        },
+        else => return error.MalformedMessage,
+    };
+    for (list.items) |entry| {
+        if (entry != .object) {
+            out.skipped_malformed += 1;
+            continue;
+        }
+        const label = stringField(entry.object, "label") orelse {
+            out.skipped_malformed += 1;
+            continue;
+        };
+        if (label.len == 0) {
+            out.skipped_malformed += 1;
+            continue;
+        }
+        if (out.count >= max_completion_items) {
+            out.dropped += 1;
+            continue;
+        }
+        var item: CompletionEntry = .{};
+        const label_n = @min(label.len, max_completion_label_bytes);
+        @memcpy(item.label_storage[0..label_n], label[0..label_n]);
+        item.label_len = label_n;
+        if (stringField(entry.object, "insertText")) |insert| {
+            const insert_n = @min(insert.len, max_completion_insert_bytes);
+            @memcpy(item.insert_storage[0..insert_n], insert[0..insert_n]);
+            item.insert_len = insert_n;
+        }
+        out.items[out.count] = item;
+        out.count += 1;
+    }
 }
 
 fn parseObject(payload: []const u8, scratch: []u8) ExtractError!std.json.ObjectMap {
@@ -1617,6 +1911,173 @@ test "extract publishDiagnostics skips malformed entries and rejects bad envelop
     var long_uri_buf: [max_uri_bytes + 128]u8 = undefined;
     const long_uri_payload = try std.fmt.bufPrint(&long_uri_buf, "{{\"params\":{{\"uri\":\"{s}\",\"diagnostics\":[]}}}}", .{[_]u8{'u'} ** (max_uri_bytes + 1)});
     try testing.expectError(error.UriTooLong, extractPublishDiagnostics(long_uri_payload, &test_scratch, &page));
+}
+
+test "buildPositionRequest emits the shared hover/definition/completion shape" {
+    var buf: [512]u8 = undefined;
+    const body = try buildPositionRequest(&buf, 7, method_hover, "file:///ws/a.ts", 4, 2);
+    try testing.expectEqualStrings(
+        "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"textDocument/hover\",\"params\":{\"textDocument\":{\"uri\":\"file:///ws/a.ts\"},\"position\":{\"line\":4,\"character\":2}}}",
+        body,
+    );
+    const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, try buildPositionRequest(&buf, 9, method_completion, "file:///ws/s p.ts", 0, 11), .{});
+    defer parsed.deinit();
+    const params = parsed.value.object.get("params").?.object;
+    try testing.expectEqualStrings("file:///ws/s p.ts", params.get("textDocument").?.object.get("uri").?.string);
+    try testing.expectEqual(@as(i64, 11), params.get("position").?.object.get("character").?.integer);
+    var tiny: [24]u8 = undefined;
+    try testing.expectError(error.OutputTooSmall, buildPositionRequest(&tiny, 1, method_definition, "file:///ws/a.ts", 0, 0));
+}
+
+test "extract hover handles string object and array contents" {
+    var hover: HoverText = .{};
+    try extractHover("{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"contents\":\"plain text hover\"}}", &test_scratch, &hover);
+    try testing.expect(hover.found);
+    try testing.expectEqualStrings("plain text hover", hover.text());
+
+    try extractHover("{\"id\":3,\"result\":{\"contents\":{\"kind\":\"markdown\",\"value\":\"```ts\\nconst answer: number\\n```\\nThe answer.\"}}}", &test_scratch, &hover);
+    try testing.expect(hover.found);
+    try testing.expectEqualStrings("const answer: number\nThe answer.", hover.text());
+
+    try extractHover("{\"id\":3,\"result\":{\"contents\":[\"first\",{\"language\":\"ts\",\"value\":\"second\"},42]}}", &test_scratch, &hover);
+    try testing.expect(hover.found);
+    try testing.expectEqualStrings("first\n\nsecond", hover.text());
+}
+
+test "extract hover scrubs markdown syntax to plain text" {
+    var hover: HoverText = .{};
+    try extractHover("{\"id\":1,\"result\":{\"contents\":\"# Heading\\n`inline` code\\n```\\nfenced line\\n```\\n  ## sub\"}}", &test_scratch, &hover);
+    try testing.expect(hover.found);
+    // Fence lines dropped, backticks removed, heading markers stripped.
+    try testing.expectEqualStrings("Heading\ninline code\nfenced line\nsub", hover.text());
+}
+
+test "extract hover reports null results errors and empties as not found" {
+    var hover: HoverText = .{};
+    try extractHover("{\"id\":1,\"result\":null}", &test_scratch, &hover);
+    try testing.expect(!hover.found);
+    try extractHover("{\"id\":1,\"error\":{\"code\":-32601,\"message\":\"nope\"}}", &test_scratch, &hover);
+    try testing.expect(!hover.found);
+    try extractHover("{\"id\":1,\"result\":{\"contents\":\"\"}}", &test_scratch, &hover);
+    try testing.expect(!hover.found);
+    try extractHover("{\"id\":1,\"result\":{\"contents\":\"```\\n```\"}}", &test_scratch, &hover);
+    try testing.expect(!hover.found);
+}
+
+test "extract hover rejects malformed shapes without crashing" {
+    var hover: HoverText = .{};
+    try testing.expectError(error.MalformedMessage, extractHover("{\"id\":1}", &test_scratch, &hover));
+    try testing.expectError(error.MalformedMessage, extractHover("{\"id\":1,\"result\":42}", &test_scratch, &hover));
+    try testing.expectError(error.MalformedMessage, extractHover("{\"id\":1,\"result\":{}}", &test_scratch, &hover));
+    try testing.expectError(error.MalformedMessage, extractHover("{\"id\":1,\"result\":{\"contents\":17}}", &test_scratch, &hover));
+    try testing.expectError(error.MalformedMessage, extractHover("{\"id\":1,\"result\":{\"contents\":{\"kind\":\"markdown\"}}}", &test_scratch, &hover));
+    try testing.expectError(error.MalformedMessage, extractHover("not json", &test_scratch, &hover));
+}
+
+test "extract hover bounds output and flags truncation" {
+    const payload_buf = try testing.allocator.alloc(u8, 8 * 1024);
+    defer testing.allocator.free(payload_buf);
+    const long_text = [_]u8{'h'} ** (max_hover_bytes + 200);
+    const payload = try std.fmt.bufPrint(payload_buf, "{{\"id\":1,\"result\":{{\"contents\":\"{s}\"}}}}", .{long_text});
+    var hover: HoverText = .{};
+    try extractHover(payload, &test_scratch, &hover);
+    try testing.expect(hover.found);
+    try testing.expect(hover.truncated);
+    try testing.expectEqual(max_hover_bytes, hover.text().len);
+}
+
+test "extract definition takes the first valid Location or LocationLink" {
+    const location = (try extractDefinition("{\"id\":2,\"result\":{\"uri\":\"file:///ws/a.ts\",\"range\":{\"start\":{\"line\":4,\"character\":2},\"end\":{\"line\":4,\"character\":9}}}}", &test_scratch)).?;
+    try testing.expectEqualStrings("file:///ws/a.ts", location.uri());
+    try testing.expectEqual(@as(u32, 4), location.line);
+    try testing.expectEqual(@as(u32, 2), location.character);
+
+    const array = (try extractDefinition("{\"id\":2,\"result\":[{\"uri\":\"file:///ws/b.ts\",\"range\":{\"start\":{\"line\":1,\"character\":0},\"end\":{\"line\":1,\"character\":1}}},{\"uri\":\"file:///ws/c.ts\",\"range\":{\"start\":{\"line\":9,\"character\":0},\"end\":{\"line\":9,\"character\":1}}}]}", &test_scratch)).?;
+    try testing.expectEqualStrings("file:///ws/b.ts", array.uri());
+    try testing.expectEqual(@as(u32, 1), array.line);
+
+    const link = (try extractDefinition("{\"id\":2,\"result\":[{\"targetUri\":\"file:///ws/link.ts\",\"targetRange\":{\"start\":{\"line\":7,\"character\":1},\"end\":{\"line\":8,\"character\":0}},\"targetSelectionRange\":{\"start\":{\"line\":7,\"character\":6},\"end\":{\"line\":7,\"character\":10}}}]}", &test_scratch)).?;
+    try testing.expectEqualStrings("file:///ws/link.ts", link.uri());
+    try testing.expectEqual(@as(u32, 7), link.line);
+    try testing.expectEqual(@as(u32, 6), link.character);
+}
+
+test "extract definition skips malformed entries and reports honest misses" {
+    try testing.expectEqual(null, try extractDefinition("{\"id\":2,\"result\":null}", &test_scratch));
+    try testing.expectEqual(null, try extractDefinition("{\"id\":2,\"result\":[]}", &test_scratch));
+    try testing.expectEqual(null, try extractDefinition("{\"id\":2,\"error\":{\"code\":1,\"message\":\"x\"}}", &test_scratch));
+    try testing.expectEqual(null, try extractDefinition("{\"id\":2,\"result\":{\"uri\":\"file:///ws/a.ts\"}}", &test_scratch));
+    try testing.expectEqual(null, try extractDefinition("{\"id\":2,\"result\":[42,{\"uri\":\"\",\"range\":{}},{\"targetUri\":\"file:///ws/x.ts\"}]}", &test_scratch));
+    // Bad first entry, good second: first VALID entry wins.
+    const recovered = (try extractDefinition("{\"id\":2,\"result\":[{\"uri\":\"file:///ws/bad.ts\",\"range\":{\"start\":{\"line\":-1,\"character\":0},\"end\":{\"line\":0,\"character\":0}}},{\"uri\":\"file:///ws/good.ts\",\"range\":{\"start\":{\"line\":3,\"character\":0},\"end\":{\"line\":3,\"character\":4}}}]}", &test_scratch)).?;
+    try testing.expectEqualStrings("file:///ws/good.ts", recovered.uri());
+    var long_buf: [max_uri_bytes + 256]u8 = undefined;
+    const long_uri_payload = try std.fmt.bufPrint(&long_buf, "{{\"id\":2,\"result\":{{\"uri\":\"{s}\",\"range\":{{\"start\":{{\"line\":0,\"character\":0}},\"end\":{{\"line\":0,\"character\":0}}}}}}}}", .{[_]u8{'u'} ** (max_uri_bytes + 1)});
+    try testing.expectEqual(null, try extractDefinition(long_uri_payload, &test_scratch));
+    try testing.expectError(error.MalformedMessage, extractDefinition("{\"id\":2}", &test_scratch));
+    try testing.expectError(error.MalformedMessage, extractDefinition("{\"id\":2,\"result\":\"nope\"}", &test_scratch));
+    try testing.expectError(error.MalformedMessage, extractDefinition("garbage", &test_scratch));
+}
+
+test "extract completion reads plain arrays and CompletionList objects" {
+    var page: CompletionPage = .{};
+    try extractCompletion("{\"id\":4,\"result\":[{\"label\":\"toFixed\",\"insertText\":\"toFixed($0)\"},{\"label\":\"toString\"}]}", &test_scratch, &page);
+    try testing.expectEqual(@as(usize, 2), page.count);
+    try testing.expect(!page.is_incomplete);
+    try testing.expectEqualStrings("toFixed", page.item(0).?.label());
+    try testing.expectEqualStrings("toFixed($0)", page.item(0).?.insertText());
+    // insertText defaults to the label when the server omits it.
+    try testing.expectEqualStrings("toString", page.item(1).?.insertText());
+
+    try extractCompletion("{\"id\":4,\"result\":{\"isIncomplete\":true,\"items\":[{\"label\":\"answer\"}]}}", &test_scratch, &page);
+    try testing.expectEqual(@as(usize, 1), page.count);
+    try testing.expect(page.is_incomplete);
+}
+
+test "extract completion bounds the list skips malformed items and reports misses" {
+    var page: CompletionPage = .{};
+    try extractCompletion("{\"id\":4,\"result\":null}", &test_scratch, &page);
+    try testing.expectEqual(@as(usize, 0), page.count);
+    try extractCompletion("{\"id\":4,\"error\":{\"code\":1,\"message\":\"x\"}}", &test_scratch, &page);
+    try testing.expectEqual(@as(usize, 0), page.count);
+
+    try extractCompletion("{\"id\":4,\"result\":[42,{\"noLabel\":true},{\"label\":\"\"},{\"label\":\"ok\",\"insertText\":7}]}", &test_scratch, &page);
+    try testing.expectEqual(@as(usize, 1), page.count);
+    try testing.expectEqual(@as(usize, 3), page.skipped_malformed);
+    try testing.expectEqualStrings("ok", page.item(0).?.insertText()); // non-string insertText ignored
+
+    // Overflow: cap at max_completion_items, count the dropped tail,
+    // and bound label/insertText copies.
+    const payload_buf = try testing.allocator.alloc(u8, 32 * 1024);
+    defer testing.allocator.free(payload_buf);
+    var len: usize = 0;
+    const head = "{\"id\":4,\"result\":[";
+    @memcpy(payload_buf[len..][0..head.len], head);
+    len += head.len;
+    const long_label = [_]u8{'L'} ** (max_completion_label_bytes + 30);
+    const long_insert = [_]u8{'I'} ** (max_completion_insert_bytes + 30);
+    var index: usize = 0;
+    while (index < max_completion_items + 5) : (index += 1) {
+        const entry = try std.fmt.bufPrint(
+            payload_buf[len..],
+            "{s}{{\"label\":\"{s}\",\"insertText\":\"{s}\"}}",
+            .{ if (index == 0) "" else ",", long_label, long_insert },
+        );
+        len += entry.len;
+    }
+    @memcpy(payload_buf[len..][0..2], "]}");
+    len += 2;
+    try extractCompletion(payload_buf[0..len], &test_scratch, &page);
+    try testing.expectEqual(max_completion_items, page.count);
+    try testing.expectEqual(@as(usize, 5), page.dropped);
+    try testing.expectEqual(max_completion_label_bytes, page.item(0).?.label().len);
+    try testing.expectEqual(max_completion_insert_bytes, page.item(0).?.insertText().len);
+
+    try testing.expectError(error.MalformedMessage, extractCompletion("{\"id\":4}", &test_scratch, &page));
+    try testing.expectError(error.MalformedMessage, extractCompletion("{\"id\":4,\"result\":7}", &test_scratch, &page));
+    try testing.expectError(error.MalformedMessage, extractCompletion("{\"id\":4,\"result\":{\"isIncomplete\":false}}", &test_scratch, &page));
+    try testing.expectError(error.MalformedMessage, extractCompletion("{\"id\":4,\"result\":{\"items\":\"nope\"}}", &test_scratch, &page));
+    try testing.expectError(error.MalformedMessage, extractCompletion("nope", &test_scratch, &page));
 }
 
 // ------------------------------------------------------------ transport

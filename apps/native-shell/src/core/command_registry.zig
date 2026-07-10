@@ -149,6 +149,8 @@ pub const catalog = [_]Command{
     .{ .id = "copy_document", .title = "Copy Document" },
     .{ .id = "go_to_symbol", .title = "Go to Symbol in File", .hint = "Cmd+Shift+O", .feature_id = "feature.symbol-search" },
     .{ .id = "go_to_definition", .title = "Go to Definition", .hint = "Cmd+Shift+D", .feature_id = "feature.go-to-definition" },
+    .{ .id = "hover_info", .title = "Show Hover Info", .feature_id = "feature.hover" },
+    .{ .id = "completion_at_cursor", .title = "Complete at Cursor", .feature_id = "feature.completion-registry" },
     .{ .id = "open_outline", .title = "Open Outline", .feature_id = "feature.outline" },
     .{ .id = "toggle_bottom_panel", .title = "Toggle Bottom Panel", .hint = "Cmd+J", .feature_id = "feature.panel" },
     .{ .id = "clear_output", .title = "Clear Output", .feature_id = "feature.output-panel" },

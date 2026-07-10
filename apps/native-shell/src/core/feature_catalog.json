@@ -352,7 +352,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "workbench",
     "implementation": "native",
     "priority": "P1"
@@ -1187,7 +1187,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "prototype",
+    "status": "working",
     "category": "editor",
     "implementation": "process",
     "priority": "P0"
@@ -2647,7 +2647,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "prototype",
     "category": "lsp",
     "implementation": "native",
     "priority": "P0"

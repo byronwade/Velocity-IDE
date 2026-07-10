@@ -474,6 +474,225 @@ test "lsp broker spawn, handshake, and diagnostics reach the problems panel" {
     try testing.expect(!model.governor.recordForEffect(model_mod.lsp_broker_effect_key).?.alive);
 }
 
+/// Ack queued LSP send POSTs (serial pump) until none stay pending.
+fn drainLspSends(model: *Model, fx: *model_mod.Effects) !void {
+    var guard: usize = 0;
+    while (fx.pendingFetchCount() > 0 and guard < 32) : (guard += 1) {
+        const request = fx.pendingFetchAt(fx.pendingFetchCount() - 1).?;
+        try fx.feedResponse(request.key, 204, "");
+        model_mod.updateFx(model, .{ .lsp_send_response = .{ .key = request.key, .outcome = .ok, .status = 204 } }, fx);
+    }
+    try testing.expect(guard < 32);
+}
+
+/// Deliver one broker-framed LSP server message into the model.
+fn feedLspServerMessage(model: *Model, fx: *model_mod.Effects, buf: []u8, comptime fmt: []const u8, args: anytype) !void {
+    const line = try std.fmt.bufPrint(buf, "{{\"event\":\"message\",\"payload\":" ++ fmt ++ "}}", args);
+    model_mod.updateFx(model, .{ .lsp_broker_line = .{
+        .key = model_mod.lsp_broker_effect_key,
+        .line = line,
+    } }, fx);
+}
+
+/// Boot a fake-broker LSP session to running with src/lib/db.ts open
+/// and the didOpen acked (mirrors the proven handshake test above).
+fn bootLspSession(model: *Model, fx: *model_mod.Effects) !void {
+    model.lsp_test_paths = .{ .broker = "/opt/velocity/velocity-lsp-broker", .server = "/opt/velocity/tsls" };
+    model_mod.updateFx(model, .{ .open_project = "acme-dashboard" }, fx);
+    const ts_id = workspaceNodeId(model, "src/lib/db.ts").?;
+    model_mod.updateFx(model, .{ .select_file = ts_id }, fx);
+    model_mod.updateFx(model, .toggle_lsp, fx);
+    model_mod.updateFx(model, .{ .lsp_broker_line = .{
+        .key = model_mod.lsp_broker_effect_key,
+        .line = "{\"event\":\"listening\",\"port\":38617,\"token\":\"fee8c75f408e830831425370bb633345\"}",
+    } }, fx);
+    try drainLspSends(model, fx); // initialize
+    var line_buf: [256]u8 = undefined;
+    try feedLspServerMessage(model, fx, &line_buf, "{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"capabilities\":{{}}}}}}", .{});
+    try testing.expectEqualStrings("running", model.lspStatusLabel());
+    try drainLspSends(model, fx); // initialized + didOpen
+}
+
+test "lsp hover request round-trips into the bounded hover panel" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    defer model.deinit();
+    try bootLspSession(&model, &fx);
+
+    // Position contract: 1-based focus line -> 0-based LSP line.
+    model.editor_focus_line = 3;
+    model_mod.updateFx(&model, .{ .run_command = "hover_info" }, &fx);
+    const hover_request = lastPendingFetch(&fx).?;
+    try testing.expect(std.mem.indexOf(u8, hover_request.body, "\"method\":\"textDocument/hover\"") != null);
+    try testing.expect(std.mem.indexOf(u8, hover_request.body, "\"line\":2") != null);
+    try testing.expect(std.mem.indexOf(u8, hover_request.body, "\"id\":2") != null);
+    try testing.expect(std.mem.indexOf(u8, hover_request.body, "src/lib/db.ts") != null);
+    try drainLspSends(&model, &fx);
+
+    // Markdown response renders scrubbed plain text in the panel.
+    var line_buf: [512]u8 = undefined;
+    try feedLspServerMessage(&model, &fx, &line_buf, "{{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{{\"contents\":{{\"kind\":\"markdown\",\"value\":\"```ts\\nconst answer: number\\n```\\nThe `answer` doc.\"}}}}}}", .{});
+    try testing.expect(model.hover_visible);
+    try testing.expectEqual(@as(usize, 2), model.hover_lines.len);
+    try testing.expectEqualStrings("const answer: number", model.hover_lines[0].text);
+    try testing.expectEqualStrings("The answer doc.", model.hover_lines[1].text);
+    try testing.expect(std.mem.indexOf(u8, model.hover_status, "L3 via LSP") != null);
+    try testing.expectEqualStrings("Hover info", model.toast);
+
+    // Dismiss clears the panel.
+    model_mod.updateFx(&model, .dismiss_hover_info, &fx);
+    try testing.expect(!model.hover_visible);
+    try testing.expectEqual(@as(usize, 0), model.hover_lines.len);
+
+    // A null result is an honest miss, not a panel.
+    model_mod.updateFx(&model, .{ .run_command = "hover_info" }, &fx);
+    try drainLspSends(&model, &fx);
+    try feedLspServerMessage(&model, &fx, &line_buf, "{{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":null}}", .{});
+    try testing.expect(!model.hover_visible);
+    try testing.expectEqualStrings("No hover info at the focus line", model.toast);
+}
+
+test "lsp definition navigates in-workspace hits and rejects cross-root targets" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    defer model.deinit();
+    try bootLspSession(&model, &fx);
+
+    // LSP running -> go_to_definition sends textDocument/definition.
+    model.find_query.set("createSession");
+    model_mod.updateFx(&model, .go_to_definition, &fx);
+    try testing.expectEqualStrings("Definition: asking the language server...", model.toast);
+    const def_request = lastPendingFetch(&fx).?;
+    try testing.expect(std.mem.indexOf(u8, def_request.body, "\"method\":\"textDocument/definition\"") != null);
+    try testing.expect(std.mem.indexOf(u8, def_request.body, "\"id\":2") != null);
+    try drainLspSends(&model, &fx);
+
+    // In-workspace Location -> open the file at the (1-based) line.
+    var line_buf: [1024]u8 = undefined;
+    try feedLspServerMessage(&model, &fx, &line_buf, "{{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":[{{\"uri\":\"file://{s}/src/server/auth.ts\",\"range\":{{\"start\":{{\"line\":2,\"character\":9}},\"end\":{{\"line\":2,\"character\":22}}}}}}]}}", .{model.lsp.?.rootAbs()});
+    try testing.expectEqualStrings("src/server/auth.ts", model.activeTabPath());
+    try testing.expectEqual(@as(u32, 3), model.editor_focus_line);
+    try testing.expectEqualStrings("Definition via LSP", model.toast);
+    try drainLspSends(&model, &fx); // didClose db.ts + didOpen auth.ts
+
+    // Cross-root target -> honest toast, no navigation.
+    model_mod.updateFx(&model, .go_to_definition, &fx);
+    const second_request = lastPendingFetch(&fx).?;
+    try testing.expect(std.mem.indexOf(u8, second_request.body, "\"id\":3") != null);
+    try drainLspSends(&model, &fx);
+    try feedLspServerMessage(&model, &fx, &line_buf, "{{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{{\"uri\":\"file:///tmp/outside.ts\",\"range\":{{\"start\":{{\"line\":0,\"character\":0}},\"end\":{{\"line\":0,\"character\":1}}}}}}}}", .{});
+    try testing.expectEqualStrings("Definition is outside the workspace", model.toast);
+    try testing.expectEqualStrings("src/server/auth.ts", model.activeTabPath());
+}
+
+test "go to definition falls back to text search when lsp is off" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    defer model.deinit();
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    try testing.expect(model.lsp == null);
+
+    model.find_query.set("Chart");
+    model_mod.updateFx(&model, .go_to_definition, &fx);
+    try testing.expectEqualStrings("done", model.def_status);
+    try testing.expectEqualStrings("Definition via text search", model.toast);
+
+    // Hover and completion are honest about needing the session.
+    model_mod.updateFx(&model, .{ .run_command = "hover_info" }, &fx);
+    try testing.expect(std.mem.startsWith(u8, model.toast, "Hover needs the language server"));
+    model_mod.updateFx(&model, .{ .run_command = "completion_at_cursor" }, &fx);
+    try testing.expect(std.mem.startsWith(u8, model.toast, "Completion needs the language server"));
+}
+
+test "lsp completion overlay lists items and inserts by the line-end contract" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    defer model.deinit();
+    try bootLspSession(&model, &fx);
+
+    model_mod.updateFx(&model, .{ .run_command = "completion_at_cursor" }, &fx);
+    const completion_request = lastPendingFetch(&fx).?;
+    try testing.expect(std.mem.indexOf(u8, completion_request.body, "\"method\":\"textDocument/completion\"") != null);
+    try testing.expect(std.mem.indexOf(u8, completion_request.body, "\"id\":2") != null);
+    try drainLspSends(&model, &fx);
+
+    var line_buf: [512]u8 = undefined;
+    try feedLspServerMessage(&model, &fx, &line_buf, "{{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{{\"isIncomplete\":false,\"items\":[{{\"label\":\"createSession\",\"insertText\":\"createSession()\"}},{{\"label\":\"other\"}}]}}}}", .{});
+    try testing.expect(model.completion_open);
+    try testing.expectEqual(@as(usize, 2), model.completion_items.len);
+    try testing.expectEqualStrings("createSession", model.completion_items[0].label);
+    try testing.expectEqualStrings("createSession()", model.completion_items[0].insert);
+    try testing.expect(std.mem.indexOf(u8, model.completion_status, "2 items") != null);
+
+    // Trailing-word prefix replaced at the focus line's end.
+    model.document.set("line one\nconst v = crea");
+    model.completion_line = 2;
+    model_mod.updateFx(&model, .{ .insert_completion = 1 }, &fx);
+    try testing.expectEqualStrings("line one\nconst v = createSession()", model.document.text());
+    try testing.expect(!model.completion_open);
+    // The mutation flows to the server as a coalesced didChange.
+    const did_change = lastPendingFetch(&fx).?;
+    try testing.expect(std.mem.indexOf(u8, did_change.body, "textDocument/didChange") != null);
+    try drainLspSends(&model, &fx);
+
+    // No prefix match -> append at the line's end (second round).
+    model_mod.updateFx(&model, .{ .run_command = "completion_at_cursor" }, &fx);
+    try drainLspSends(&model, &fx);
+    try feedLspServerMessage(&model, &fx, &line_buf, "{{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":[{{\"label\":\"zzz\",\"insertText\":\"zzz()\"}}]}}", .{});
+    try testing.expect(model.completion_open);
+    model.document.set("const q = 1;");
+    model.completion_line = 1;
+    model_mod.updateFx(&model, .{ .insert_completion = 1 }, &fx);
+    try testing.expectEqualStrings("const q = 1;zzz()", model.document.text());
+
+    // Escape closes the overlay when reopened.
+    model_mod.updateFx(&model, .{ .run_command = "completion_at_cursor" }, &fx);
+    try drainLspSends(&model, &fx);
+    try feedLspServerMessage(&model, &fx, &line_buf, "{{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":[{{\"label\":\"a\"}}]}}", .{});
+    try testing.expect(model.completion_open);
+    model_mod.updateFx(&model, .dismiss_overlay, &fx);
+    try testing.expect(!model.completion_open);
+}
+
+test "lsp request timeouts surface honest toasts without killing the session" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    defer model.deinit();
+    try bootLspSession(&model, &fx);
+
+    model_mod.updateFx(&model, .{ .run_command = "hover_info" }, &fx);
+    try drainLspSends(&model, &fx);
+    // Two heartbeat ticks advance the session clock past the 15 s
+    // request deadline; the hover expires with a toast, session stays.
+    model_mod.updateFx(&model, .{ .lsp_heartbeat_timer = .{
+        .key = model_mod.lsp_heartbeat_timer_key,
+        .outcome = .fired,
+    } }, &fx);
+    try testing.expect(!std.mem.eql(u8, model.toast, "Hover timed out"));
+    model_mod.updateFx(&model, .{ .lsp_heartbeat_timer = .{
+        .key = model_mod.lsp_heartbeat_timer_key,
+        .outcome = .fired,
+    } }, &fx);
+    try testing.expectEqualStrings("Hover timed out", model.toast);
+    try testing.expectEqualStrings("running", model.lspStatusLabel());
+    try testing.expect(model.lsp != null);
+
+    // A late response for the expired id is dropped without a panel.
+    var line_buf: [256]u8 = undefined;
+    try feedLspServerMessage(&model, &fx, &line_buf, "{{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{{\"contents\":\"late\"}}}}", .{});
+    try testing.expect(!model.hover_visible);
+}
+
 test "lsp teardown on workspace close kills the feature and cancels the timer" {
     var fx = model_mod.Effects.init(testing.allocator);
     defer fx.deinit();
