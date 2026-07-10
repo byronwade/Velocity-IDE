@@ -47,16 +47,6 @@ native automate widget-click main-canvas "$OPEN_ID"
 native automate wait
 capture 02-shell-explorer-dark
 
-# High-contrast shell. Deterministic from the boot dark theme: the cycle is
-# dark -> light -> high_contrast, so two switches land on high contrast; a
-# third returns to dark for the rest of the tour.
-native automate native-command switch_theme main-canvas || true
-native automate native-command switch_theme main-canvas || true
-native automate wait || true
-capture 17-shell-high-contrast
-native automate native-command switch_theme main-canvas || true
-native automate wait || true
-
 # 3. Integrated terminal panel.
 native automate shortcut toggle_terminal
 native automate assert --timeout-ms 5000 'Terminal command'
@@ -74,29 +64,49 @@ native automate assert --timeout-ms 5000 'Command search'
 capture 05-command-palette-dark
 native automate shortcut escape
 
-# 6. Settings page, then flip to the light theme through the real toggle.
-SETTINGS_ID="$(find_widget "Application settings")"
-test -n "$SETTINGS_ID"
-native automate widget-click main-canvas "$SETTINGS_ID"
+# The theme cycles dark -> light -> high_contrast -> dark through the real
+# Settings "Change color theme" toggle. Re-resolve the widget id after every
+# click (ids move on re-render). Boot theme is dark.
+theme_click() {
+  local tid
+  tid="$(find_widget "Change color theme")"
+  test -n "$tid" && native automate widget-click main-canvas "$tid" || true
+  native automate wait || true
+}
+open_settings_view() {
+  local sid
+  sid="$(find_widget "Application settings")"
+  test -n "$sid" && native automate widget-click main-canvas "$sid" || true
+  native automate wait || true
+}
+open_explorer_view() {
+  local eid
+  eid="$(find_widget "Explorer: workspace files")"
+  test -n "$eid" && native automate widget-click main-canvas "$eid" || true
+  native automate wait || true
+}
+
+# 6. Settings page (dark).
+open_settings_view
 native automate assert --timeout-ms 5000 'Settings search'
 capture 06-settings-dark
 
-THEME_ID="$(find_widget "Change color theme")"
-test -n "$THEME_ID"
-native automate widget-click main-canvas "$THEME_ID"
-native automate wait
+# 7. Light theme via the real toggle (dark -> light), settings + shell.
+theme_click
 capture 07-settings-light
-
-# 7. Shell in the light theme.
-EXPLORER_ID="$(find_widget "Explorer: workspace files")"
-test -n "$EXPLORER_ID"
-native automate widget-click main-canvas "$EXPLORER_ID"
-native automate wait
+open_explorer_view
 capture 08-shell-light
 
-# Back to dark for the remaining panel captures.
-native automate native-command switch_theme main-canvas || true
-native automate wait
+# High-contrast via the same toggle (light -> high_contrast), captured as shell.
+open_settings_view
+theme_click
+open_explorer_view
+capture 17-shell-high-contrast
+
+# Return to dark (high_contrast -> dark) for the remaining captures.
+open_settings_view
+theme_click
+open_explorer_view
 native automate native-command switch_theme main-canvas || true
 native automate wait
 
