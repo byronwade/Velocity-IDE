@@ -1,8 +1,11 @@
-# LSP Sidecar Broker (spike)
+# LSP Sidecar Broker
 
-Status: transport spike — proven end-to-end by `./spike.sh` (unit tests +
-fake server + real `typescript-language-server` handshake). Not yet wired
-into the app.
+Status: production-shaped transport, proven end-to-end by `./spike.sh`
+(unit tests + fake server + kill-escalation scenarios + real
+`typescript-language-server` handshake through the heartbeat-mode
+broker). The pure client-side state machine the app drives lives at
+`../src/lsp/broker_transport.zig`; only the effect wiring in
+`app_model.zig` remains (checklist below).
 
 ## Why this exists
 
@@ -22,16 +25,18 @@ language session — this broker — and the broker owns the server.
   ─────────────────                     ──────────                ──────────
   spawn .lines  ◄── stdout NDJSON ────  re-framer  ◄── stdout ──  Content-Length
   fetch POST    ──► 127.0.0.1:<port> ─► reassembly ─── stdin ──►  Content-Length
-  (stdin pipe held open; closing it = app death = broker+server die)
+  fetch POST /hb every T ─────────────► liveness   (SDK closes child stdin;
+  fetch POST /shutdown ───────────────► teardown    heartbeats replace it)
 ```
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `lsp_broker.zig` | The broker. Single file, `std` only, Zig 0.16. Unit tests inline (`zig test lsp_broker.zig`, 18 tests). |
+| `lsp_broker.zig` | The broker. Single file, `std` only, Zig 0.16. Unit tests inline (`zig test lsp_broker.zig`, 22 tests). |
+| `../src/lsp/broker_transport.zig` | Pure client state machine for the app: NDJSON event parsing, chunk (re)assembly, POST planning, LSP session/lifecycle bookkeeping, typed v1 extract/build. `zig test broker_transport.zig`, 49 tests (+3 via `jsonrpc.zig`). No SDK calls, no I/O. |
 | `fake_lsp.zig` | Tiny Content-Length stdio server for the e2e proof (answers `initialize`, echoes `didOpen` as diagnostics). |
-| `spike.sh` | Builds both, runs the transport end-to-end, prints `RESULT: PASS/FAIL`. |
+| `spike.sh` | Builds both, runs the transport + lifecycle scenarios end-to-end, prints `RESULT: PASS/FAIL`. |
 
 Build (toolchain already present in the repo image):
 
@@ -47,8 +52,20 @@ REAL_LSP="typescript-language-server --stdio" ./spike.sh    # + real handshake
 ### Startup
 
 ```
-lsp_broker <server-cmd> [args...]     # ≤16 args
+lsp_broker [--liveness=stdin|http] [--hb-window-ms=N] [--grace-ms=N] [--] <server-cmd> [args...]
 ```
+
+- `--liveness=stdin` (default): exit when the broker's stdin hits EOF.
+  Correct for CLI/supervisor use where the parent holds the pipe open.
+- `--liveness=http`: **required under the SDK** (it always closes a
+  spawned child's stdin — `effects.zig` writes the one-shot then
+  closes). Stdin EOF is ignored; instead the app must `POST /hb` at
+  least every `--hb-window-ms` (default 30000, must be > 0). A lapse
+  tears down the server tree and exits.
+- `--grace-ms` (default 3000): SIGTERM → SIGKILL escalation grace used
+  on every exit path.
+- `--` separates broker flags from a server command that itself starts
+  with `--`. Server argv ≤ 16 args.
 
 The broker binds `127.0.0.1:0` (ephemeral, localhost only), generates a
 random 128-bit token, spawns the server (own process group, stdio piped,
@@ -67,10 +84,14 @@ One JSON object per line, never longer than 256 KiB. Events:
 | `listening` | `{"event":"listening","port":N,"token":"hex32"}` | First line. Where to POST + auth token. |
 | `message` | `{"event":"message","payload":{...}}` | One complete LSP message from the server, embedded **raw** (not string-escaped). Raw `\n`/`\r` inter-token whitespace is replaced by spaces so the payload is one line; string contents are untouched (valid JSON already escapes control chars). Emitted when the sanitized payload is ≤ 192 KiB. |
 | `message_chunk` | `{"event":"message_chunk","id":N,"seq":I,"last":bool,"data_b64":"..."}` | Server message too big for one line. Chunks of ≤ 96 KiB raw, base64-encoded. Concatenate decoded chunks for one `id` in `seq` order; `last:true` completes the message. Chunk ids increase monotonically per broker run. |
-| `error` | `{"event":"error","code":"...","detail":"..."}` | Non-fatal broker-level fault. Codes: `oversized_frame` (server declared > 1 MiB; payload dropped, stream continues), `malformed_frame` (framing corruption; decoder resynced to the next `Content-Length`), `decode_overflow`, `server_stdin_failed`, `spawn_failed`, `emit_failed`. |
-| `server_exit` | `{"event":"server_exit","reason":"exited"\|"signal"\|"unknown","code":N}` | The language server ended. Always the broker's last line; the broker then exits. |
+| `error` | `{"event":"error","code":"...","detail":"..."}` | Non-fatal broker-level fault (except `heartbeat_lapsed`, which precedes a `broker_exit`). Codes: `oversized_frame` (server declared > 1 MiB; payload dropped, stream continues), `malformed_frame` (framing corruption; decoder resynced to the next `Content-Length`), `decode_overflow`, `server_stdin_failed`, `spawn_failed`, `emit_failed`, `heartbeat_lapsed`. |
+| `server_exit` | `{"event":"server_exit","reason":"exited"\|"signal"\|"unknown","code":N}` | The language server ended **on its own**. Last line; the broker reaps stragglers and exits. |
+| `broker_exit` | `{"event":"broker_exit","reason":"stdin_closed"\|"heartbeat_lapsed"\|"shutdown_requested"}` | The **broker** initiated teardown. Last line; the server tree is escalate-killed and the broker exits 0. A broker-initiated teardown emits `broker_exit`, not `server_exit`. |
 
-### HTTP POST (app → server)
+Exactly one of `server_exit` / `broker_exit` is the final line of every
+run (after `listening` was printed).
+
+### HTTP POST (app → broker)
 
 All requests: `POST`, header `X-Broker-Token: <token>` (exact echo of the
 startup token). Responses carry `Connection: close`; use one connection
@@ -87,6 +108,14 @@ per request (matches SDK `fetch`).
   assembly (retry = start over). One assembly at a time per broker —
   the app must not interleave two chunked sends (SDK side should
   serialize; it has one fetch slot per send anyway).
+  (`broker_transport.zig` plans client chunks at 48 KiB for header
+  headroom under the SDK's 64 KiB fetch cap.)
+- `POST /hb` — heartbeat; empty body. Re-arms the `--liveness=http`
+  window. Accepted (and harmless) in stdin mode too. `204`.
+- `POST /shutdown` — orderly teardown: replies `204`, emits
+  `broker_exit`, escalate-kills the server tree, exits 0. Works in both
+  liveness modes. Use for app-side teardown when `cancel(key)` is not
+  desired (e.g. graceful shutdown while the app keeps running).
 
 Status codes: `204` accepted · `400` malformed · `401` bad/missing token ·
 `404` unknown path · `405` not POST · `409` chunk out of order / id
@@ -101,7 +130,7 @@ closed (server is dying; expect `server_exit`).
 | LSP message payload (either direction) | 1 MiB (`max_payload_bytes`) — beyond: NDJSON `error` event / HTTP 413 |
 | Content-Length header block | 4 KiB |
 | Inline NDJSON payload | 192 KiB (larger → `message_chunk`) |
-| POST body | 64 KiB (SDK fetch cap) |
+| POST body | 64 KiB (SDK fetch cap; client chunks at 48 KiB) |
 | HTTP request head | 8 KiB |
 
 Framing corruption never kills the session: the decoder skips oversized
@@ -110,30 +139,34 @@ payloads without buffering them and resyncs to the next plausible
 
 ## Lifecycle / kill semantics
 
-- The broker exits when **either**:
-  1. its **stdin closes** (the app died or cancelled the spawn effect):
-     it SIGTERMs the server's process group and exits 0; or
-  2. the **server exits** (stdout EOF): it reaps the child, emits
-     `server_exit`, and exits 0.
-- The server is spawned with `pgid = 0` (its own process group), so the
-  broker kills `-pid` — the whole server tree (e.g. `typescript-language-server`
-  *and* its `tsserver` node child). Verified by `spike.sh`.
+The broker exits on the first of:
 
-### Process Governor ownership plan
+1. **stdin EOF** (`--liveness=stdin` only) — the app/supervisor died;
+2. **heartbeat lapse** (`--liveness=http` only) — no `/hb` within the
+   window (the window opens when the broker starts listening, so the
+   app gets one full window to send its first heartbeat);
+3. **POST /shutdown** — orderly app-requested teardown;
+4. **server exit** (stdout EOF) — the child is reaped and `server_exit`
+   emitted.
 
-The broker is the **one governed child** per language session:
+**Every** path runs the same escalation on the server's **process
+group** (the server is spawned with `pgid = 0`, so `-pid` reaches the
+whole tree, e.g. `typescript-language-server` *and* its `tsserver` node
+child):
 
-- Governor spawns it via the SDK `spawn` effect (`.lines`,
-  `max_line_bytes = 256 KiB`) and records the spawn key.
-- `cancel(key)` closes the broker's stdin → broker kills the server tree
-  → SDK delivers exactly one `on_exit`. No zombies: the broker always
-  waits on its child; the SDK worker always reaps the broker.
-- Server crash surfaces as `server_exit` + broker exit + `on_exit` —
-  the Governor's existing restart/backoff policy applies to the broker
-  spawn only; it never needs to know the server's pid.
-- Production hardening (not in spike): TERM → grace → KILL escalation,
-  and optionally `PR_SET_PDEATHSIG(SIGKILL)` on Linux as a belt-and-
-  braces backstop if the broker itself is SIGKILLed.
+```
+SIGTERM(-pgid)  →  poll up to --grace-ms (25 ms steps, reaping)  →  SIGKILL(-pgid)
+```
+
+Verified by `spike.sh` against a `trap "" TERM` server: teardown
+completes in ~grace ms with the tree gone. Clean trees short-circuit
+(TERM to a dead group returns immediately). Exit code is 0 on all
+orderly paths; 1 only when the child could not be waited.
+
+Backstop for broker crash/SIGKILL of the app: on Linux the broker arms
+`PR_SET_PDEATHSIG(SIGTERM)` plus a SIGTERM handler that SIGKILLs the
+server group and exits (async-signal-safe, no grace — this is the
+crash path; orderly teardown uses `/shutdown` or `cancel`).
 
 ## Threat notes
 
@@ -142,7 +175,8 @@ The broker is the **one governed child** per language session:
 - **Auth**: every POST must echo the 128-bit random per-run token
   (`X-Broker-Token`, length-guarded constant-time compare). The token
   travels only through the broker's stdout pipe to the app — other local
-  processes can see the port but cannot speak without the token.
+  processes can see the port but cannot speak without the token. This
+  includes `/hb` and `/shutdown` (no unauthenticated kill/keep-alive).
 - **Bounded everything**: fixed pre-allocated buffers; oversized input is
   rejected (never buffered), so a hostile/buggy server or client cannot
   balloon broker memory. No dynamic allocation after startup.
@@ -151,39 +185,73 @@ The broker is the **one governed child** per language session:
 - Payloads are treated as opaque bytes; the broker never parses message
   JSON (no parser attack surface beyond header/number parsing).
 
-## App-side integration contract (exact)
+## app_model integration checklist (exact)
 
-1. Governor `spawn`s `lsp_broker <server...>` with `output = .lines`,
-   `max_line_bytes = 256 * 1024`, keeping the spawn key. **Do not close
-   stdin conceptually** — the SDK's one-shot stdin write should be empty;
-   the pipe stays open until cancel. *(Verify: SDK closes child stdin
-   after the one-shot write — capability report says "written once, then
-   stdin closes". If so, pass a long-lived marker: the broker must be
-   given `--stay` … see Open risks #1 below.)*
-2. On first `on_line`: parse `listening`, store `port` + `token`.
-3. Send client→server messages with `fetch` POST as above; chunk at
-   > 64 KiB. Serialize chunked sends.
-4. On `on_line` events: `message` → feed payload to the existing
-   `src/lsp/jsonrpc.zig` / `broker.zig` session layer; `message_chunk` →
-   reassemble (mirror of `ChunkAssembler`); `error` → log/telemetry;
-   `server_exit` → mark session stopped.
-5. Teardown: `cancel(spawn_key)`. Exactly one `on_exit` follows.
+The pure half already exists: `src/lsp/broker_transport.zig`
+(`Transport`, `Session`, builders/extractors — all `zig test`-covered).
+The app model wires it to effects per the capability report's sidecar
+pattern (§2.2: sidecar stdout lines are the thread→loop injection
+channel; timers drive heartbeats/timeouts):
+
+1. **Spawn** (Governor-owned): feature id **`feature.lsp-broker`**
+   (already in `core/feature_registry.zig`, `max_processes` via
+   `feature.lsp-process-manager`). Governor records the effect key
+   (`spawnEffect`-style, like the terminal path), then Effects `spawn`:
+   - `argv = { "<sidecar bin>/lsp_broker", "--liveness=http",
+     "--hb-window-ms=30000", "--", "typescript-language-server",
+     "--stdio" }` (≤ 16 args, ≤ 2048 bytes total; no shell);
+   - `output = .lines`, `max_line_bytes = 256 * 1024`;
+   - `stdin = null` (the SDK closes it either way — that is why
+     liveness is http);
+   - `on_line` → Msg carrying the line; `on_exit` → Msg marking the
+     session dead (exactly one arrives, even after `cancel`).
+2. **Handshake**: create `Transport.init(reassembly_buf)` (1 MiB
+   buffer) per session. Feed every `on_line` into `transport.onLine`;
+   on `.listening`, build the URL prefix
+   `http://127.0.0.1:{transport.port}` and start the session.
+3. **Heartbeat timer**: one **repeating** Effects timer per live broker
+   (e.g. 10 s — window/3; timers cap at 16, same-key restart replaces).
+   `on_fire` → fetch `POST /hb`, empty body, header
+   `X-Broker-Token: transport.authToken()`. Also reuse the tick to call
+   `session.expireOverdue(now_ms, ...)` for request timeouts. Cancel
+   the timer when the session ends.
+4. **Sends**: `transport.planSend(payload)` → iterate `OutboundPost`s →
+   one `fetch` POST each (`/message` or `/chunk` + `X-Chunk-*` headers,
+   bodies ≤ 48 KiB, well under the 64 KiB fetch cap). Send chunk parts
+   serially (await each `on_response` before the next; one assembly at
+   a time per broker). Non-204 → log + `session.fail()`.
+5. **Receive**: `.lsp_message` → `classifyServerMessage`; route
+   `.response` ids through `session.onInitializeResponse` /
+   `onShutdownResponse` / `completeRequest`; `.publish_diagnostics` →
+   `extractPublishDiagnostics` into the diagnostics model (bounded
+   page); `.server_request` → reply MethodNotFound or ignore (v1);
+   `.broker_error` → output channel; `.server_exit` / `.broker_exit` →
+   mark stopped, cancel the heartbeat timer, let the Governor
+   restart/backoff policy decide (it only ever sees the broker spawn).
+6. **Lifecycle**: after `.listening` → `session.beginInitialize` +
+   `buildInitialize` (root URI via `buildFileUri`) → on ok response
+   send `buildInitialized` → document traffic
+   (`buildDidOpen/Change/Save/Close`, URIs from `buildFileUri`).
+   Teardown: `beginShutdown`/`buildShutdown` → `buildExit` → expect
+   `server_exit`; or fire-and-forget `POST /shutdown`; or
+   `cancel(spawn_key)` (broker dies → PDEATHSIG/heartbeat reap the
+   server). All three end in exactly one `on_exit`.
+7. **Permissions**: verify `app.zon` allows localhost fetch before
+   shipping (capability report flags this as the one unchecked
+   manifest interaction).
 
 ## Open risks for productionizing
 
-1. **Confirmed SDK conflict — stdin liveness cannot work under SDK
-   governance.** The installed SDK always leaves a spawned child with a
-   closed/EOF stdin: `effects.zig:3721` spawns with
-   `.stdin = if (slot.stdin_len > 0) .pipe else .ignore` (`.ignore` =
-   /dev/null → immediate EOF) and, for `.pipe`, writes the ≤ 4 KiB
-   one-shot then `stdin_file.close(io)` (`effects.zig:3745`). A broker
-   spawned by the SDK would see stdin EOF instantly and self-terminate.
-   Before app integration the broker needs a `--liveness=http` mode:
-   app `POST /ping` every T seconds, broker kills the tree after 3T
-   silence (transport unchanged, ~20 broker lines). Stdin mode remains
-   correct for spike.sh and non-SDK supervisors; `cancel(key)` teardown
-   is unaffected either way (the SDK kills+reaps the broker directly).
-2. Windows: raw-fd I/O and process groups are POSIX; a Windows build
-   needs Job Objects + WinSock variants of the I/O layer.
+1. ~~SDK closes child stdin → stdin liveness dies instantly~~ —
+   **resolved** by `--liveness=http` (+ `/hb`), proven in `spike.sh`
+   (broker survives stdin EOF, dies on lapse, tree reaped).
+2. Windows: raw-fd I/O, process groups, and PDEATHSIG are POSIX/Linux;
+   a Windows build needs Job Objects + WinSock variants of the I/O
+   layer.
 3. Single-assembly chunk POSTs assume one in-flight large send; if the
    app ever parallelizes sends per session, key assemblies by id.
+   (`Transport.planSend` already allocates distinct ids.)
+4. Heartbeat POSTs share the 16-slot effects budget with everything
+   else; a saturated fetch queue could starve `/hb`. The 30 s default
+   window vs 10 s beat leaves 3 misses of headroom; keep bulk sends
+   chunk-serialized (they already must be) and the risk is theoretical.

@@ -1,4 +1,4 @@
-//! Velocity LSP sidecar broker — SPIKE.
+//! Velocity LSP sidecar broker.
 //!
 //! The Native SDK cannot stream stdin to a child and cannot parse
 //! Content-Length framing (see docs/velocity/sdk-capability-report.md).
@@ -18,18 +18,35 @@
 //!   * reassembles chunked POSTs (the SDK caps fetch payloads at
 //!     64 KiB) before forwarding to the server,
 //!   * forwards server exit/crash as an NDJSON event, and exits itself
-//!     when (a) its stdin closes (the app died) or (b) the server exits.
+//!     when its liveness condition lapses (see below) or the server
+//!     exits.
+//!
+//! Liveness (`--liveness=`):
+//!   * `stdin` (default, CLI/supervisor use): exit when our stdin hits
+//!     EOF — the app died.
+//!   * `http` (SDK use — the SDK always closes a child's stdin, so EOF
+//!     is meaningless): the app must POST /hb at least every
+//!     `--hb-window-ms` (default 30000); a lapse tears everything down.
+//!
+//! Every exit path — heartbeat lapse, stdin EOF, server exit, POST
+//! /shutdown — runs the same kill escalation on the server's process
+//! group: SIGTERM, bounded grace (`--grace-ms`, default 3000), SIGKILL.
+//! On Linux the broker also arms PR_SET_PDEATHSIG(SIGTERM) plus a
+//! SIGTERM handler that SIGKILLs the group, as a backstop if the
+//! broker's own parent dies or the broker is TERMed directly.
 //!
 //! Single file, std only, Zig 0.16. Bounded buffers throughout: LSP
 //! messages are hard-rejected beyond 1 MiB (NDJSON error event) and the
 //! decoder resyncs on framing corruption.
 //!
-//! Usage: lsp_broker <server-cmd> [args...]
+//! Usage: lsp_broker [--liveness=stdin|http] [--hb-window-ms=N]
+//!                   [--grace-ms=N] [--] <server-cmd> [args...]
 //!
 //! Unit tests live in this file: `zig test lsp_broker.zig`.
 //! End-to-end proof: `./spike.sh` (uses fake_lsp.zig).
 
 const std = @import("std");
+const builtin = @import("builtin");
 const posix = std.posix;
 
 // ---------------------------------------------------------------- limits
@@ -49,6 +66,102 @@ pub const max_post_body_bytes: usize = 64 * 1024;
 /// HTTP request head (request line + headers) ceiling.
 pub const max_http_head_bytes: usize = 8 * 1024;
 pub const token_len: usize = 32; // hex chars
+/// Default heartbeat window for `--liveness=http`.
+pub const default_hb_window_ms: u64 = 30_000;
+/// Default SIGTERM -> SIGKILL escalation grace.
+pub const default_grace_ms: u64 = 3_000;
+/// Combined flag + server argv ceiling accepted on the command line.
+pub const max_cli_args: usize = 24;
+/// Server argv ceiling (subset of the above, after flags).
+pub const max_server_args: usize = 16;
+
+// ------------------------------------------------------------- options
+
+pub const LivenessMode = enum { stdin, http };
+
+pub const Options = struct {
+    liveness: LivenessMode = .stdin,
+    hb_window_ms: u64 = default_hb_window_ms,
+    grace_ms: u64 = default_grace_ms,
+
+    pub const ParseError = error{
+        UnknownFlag,
+        InvalidFlagValue,
+        MissingServerCommand,
+    };
+
+    pub const Parsed = struct {
+        options: Options,
+        /// Index into `args` where the server argv starts.
+        server_argv_start: usize,
+    };
+
+    /// Parse broker flags from `args` (argv[0] already stripped).
+    /// Flags come first; the first non-flag argument — or everything
+    /// after a literal `--` — is the server command line.
+    pub fn parse(args: []const []const u8) ParseError!Parsed {
+        var options: Options = .{};
+        var index: usize = 0;
+        while (index < args.len) : (index += 1) {
+            const arg = args[index];
+            if (std.mem.eql(u8, arg, "--")) {
+                index += 1;
+                break;
+            }
+            if (!std.mem.startsWith(u8, arg, "--")) break;
+            if (std.mem.startsWith(u8, arg, "--liveness=")) {
+                const value = arg["--liveness=".len..];
+                if (std.mem.eql(u8, value, "stdin")) {
+                    options.liveness = .stdin;
+                } else if (std.mem.eql(u8, value, "http")) {
+                    options.liveness = .http;
+                } else {
+                    return error.InvalidFlagValue;
+                }
+            } else if (std.mem.startsWith(u8, arg, "--hb-window-ms=")) {
+                const value = std.fmt.parseInt(u64, arg["--hb-window-ms=".len..], 10) catch
+                    return error.InvalidFlagValue;
+                if (value == 0) return error.InvalidFlagValue;
+                options.hb_window_ms = value;
+            } else if (std.mem.startsWith(u8, arg, "--grace-ms=")) {
+                options.grace_ms = std.fmt.parseInt(u64, arg["--grace-ms=".len..], 10) catch
+                    return error.InvalidFlagValue;
+            } else {
+                return error.UnknownFlag;
+            }
+        }
+        if (index >= args.len) return error.MissingServerCommand;
+        return .{ .options = options, .server_argv_start = index };
+    }
+};
+
+// ---------------------------------------------------------- time / sleep
+//
+// Raw monotonic clock + nanosleep for the broker's dedicated blocking
+// threads (Zig 0.16 routes std time through `std.Io`; syscalls are
+// simpler here and match the raw-fd I/O layer below).
+
+fn nowMs() u64 {
+    var ts: posix.system.timespec = undefined;
+    if (posix.errno(posix.system.clock_gettime(.MONOTONIC, &ts)) != .SUCCESS) return 0;
+    return @as(u64, @intCast(ts.sec)) * 1000 + @as(u64, @intCast(ts.nsec)) / 1_000_000;
+}
+
+fn sleepMs(ms: u64) void {
+    var req: posix.system.timespec = .{
+        .sec = @intCast(ms / 1000),
+        .nsec = @intCast((ms % 1000) * 1_000_000),
+    };
+    var rem: posix.system.timespec = undefined;
+    while (true) {
+        const rc = posix.system.nanosleep(&req, &rem);
+        if (posix.errno(rc) == .INTR) {
+            req = rem;
+            continue;
+        }
+        return;
+    }
+}
 
 // ------------------------------------------------- Content-Length codec
 
@@ -401,6 +514,13 @@ const Runtime = struct {
     io: std.Io,
     gpa: std.mem.Allocator,
 
+    opts: Options = .{},
+    /// Monotonic ms of the last accepted /hb POST (http liveness mode).
+    last_hb_ms: std.atomic.Value(u64) = .init(0),
+    /// Exactly one thread runs teardown; late arrivals park until the
+    /// winner's `std.process.exit`.
+    teardown_started: std.atomic.Value(bool) = .init(false),
+
     token: [token_len]u8 = undefined,
 
     child: std.process.Child = undefined,
@@ -501,7 +621,9 @@ fn boundPort(server: *const std.Io.net.Server) !u16 {
 }
 
 /// Watches the broker's own stdin: EOF means the app died. Kill the
-/// server's process group and exit.
+/// server's process group and exit. Only armed in `--liveness=stdin`
+/// mode (the SDK always closes a spawned child's stdin, so EOF carries
+/// no meaning there).
 fn stdinWatchMain(rt: *Runtime) void {
     var buf: [4096]u8 = undefined;
     while (true) {
@@ -509,15 +631,109 @@ fn stdinWatchMain(rt: *Runtime) void {
         if (n == 0) break;
         // Broker stdin carries no protocol; input is ignored.
     }
-    killServerTree(rt);
+    exitBroker(rt, "stdin_closed");
+}
+
+/// Watches the heartbeat clock: if no /hb POST lands within the window,
+/// the app is gone. Only armed in `--liveness=http` mode.
+fn heartbeatWatchMain(rt: *Runtime) void {
+    const poll_ms = @min(rt.opts.hb_window_ms / 4 + 1, 250);
+    while (true) {
+        sleepMs(poll_ms);
+        const last = rt.last_hb_ms.load(.monotonic);
+        const now = nowMs();
+        if (now > last and now - last > rt.opts.hb_window_ms) {
+            var detail_buf: [96]u8 = undefined;
+            const detail = std.fmt.bufPrint(&detail_buf, "no /hb within {d} ms", .{rt.opts.hb_window_ms}) catch "heartbeat window lapsed";
+            rt.emitError("heartbeat_lapsed", detail);
+            exitBroker(rt, "heartbeat_lapsed");
+        }
+    }
+}
+
+/// Common teardown for every broker-initiated exit (stdin EOF,
+/// heartbeat lapse, POST /shutdown): announce, escalate-kill the server
+/// tree, exit 0. When the *server* exits on its own, main emits
+/// `server_exit` and runs the same escalation for stragglers instead.
+fn exitBroker(rt: *Runtime, reason: []const u8) noreturn {
+    if (rt.teardown_started.swap(true, .monotonic)) parkUntilExit();
+    var line_buf: [96]u8 = undefined;
+    if (std.fmt.bufPrint(&line_buf, "{{\"event\":\"broker_exit\",\"reason\":\"{s}\"}}", .{reason})) |line| {
+        rt.emitLine(line);
+    } else |_| {}
+    escalateKillServerTree(rt.child_pid, rt.opts.grace_ms);
     std.process.exit(0);
 }
 
-fn killServerTree(rt: *Runtime) void {
-    if (rt.child_pid > 0) {
-        // The server was spawned with pgid=0 (its own group): negative
-        // pid signals the whole tree.
-        posix.kill(-rt.child_pid, .TERM) catch {};
+/// Another thread already owns teardown and will `exit` the whole
+/// process; keep this thread out of the way until then.
+fn parkUntilExit() noreturn {
+    while (true) sleepMs(1000);
+}
+
+/// SIGTERM -> bounded grace -> SIGKILL, on the server's process group.
+/// The server was spawned with pgid=0 (its own group), so signalling
+/// `-pid` reaches the whole tree (e.g. typescript-language-server AND
+/// its tsserver node child). Reaps the direct child when the main
+/// thread has not already done so; grandchildren reparent to init.
+fn escalateKillServerTree(child_pid: posix.pid_t, grace_ms: u64) void {
+    if (child_pid <= 0) return;
+    posix.kill(-child_pid, .TERM) catch return; // ProcessNotFound: already gone
+    const deadline = nowMs() + grace_ms;
+    while (nowMs() < deadline) {
+        reapDirectChild(child_pid);
+        if (!processGroupAlive(child_pid)) return;
+        sleepMs(25);
+    }
+    posix.kill(-child_pid, .KILL) catch return;
+    sleepMs(20);
+    reapDirectChild(child_pid);
+}
+
+fn reapDirectChild(child_pid: posix.pid_t) void {
+    var status: u32 = 0;
+    // >0 reaped here; 0 still alive; ECHILD reaped by main's wait — all fine.
+    _ = posix.system.waitpid(child_pid, &status, posix.W.NOHANG);
+}
+
+fn processGroupAlive(child_pid: posix.pid_t) bool {
+    // Signal 0 probes the group without delivering anything. The group
+    // exists until every member (including zombies we just reaped) is gone.
+    posix.kill(-child_pid, @enumFromInt(0)) catch |err| return err != error.ProcessNotFound;
+    return true;
+}
+
+// ------------------------------------------------------- death backstop
+//
+// If the broker itself dies uncleanly the server tree must not leak:
+//   * PR_SET_PDEATHSIG(SIGTERM) (Linux) TERMs the broker when its
+//     parent — the app / SDK effect worker — dies without cancelling.
+//   * The SIGTERM handler SIGKILLs the server group and exits. (Only
+//     async-signal-safe calls; no graceful TERM->grace here — this path
+//     is a crash backstop, orderly teardown uses /shutdown or cancel.)
+
+var g_server_pid: std.atomic.Value(posix.pid_t) = .init(0);
+
+fn termSignalHandler(_: posix.SIG) callconv(.c) void {
+    const pid = g_server_pid.load(.monotonic);
+    if (pid > 0) _ = posix.system.kill(-pid, .KILL);
+    std.process.exit(0);
+}
+
+fn installDeathBackstop() void {
+    posix.sigaction(.TERM, &.{
+        .handler = .{ .handler = termSignalHandler },
+        .mask = posix.sigemptyset(),
+        .flags = 0,
+    }, null);
+    if (builtin.os.tag == .linux) {
+        _ = std.os.linux.prctl(
+            @intFromEnum(std.os.linux.PR.SET_PDEATHSIG),
+            @intFromEnum(std.os.linux.SIG.TERM),
+            0,
+            0,
+            0,
+        );
     }
 }
 
@@ -592,7 +808,16 @@ fn handleConnection(rt: *Runtime, assembler: *ChunkAssembler, stream: std.Io.net
     }
     const body = buf[body_start..body_total];
 
-    if (std.mem.eql(u8, request.target, "/message")) {
+    if (std.mem.eql(u8, request.target, "/hb")) {
+        // Heartbeat: body (if any) is ignored. Accepted in both liveness
+        // modes; only --liveness=http enforces the window.
+        rt.last_hb_ms.store(nowMs(), .monotonic);
+        respond(rt.io, stream, "204 No Content", "");
+    } else if (std.mem.eql(u8, request.target, "/shutdown")) {
+        // Orderly teardown: ack first, then escalate-kill + exit.
+        respond(rt.io, stream, "204 No Content", "");
+        exitBroker(rt, "shutdown_requested");
+    } else if (std.mem.eql(u8, request.target, "/message")) {
         rt.forwardToServer(body) catch |err| {
             failForward(rt, stream, err);
             return;
@@ -645,30 +870,38 @@ pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
     const gpa = init.gpa;
 
-    // Collect the server argv (everything after our own argv[0]).
-    var argv_storage: [16][]const u8 = undefined;
+    // Collect broker flags + server argv (everything after our argv[0]).
+    var argv_storage: [max_cli_args][]const u8 = undefined;
     var argv_len: usize = 0;
     var args = std.process.Args.Iterator.init(init.minimal.args);
     _ = args.next(); // argv[0]
     while (args.next()) |arg| {
         if (argv_len >= argv_storage.len) {
-            std.log.err("too many server arguments (max {d})", .{argv_storage.len});
+            std.log.err("too many arguments (max {d})", .{argv_storage.len});
             return 2;
         }
         argv_storage[argv_len] = arg;
         argv_len += 1;
     }
-    if (argv_len == 0) {
-        std.log.err("usage: lsp_broker <server-cmd> [args...]", .{});
+    const usage = "usage: lsp_broker [--liveness=stdin|http] [--hb-window-ms=N] [--grace-ms=N] [--] <server-cmd> [args...]";
+    const parsed = Options.parse(argv_storage[0..argv_len]) catch |err| {
+        std.log.err("{t}; {s}", .{ err, usage });
+        return 2;
+    };
+    const server_argv = argv_storage[parsed.server_argv_start..argv_len];
+    if (server_argv.len > max_server_args) {
+        std.log.err("too many server arguments (max {d})", .{max_server_args});
         return 2;
     }
 
     ignoreSigpipe();
+    installDeathBackstop();
 
     const rt = try gpa.create(Runtime);
     rt.* = .{
         .io = io,
         .gpa = gpa,
+        .opts = parsed.options,
         .decode_buf = try gpa.alloc(u8, FrameDecoder.recommended_buffer_bytes),
         .read_buf = try gpa.alloc(u8, 64 * 1024),
         .line_buf = try gpa.alloc(u8, 256 * 1024),
@@ -690,7 +923,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     // The language server: our one child, in its own process group.
     rt.child = std.process.spawn(io, .{
-        .argv = argv_storage[0..argv_len],
+        .argv = server_argv,
         .stdin = .pipe,
         .stdout = .pipe,
         .stderr = .ignore,
@@ -705,6 +938,7 @@ pub fn main(init: std.process.Init) !u8 {
         posix.pid_t => rt.child.id.?,
         else => 0,
     };
+    g_server_pid.store(rt.child_pid, .monotonic);
     rt.child_stdin_fd = rt.child.stdin.?.handle;
     rt.child_stdout_fd = rt.child.stdout.?.handle;
 
@@ -715,8 +949,19 @@ pub fn main(init: std.process.Init) !u8 {
         rt.emitLine(line);
     }
 
-    var stdin_thread = try std.Thread.spawn(.{}, stdinWatchMain, .{rt});
-    stdin_thread.detach();
+    switch (rt.opts.liveness) {
+        .stdin => {
+            var stdin_thread = try std.Thread.spawn(.{}, stdinWatchMain, .{rt});
+            stdin_thread.detach();
+        },
+        .http => {
+            // The window opens now; the app gets one full window to send
+            // its first /hb after parsing the listening line.
+            rt.last_hb_ms.store(nowMs(), .monotonic);
+            var hb_thread = try std.Thread.spawn(.{}, heartbeatWatchMain, .{rt});
+            hb_thread.detach();
+        },
+    }
     var http_thread = try std.Thread.spawn(.{}, httpServeMain, .{rt});
     http_thread.detach();
 
@@ -741,20 +986,25 @@ pub fn main(init: std.process.Init) !u8 {
         };
     }
 
-    const term = rt.child.wait(io) catch {
-        rt.emitLine("{\"event\":\"server_exit\",\"reason\":\"unknown\",\"code\":-1}");
-        return 1;
-    };
+    const term: ?std.process.Child.Term = rt.child.wait(io) catch null;
+    // If a liveness/shutdown thread already began teardown, the server's
+    // death is a consequence of that teardown, not news: stay silent and
+    // let the owner finish escalation + exit.
+    if (rt.teardown_started.swap(true, .monotonic)) parkUntilExit();
+    // The direct child is reaped; escalate on the group anyway so
+    // orphaned grandchildren (e.g. a lingering tsserver) are also torn
+    // down before we exit. A clean tree makes this a no-op.
+    escalateKillServerTree(rt.child_pid, rt.opts.grace_ms);
     {
         var line_buf: [96]u8 = undefined;
-        const line = switch (term) {
+        const line = if (term) |t| switch (t) {
             .exited => |code| std.fmt.bufPrint(&line_buf, "{{\"event\":\"server_exit\",\"reason\":\"exited\",\"code\":{d}}}", .{code}),
             .signal => |sig| std.fmt.bufPrint(&line_buf, "{{\"event\":\"server_exit\",\"reason\":\"signal\",\"code\":{d}}}", .{@intFromEnum(sig)}),
             else => std.fmt.bufPrint(&line_buf, "{{\"event\":\"server_exit\",\"reason\":\"unknown\",\"code\":-1}}", .{}),
-        } catch return 1;
-        rt.emitLine(line);
+        } else std.fmt.bufPrint(&line_buf, "{{\"event\":\"server_exit\",\"reason\":\"unknown\",\"code\":-1}}", .{});
+        rt.emitLine(line catch return 1);
     }
-    return 0;
+    return if (term == null) 1 else 0;
 }
 
 // ================================================================ tests
@@ -942,4 +1192,51 @@ test "token comparison is length-guarded" {
     try testing.expect(constantTimeEql("abcd", "abcd"));
     try testing.expect(!constantTimeEql("abcd", "abce"));
     try testing.expect(!constantTimeEql("abc", "abcd"));
+}
+
+test "options default to stdin liveness with 30s window and 3s grace" {
+    const args = [_][]const u8{ "typescript-language-server", "--stdio" };
+    const parsed = try Options.parse(&args);
+    try testing.expectEqual(LivenessMode.stdin, parsed.options.liveness);
+    try testing.expectEqual(default_hb_window_ms, parsed.options.hb_window_ms);
+    try testing.expectEqual(default_grace_ms, parsed.options.grace_ms);
+    try testing.expectEqual(@as(usize, 0), parsed.server_argv_start);
+}
+
+test "options parse http liveness with tuned window and grace" {
+    const args = [_][]const u8{ "--liveness=http", "--hb-window-ms=2000", "--grace-ms=500", "fake_lsp" };
+    const parsed = try Options.parse(&args);
+    try testing.expectEqual(LivenessMode.http, parsed.options.liveness);
+    try testing.expectEqual(@as(u64, 2000), parsed.options.hb_window_ms);
+    try testing.expectEqual(@as(u64, 500), parsed.options.grace_ms);
+    try testing.expectEqual(@as(usize, 3), parsed.server_argv_start);
+}
+
+test "options `--` separator protects a server command that starts with dashes" {
+    const args = [_][]const u8{ "--liveness=http", "--", "--weird-server", "--stdio" };
+    const parsed = try Options.parse(&args);
+    try testing.expectEqual(@as(usize, 2), parsed.server_argv_start);
+    // Without the separator, the same argv is an unknown broker flag.
+    const bare = [_][]const u8{ "--liveness=http", "--weird-server" };
+    try testing.expectError(error.UnknownFlag, Options.parse(&bare));
+}
+
+test "options reject bad values and missing server command" {
+    const bad_mode = [_][]const u8{ "--liveness=tcp", "srv" };
+    try testing.expectError(error.InvalidFlagValue, Options.parse(&bad_mode));
+    const zero_window = [_][]const u8{ "--hb-window-ms=0", "srv" };
+    try testing.expectError(error.InvalidFlagValue, Options.parse(&zero_window));
+    const junk_window = [_][]const u8{ "--hb-window-ms=soon", "srv" };
+    try testing.expectError(error.InvalidFlagValue, Options.parse(&junk_window));
+    const junk_grace = [_][]const u8{ "--grace-ms=-1", "srv" };
+    try testing.expectError(error.InvalidFlagValue, Options.parse(&junk_grace));
+    const no_server = [_][]const u8{"--liveness=http"};
+    try testing.expectError(error.MissingServerCommand, Options.parse(&no_server));
+    const empty = [_][]const u8{};
+    try testing.expectError(error.MissingServerCommand, Options.parse(&empty));
+    const dangling = [_][]const u8{ "srv", "--liveness=http" };
+    // Flags after the server command belong to the server, not the broker.
+    const parsed = try Options.parse(&dangling);
+    try testing.expectEqual(@as(usize, 0), parsed.server_argv_start);
+    try testing.expectEqual(LivenessMode.stdin, parsed.options.liveness);
 }
