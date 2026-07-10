@@ -760,6 +760,18 @@ pub const Model = struct {
         "selected_activity",
         "settings_return_view",
         "settings_return_activity",
+        // Combined "name: value" label fns superseded by the label-left /
+        // switch-or-select-right Settings rows.
+        "findCaseLabel",
+        "trimTrailingLabel",
+        "finalNewlineLabel",
+        "indentSizeLabel",
+        "wordWrapLabel",
+        "autoSaveLabel",
+        "diskPollIntervalLabel",
+        "sidebarLabel",
+        "focusModeLabel",
+        "terminalPanelLabel",
         "theme_preference",
         "next_task_id",
         "command_query",
