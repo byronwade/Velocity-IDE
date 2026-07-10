@@ -51,6 +51,8 @@ pub const ScanBuffers = struct {
     node_count: u32 = 0,
     name_used: u32 = 0,
     path_used: u32 = 0,
+    /// True when the node cap stopped an otherwise valid scan.
+    truncated: bool = false,
 };
 
 pub const ScanError = error{
@@ -128,11 +130,21 @@ const Entry = struct {
     is_dir: bool,
 };
 
-fn collectEntries(io: Io, dir: Io.Dir, scratch: []Entry, name_scratch: []u8, name_used: *usize) ![]Entry {
+fn collectEntries(
+    io: Io,
+    dir: Io.Dir,
+    scratch: []Entry,
+    name_scratch: []u8,
+    name_used: *usize,
+    truncated: *bool,
+) ![]Entry {
     var it = dir.iterate();
     var count: usize = 0;
     while (try it.next(io)) |entry| {
-        if (count >= scratch.len) break;
+        if (count >= scratch.len) {
+            truncated.* = true;
+            break;
+        }
         const is_dir = entry.kind == .directory;
         if (is_dir) {
             if (SkipSet.shouldSkipDir(entry.name)) continue;
@@ -142,7 +154,10 @@ fn collectEntries(io: Io, dir: Io.Dir, scratch: []Entry, name_scratch: []u8, nam
                 !std.mem.eql(u8, entry.name, ".gitignore") and
                 !std.mem.eql(u8, entry.name, ".env")) continue;
         }
-        if (name_used.* + entry.name.len > name_scratch.len) break;
+        if (name_used.* + entry.name.len > name_scratch.len) {
+            truncated.* = true;
+            break;
+        }
         const off = name_used.*;
         @memcpy(name_scratch[off..][0..entry.name.len], entry.name);
         name_used.* += entry.name.len;
@@ -169,7 +184,14 @@ fn walk(
     var entry_scratch: [128]Entry = undefined;
     var name_scratch: [4096]u8 = undefined;
     var name_used: usize = 0;
-    const entries = collectEntries(io, parent, entry_scratch[0..], name_scratch[0..], &name_used) catch return error.AccessDenied;
+    const entries = collectEntries(
+        io,
+        parent,
+        entry_scratch[0..],
+        name_scratch[0..],
+        &name_used,
+        &bufs.truncated,
+    ) catch return error.AccessDenied;
 
     // Copy entry names we will recurse into before opening children (names live in scratch).
     var i: usize = 0;
@@ -204,6 +226,7 @@ pub fn scanWorkspace(io: Io, root_path: []const u8, bufs: *ScanBuffers) ScanErro
     bufs.node_count = 0;
     bufs.name_used = 0;
     bufs.path_used = 0;
+    bufs.truncated = false;
 
     var root = Io.Dir.cwd().openDir(io, root_path, .{ .iterate = true }) catch |err| {
         return switch (err) {
@@ -214,7 +237,13 @@ pub fn scanWorkspace(io: Io, root_path: []const u8, bufs: *ScanBuffers) ScanErro
     };
     defer root.close(io);
 
-    try walk(io, root, "", 0, bufs);
+    walk(io, root, "", 0, bufs) catch |err| {
+        if (err == error.TooManyNodes) {
+            bufs.truncated = true;
+            return bufs.node_count;
+        }
+        return err;
+    };
     return bufs.node_count;
 }
 
@@ -384,6 +413,30 @@ test "scan fixture with testing.io" {
         const name = nodeName(&bufs, bufs.nodes[i]);
         try std.testing.expect(!std.mem.eql(u8, name, "node_modules"));
     }
+}
+
+test "scan reports node-cap truncation and preserves bounded results" {
+    const root = "zig-out/test-scanner-cap";
+    Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try Io.Dir.cwd().createDirPath(std.testing.io, root);
+    for (0..3) |folder| {
+        var folder_buf: [128]u8 = undefined;
+        const folder_path = try std.fmt.bufPrint(&folder_buf, "{s}/folder-{d}", .{ root, folder });
+        try Io.Dir.cwd().createDirPath(std.testing.io, folder_path);
+        for (0..100) |index| {
+            var path_buf: [160]u8 = undefined;
+            const path = try std.fmt.bufPrint(&path_buf, "{s}/file-{d:0>3}.txt", .{ folder_path, index });
+            try Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = path, .data = "x" });
+        }
+    }
+
+    var nodes: [max_nodes]ScanNode = undefined;
+    var name_pool: [16 * 1024]u8 = undefined;
+    var path_pool: [48 * 1024]u8 = undefined;
+    var bufs = ScanBuffers{ .nodes = &nodes, .name_pool = &name_pool, .path_pool = &path_pool };
+    try std.testing.expectEqual(@as(u32, max_nodes), try scanWorkspace(std.testing.io, root, &bufs));
+    try std.testing.expect(bufs.truncated);
 }
 
 test "readTextFile rejects oversized files without truncating" {

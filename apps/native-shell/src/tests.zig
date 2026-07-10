@@ -569,6 +569,8 @@ test "git status refresh on scm activity" {
     try testing.expect(model.selected_activity == .scm);
     // Fixture is not a real git repo (nested .git not committed); expect graceful summary.
     try testing.expect(model.git_summary.len > 0);
+    try testing.expectEqual(@as(usize, 0), model.git_entries.len);
+    for (model.file_nodes) |node| try testing.expect(!node.has_scm);
 }
 
 test "create new file in workspace" {
@@ -840,28 +842,47 @@ test "terminal history older newer" {
     try testing.expectEqualStrings("echo one", model.terminal_command.text());
 }
 
-test "explorer filter narrows nodes" {
+test "explorer filter searches full tree and includes matching ancestors" {
     var model = main.initialModel();
     main.update(&model, .{ .open_project = "acme-dashboard" });
     const before = model.file_nodes.len;
+    var folder_id: u32 = 0;
+    for (model.file_nodes) |node| {
+        if (node.is_dir) {
+            folder_id = node.id;
+            break;
+        }
+    }
+    try testing.expect(folder_id != 0);
+    main.update(&model, .{ .toggle_explorer_folder = folder_id });
+    const collapsed_count = model.file_nodes.len;
     model.explorer_filter.set("auth");
     model_mod.applyExplorerFilter(&model);
     try testing.expect(model.file_nodes.len < before);
     try testing.expect(model.file_nodes.len > 0);
+    var direct_hits: usize = 0;
     for (model.file_nodes) |n| {
         const hit = std.ascii.indexOfIgnoreCase(n.name, "auth") != null or std.ascii.indexOfIgnoreCase(n.path, "auth") != null;
-        try testing.expect(hit);
+        if (hit) direct_hits += 1;
     }
+    try testing.expect(direct_hits > 0);
+    try testing.expect(model.file_nodes.len >= direct_hits);
+    model.explorer_filter.clear();
+    model_mod.applyExplorerFilter(&model);
+    try testing.expectEqual(collapsed_count, model.file_nodes.len);
 }
 
-test "reveal in explorer selects active file" {
+test "reveal in explorer expands active file ancestors" {
     var model = main.initialModel();
     main.update(&model, .{ .open_project = "acme-dashboard" });
     const active = model.active_tab_id;
+    main.update(&model, .collapse_all_explorer);
+    try testing.expect(model.explorer_collapse.count > 0);
     model.selected_file_id = 0;
     main.update(&model, .reveal_in_explorer);
     try testing.expect(model.selected_file_id == active or model.selected_file_id != 0);
     try testing.expect(model.selected_activity == .explorer);
+    try testing.expect(model.explorer_collapse.count == 0 or model.file_nodes.len > 1);
 }
 
 test "toggle line comment roundtrip" {
@@ -2420,6 +2441,37 @@ test "explorer create rename and delete preserve unrelated dirty tabs" {
     try testing.expect(ws.findNodeByPath("empty") == null);
 }
 
+test "explorer refresh preserves path selection and CRUD prunes stale collapse state" {
+    const root = "zig-out/test-model-explorer-collapse";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root ++ "/src");
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root ++ "/empty");
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/src/a.txt", .data = "a\n" });
+
+    var model = main.initialModel();
+    model.open_path.set(root);
+    main.update(&model, .submit_open_path);
+    var ws = model.workspace.?;
+    const src = ws.findNodeByPath("src").?;
+    main.update(&model, .{ .select_file = src.id });
+    main.update(&model, .{ .toggle_explorer_folder = src.id });
+    try testing.expect(model.explorer_collapse.contains("src"));
+    main.update(&model, .refresh_explorer);
+    ws = model.workspace.?;
+    try testing.expectEqual(ws.findNodeByPath("src").?.id, model.selected_file_id);
+    try testing.expect(model.explorer_collapse.contains("src"));
+
+    const empty = ws.findNodeByPath("empty").?;
+    main.update(&model, .{ .toggle_explorer_folder = empty.id });
+    try testing.expect(model.explorer_collapse.contains("empty"));
+    model.selected_file_id = empty.id;
+    main.update(&model, .delete_selected_file);
+    main.update(&model, .delete_selected_file);
+    try testing.expect(!model.explorer_collapse.contains("empty"));
+    try testing.expect(model.explorer_collapse.contains("src"));
+}
+
 fn runModelTestGit(cwd: []const u8, argv: []const []const u8) !void {
     const result = try std.process.run(testing.allocator, std.testing.io, .{
         .argv = argv,
@@ -2454,12 +2506,20 @@ test "model SCM stages literal path and restore reloads clean open tab" {
     main.update(&model, .submit_open_path);
     const literal_path = "space ;$' file.txt";
     try tmp.dir.writeFile(std.testing.io, .{ .sub_path = literal_path, .data = "literal\n" });
+    main.update(&model, .refresh_explorer);
     main.update(&model, .refresh_git);
     var literal_id: u32 = 0;
+    var untracked_decoration = false;
     for (model.git_entries) |entry| {
         if (std.mem.eql(u8, entry.path, literal_path)) literal_id = entry.id;
     }
+    for (model.file_nodes) |node| {
+        if (std.mem.eql(u8, node.path, literal_path)) {
+            untracked_decoration = std.mem.eql(u8, node.scm_label, "Untracked");
+        }
+    }
     try testing.expect(literal_id != 0);
+    try testing.expect(untracked_decoration);
     main.update(&model, .{ .stage_git_entry = literal_id });
     var staged_literal = false;
     for (model.git_entries) |entry| {
@@ -2468,6 +2528,11 @@ test "model SCM stages literal path and restore reloads clean open tab" {
         }
     }
     try testing.expect(staged_literal);
+    for (model.file_nodes) |node| {
+        if (std.mem.eql(u8, node.path, literal_path)) {
+            try testing.expectEqualStrings("Staged", node.scm_label);
+        }
+    }
 
     try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "tracked.txt", .data = "modified\n" });
     main.update(&model, .refresh_disk_sync);
@@ -2478,6 +2543,11 @@ test "model SCM stages literal path and restore reloads clean open tab" {
         if (std.mem.eql(u8, entry.path, "tracked.txt")) tracked_id = entry.id;
     }
     try testing.expect(tracked_id != 0);
+    for (model.file_nodes) |node| {
+        if (std.mem.eql(u8, node.path, "tracked.txt")) {
+            try testing.expectEqualStrings("Modified", node.scm_label);
+        }
+    }
     main.update(&model, .{ .restore_git_entry = tracked_id });
     try testing.expect(std.mem.startsWith(u8, model.toast, "Restore selected file"));
     main.update(&model, .{ .restore_git_entry = tracked_id });

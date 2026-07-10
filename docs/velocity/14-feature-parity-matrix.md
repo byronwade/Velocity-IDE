@@ -29,7 +29,7 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Dialogs | `feature.dialogs` | core | P1 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
 | Welcome / Empty State | `feature.welcome-empty-state` | core | P2 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
 | Accessibility Core | `feature.accessibility-core` | core | P0 | native | True | 4 | 0 | low | stub | docs/11 + contrib | |
-| File Explorer | `feature.file-explorer` | core | P0 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
+| File Explorer | `feature.file-explorer` | core | P0 | native | False | 16 | 0 | low | working | bounded collapse/filter projection; reveal; SCM decorations; honest scan cap | |
 | Workspace Manager | `feature.workspace-manager` | core | P0 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
 | Multi-root Workspaces | `feature.multi-root-workspaces` | dev | P2 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
 | Recent Projects | `feature.recent-projects` | core | P0 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |

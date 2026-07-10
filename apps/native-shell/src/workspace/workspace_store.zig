@@ -17,10 +17,17 @@ pub const FileNode = struct {
     path: []const u8 = "",
     depth: u8 = 0,
     is_dir: bool = false,
+    is_file: bool = true,
     /// Visual indent spacer for the explorer tree (spaces, not a depth digit).
     indent: []const u8 = "",
-    /// Folder/file marker shown before the name (`>` dir, `·` file).
+    /// Folder/file marker retained for non-interactive/mock projections.
     kind_mark: []const u8 = "",
+    /// Interactive folder disclosure mark and its accessible action label.
+    chevron: []const u8 = "",
+    chevron_label: []const u8 = "",
+    /// Git porcelain decoration computed once when the projection refreshes.
+    scm_label: []const u8 = "",
+    has_scm: bool = false,
 };
 
 const indent_steps = [_][]const u8{
@@ -37,6 +44,7 @@ const indent_steps = [_][]const u8{
 
 pub fn decorateFileNode(node: FileNode) FileNode {
     var out = node;
+    out.is_file = !node.is_dir;
     out.indent = indent_steps[@min(node.depth, indent_steps.len - 1)];
     out.kind_mark = if (node.is_dir) ">" else "-";
     return out;
@@ -59,6 +67,7 @@ pub const Workspace = struct {
     root_path: []const u8 = "",
     node_count: u32 = 0,
     scan_error: []const u8 = "",
+    scan_truncated: bool = false,
     from_disk: bool = false,
 };
 
@@ -75,6 +84,7 @@ pub const WorkspaceBuffers = struct {
     scan_name_used: u32 = 0,
     scan_path_used: u32 = 0,
     scan_count: u32 = 0,
+    scan_truncated: bool = false,
 
     /// Materialized FileNode views pointing into pools.
     file_nodes: [max_nodes]FileNode = [_]FileNode{.{}} ** max_nodes,
@@ -257,6 +267,7 @@ pub const WorkspaceBuffers = struct {
         };
         const count = try scanner.scanWorkspace(io, root_slice, &bufs);
         self.scan_count = count;
+        self.scan_truncated = bufs.truncated;
         self.scan_name_used = bufs.name_used;
         self.scan_path_used = bufs.path_used;
         self.tab_count = 0;
@@ -425,6 +436,7 @@ pub const WorkspaceBuffers = struct {
             };
         };
         self.scan_count = count;
+        self.scan_truncated = bufs.truncated;
         self.scan_name_used = bufs.name_used;
         self.scan_path_used = bufs.path_used;
         self.rebuildFileNodes();
@@ -452,6 +464,7 @@ pub const WorkspaceBuffers = struct {
             .branch = "main",
             .root_path = self.rootPath(),
             .node_count = self.file_node_count,
+            .scan_truncated = self.scan_truncated,
             .from_disk = true,
             .scan_error = first_open_error,
         };

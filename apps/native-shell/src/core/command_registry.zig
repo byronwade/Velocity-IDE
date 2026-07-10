@@ -127,6 +127,8 @@ pub const catalog = [_]Command{
     .{ .id = "commit_changes", .title = "Git: Commit", .feature_id = "feature.git-stage-commit" },
     .{ .id = "trim_blank_lines", .title = "Trim Leading/Trailing Blank Lines" },
     .{ .id = "refresh_explorer", .title = "Refresh Explorer", .feature_id = "feature.file-explorer" },
+    .{ .id = "collapse_all_explorer", .title = "Collapse All Explorer Folders", .feature_id = "feature.file-explorer" },
+    .{ .id = "expand_all_explorer", .title = "Expand All Explorer Folders", .feature_id = "feature.file-explorer" },
     .{ .id = "refresh_disk_sync", .title = "Refresh Files from Disk", .feature_id = "feature.file-watchers" },
     .{ .id = "cycle_disk_poll_interval", .title = "Cycle Disk Poll Interval", .feature_id = "feature.file-watchers" },
     .{ .id = "close_saved_tabs", .title = "Close Saved Tabs", .feature_id = "feature.tabs" },

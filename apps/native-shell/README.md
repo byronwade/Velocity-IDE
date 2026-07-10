@@ -37,6 +37,9 @@ refreshes the model contract and checks command/shortcut registry integrity.
 command palette and terminal panel, then runs **Refresh Performance Metrics**.
 The HUD distinguishes Native SDK/in-process frame timings from external launch
 timing and displays `n/a` for unsupported RSS or process metrics.
+`npm run explorer-smoke` boots the default 1280px window and verifies compact
+Explorer controls, accessible folder chevrons, collapse/filter restoration,
+and Expand All behavior.
 
 External file changes are checked with bounded polling during editing and safe
 save operations. Use **Refresh Files from Disk** from the command palette for an

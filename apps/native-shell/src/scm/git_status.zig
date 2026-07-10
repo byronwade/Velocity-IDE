@@ -4,7 +4,7 @@
 const std = @import("std");
 
 pub const max_entries: usize = 64;
-pub const max_path: usize = 200;
+pub const max_path: usize = 240;
 pub const max_status: usize = 2;
 
 pub const GitEntry = struct {
@@ -433,6 +433,10 @@ pub const GitBuffers = struct {
         self.clear();
         if (cwd.len == 0) {
             self.summary = "no workspace";
+            return;
+        }
+        if (!isGitRoot(io, cwd)) {
+            self.summary = "not a git root";
             return;
         }
         var gpa_state: std.heap.DebugAllocator(.{}) = .init;

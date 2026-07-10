@@ -13,6 +13,7 @@
     "task-smoke": "bash scripts/task-smoke.sh",
     "test-smoke": "bash scripts/test-smoke.sh",
     "launch-smoke": "bash scripts/launch-smoke.sh",
+    "explorer-smoke": "bash scripts/explorer-smoke.sh",
     "doctor": "native doctor"
   },
   "engines": {

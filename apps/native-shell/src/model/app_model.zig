@@ -7,6 +7,7 @@ const native_sdk = @import("native_sdk");
 const canvas = native_sdk.canvas;
 const theme = @import("../theme/tokens.zig");
 const workspace_store = @import("../workspace/workspace_store.zig");
+const explorer_projection = @import("../workspace/explorer_projection.zig");
 const workspace_search = @import("../workspace/search.zig");
 const find_in_doc = @import("../workspace/find_in_doc.zig");
 const quick_open = @import("../workspace/quick_open.zig");
@@ -180,6 +181,9 @@ pub const Msg = union(enum) {
     delete_selected_file,
     rename_selected_file,
     reveal_in_explorer,
+    toggle_explorer_folder: u32,
+    collapse_all_explorer,
+    expand_all_explorer,
     update_explorer_filter: canvas.TextInputEvent,
     update_find_query: canvas.TextInputEvent,
     run_find,
@@ -472,6 +476,7 @@ pub const Model = struct {
     workspace_node_count: u32 = 0,
     workspace_file_count: u32 = 0,
     workspace_scan_error: []const u8 = "",
+    workspace_scan_truncated: bool = false,
     workspace_files_label: []const u8 = "",
     workspace_files_buf: [48]u8 = undefined,
     workspace: ?*workspace_store.WorkspaceBuffers = null,
@@ -530,8 +535,12 @@ pub const Model = struct {
     git_branch: []const u8 = "unknown",
     new_file_path: canvas.TextBuffer(max_new_file_path) = .{},
     explorer_filter: canvas.TextBuffer(64) = .{},
-    explorer_filtered: [workspace_store.max_nodes]FileNode = [_]FileNode{.{}} ** workspace_store.max_nodes,
-    explorer_filtered_count: u32 = 0,
+    explorer_collapse: explorer_projection.CollapseStore = .{},
+    explorer_projection: explorer_projection.Projection = .{},
+    explorer_selected_path_buf: [scanner_mod.max_rel_path_len]u8 = undefined,
+    explorer_selected_path_len: u16 = 0,
+    explorer_header_buf: [64]u8 = undefined,
+    explorer_header_label: []const u8 = "",
     problem_bufs: ?*problems_mod.ProblemBuffers = null,
     matcher_bufs: ?*problem_matchers.MatcherBuffers = null,
     problems: []const Problem = &.{},
@@ -715,6 +724,7 @@ pub const Model = struct {
         "git_branch",
         "editor_mode_label",
         "project_path",
+        "project_name",
         "status_agent",
         "perf_timer",
         "perf_snapshot",
@@ -731,6 +741,7 @@ pub const Model = struct {
         "workspace",
         "workspace_from_disk",
         "workspace_scan_error",
+        "workspace_scan_truncated",
         "workspace_node_count",
         "workspace_file_count",
         "workspace_files_label",
@@ -779,8 +790,12 @@ pub const Model = struct {
         "close_all_confirm_pending",
         "new_file_path",
         "explorer_filter",
-        "explorer_filtered",
-        "explorer_filtered_count",
+        "explorer_collapse",
+        "explorer_projection",
+        "explorer_selected_path_buf",
+        "explorer_selected_path_len",
+        "explorer_header_buf",
+        "explorer_header_label",
         "problem_bufs",
         "matcher_bufs",
         "problems_status",
@@ -1103,6 +1118,10 @@ pub const Model = struct {
 
     pub fn explorerFilterText(model: *const Model) []const u8 {
         return model.explorer_filter.text();
+    }
+
+    pub fn explorerHeaderLabel(model: *const Model) []const u8 {
+        return if (model.explorer_header_label.len > 0) model.explorer_header_label else model.project_name;
     }
 
     pub fn findQueryText(model: *const Model) []const u8 {
@@ -1905,6 +1924,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 trimBlankLines(model);
             } else if (std.mem.eql(u8, id, "refresh_explorer")) {
                 refreshExplorer(model);
+            } else if (std.mem.eql(u8, id, "collapse_all_explorer")) {
+                collapseAllExplorer(model);
+            } else if (std.mem.eql(u8, id, "expand_all_explorer")) {
+                expandAllExplorer(model);
             } else if (std.mem.eql(u8, id, "refresh_disk_sync")) {
                 refreshDiskSync(model, true);
             } else if (std.mem.eql(u8, id, "cycle_disk_poll_interval")) {
@@ -2077,6 +2100,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             if (model.workspace_from_disk) {
                 if (model.workspace) |ws| {
                     if (ws.findNode(id)) |node| {
+                        setExplorerSelectedPath(model, node.path);
                         if (node.is_dir) {
                             model.selected_file_id = id;
                             model.toast = "Folder selected";
@@ -2407,6 +2431,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .delete_selected_file => deleteSelectedFile(model),
         .rename_selected_file => renameSelectedFile(model),
         .reveal_in_explorer => revealInExplorer(model),
+        .toggle_explorer_folder => |id| toggleExplorerFolder(model, id),
+        .collapse_all_explorer => collapseAllExplorer(model),
+        .expand_all_explorer => expandAllExplorer(model),
         .update_explorer_filter => |edit| {
             model.explorer_filter.apply(edit);
             applyExplorerFilter(model);
@@ -3374,18 +3401,26 @@ fn applyWorkspaceMeta(model: *Model, ws: *workspace_store.WorkspaceBuffers, meta
     model.workspace_from_disk = meta.from_disk;
     model.workspace_node_count = meta.node_count;
     model.workspace_scan_error = meta.scan_error;
+    model.workspace_scan_truncated = meta.scan_truncated;
     model.project_name = ws.projectName();
     model.project_path = ws.rootPath();
     model.project_branch = meta.branch;
-    model.file_nodes = ws.fileNodesSlice();
+    model.explorer_collapse.clear();
+    model.explorer_selected_path_len = 0;
+    if (model.git_bufs) |bufs| bufs.clear();
+    model.git_entries = &.{};
+    model.git_summary = "not loaded";
+    model.git_branch = "unknown";
     model.open_tabs = ws.tabsSlice();
     if (ws.tab_count > 0) {
         model.active_tab_id = ws.tabs[0].id;
         model.selected_file_id = ws.tabs[0].id;
         model.status_language = ws.tabs[0].language;
+        setExplorerSelectedPath(model, ws.tabs[0].path);
     }
     syncDocumentFromWorkspace(model);
     refreshWorkspaceFileCount(model);
+    refreshExplorerHeader(model);
     applyExplorerFilter(model);
     model.current_view = .ide;
     model.selected_activity = .explorer;
@@ -4635,6 +4670,7 @@ fn syncGitModel(model: *Model, bufs: *git_status.GitBuffers) void {
     model.git_diff_text = bufs.diffText();
     model.git_diff_status = bufs.diff_status;
     model.selected_git_entry_id = 0;
+    applyExplorerFilter(model);
 }
 
 fn stageGitEntry(model: *Model, entry_id: u32) void {
@@ -5090,10 +5126,11 @@ fn createNewFile(model: *Model) void {
     };
     model.file_nodes = ws.fileNodesSlice();
     model.open_tabs = ws.tabsSlice();
-    model.workspace_node_count = ws.file_node_count;
-    refreshWorkspaceFileCount(model);
-    applyExplorerFilter(model);
+    syncExplorerScanMeta(model, ws);
     model.selected_file_id = id;
+    setExplorerSelectedPath(model, rel);
+    model.explorer_collapse.expandAncestors(rel);
+    applyExplorerFilter(model);
     model.active_tab_id = id;
     model.status_language = workspace_store.scannerLanguage(rel);
     syncDocumentFromWorkspace(model);
@@ -5143,9 +5180,7 @@ fn deleteSelectedFile(model: *Model) void {
     };
     model.file_nodes = ws.fileNodesSlice();
     model.open_tabs = ws.tabsSlice();
-    model.workspace_node_count = ws.file_node_count;
-    refreshWorkspaceFileCount(model);
-    applyExplorerFilter(model);
+    syncExplorerScanMeta(model, ws);
     if (ws.tab_count > 0) {
         const next_id = if (ws.findNodeByPath(ws.editorPath())) |active_node|
             active_node.id
@@ -5153,6 +5188,7 @@ fn deleteSelectedFile(model: *Model) void {
             ws.tabs[0].id;
         model.active_tab_id = next_id;
         model.selected_file_id = next_id;
+        if (ws.findNode(next_id)) |next| setExplorerSelectedPath(model, next.path);
         ws.openFileById(modelIo(model), next_id) catch {};
         model.status_language = workspace_store.scannerLanguage(ws.editorPath());
         syncDocumentFromWorkspace(model);
@@ -5161,8 +5197,10 @@ fn deleteSelectedFile(model: *Model) void {
         model.document_dirty = false;
         model.selected_file_id = 0;
         model.active_tab_id = 0;
+        model.explorer_selected_path_len = 0;
         reconcileTabHistories(model);
     }
+    applyExplorerFilter(model);
     model.toast = if (node.is_dir) "Folder deleted" else "File deleted";
 }
 
@@ -5182,6 +5220,8 @@ fn revealInExplorer(model: *Model) void {
     };
     if (ws.findNodeByPath(path)) |node| {
         model.selected_file_id = node.id;
+        setExplorerSelectedPath(model, node.path);
+        model.explorer_collapse.expandAncestors(node.path);
         model.current_view = .ide;
         model.selected_activity = .explorer;
         model.explorer_filter.clear();
@@ -5194,29 +5234,76 @@ fn revealInExplorer(model: *Model) void {
 
 pub fn applyExplorerFilter(model: *Model) void {
     const query = model.explorer_filter.text();
-    if (query.len == 0) {
-        // Keep full tree slice from workspace / mock.
-        if (model.workspace_from_disk) {
-            if (model.workspace) |ws| model.file_nodes = ws.fileNodesSlice();
-        } else {
-            model.file_nodes = &file_tree;
-        }
-        return;
-    }
-    var count: u32 = 0;
     const source: []const FileNode = if (model.workspace_from_disk)
         if (model.workspace) |ws| ws.fileNodesSlice() else model.file_nodes
     else
         &file_tree;
-    for (source) |n| {
-        if (count >= model.explorer_filtered.len) break;
-        if (std.ascii.indexOfIgnoreCase(n.name, query) != null or std.ascii.indexOfIgnoreCase(n.path, query) != null) {
-            model.explorer_filtered[count] = workspace_store.decorateFileNode(n);
-            count += 1;
-        }
+    model.explorer_collapse.prune(source);
+    model.explorer_projection.rebuild(source, &model.explorer_collapse, query, model.git_entries);
+    model.file_nodes = model.explorer_projection.slice();
+}
+
+fn toggleExplorerFolder(model: *Model, id: u32) void {
+    const ws = model.workspace orelse return;
+    const node = ws.findNode(id) orelse return;
+    if (!node.is_dir) return;
+    setExplorerSelectedPath(model, node.path);
+    model.selected_file_id = id;
+    model.explorer_collapse.toggle(node.path);
+    applyExplorerFilter(model);
+}
+
+fn collapseAllExplorer(model: *Model) void {
+    const source: []const FileNode = if (model.workspace_from_disk)
+        if (model.workspace) |ws| ws.fileNodesSlice() else &.{}
+    else
+        &file_tree;
+    model.explorer_collapse.collapseAll(source);
+    applyExplorerFilter(model);
+    model.toast = "All folders collapsed";
+}
+
+fn expandAllExplorer(model: *Model) void {
+    model.explorer_collapse.clear();
+    applyExplorerFilter(model);
+    model.toast = "All folders expanded";
+}
+
+fn setExplorerSelectedPath(model: *Model, path: []const u8) void {
+    const len = @min(path.len, model.explorer_selected_path_buf.len);
+    @memcpy(model.explorer_selected_path_buf[0..len], path[0..len]);
+    model.explorer_selected_path_len = @intCast(len);
+}
+
+fn explorerSelectedPath(model: *const Model) []const u8 {
+    return model.explorer_selected_path_buf[0..model.explorer_selected_path_len];
+}
+
+fn restoreExplorerSelection(model: *Model, ws: *workspace_store.WorkspaceBuffers) bool {
+    const path = explorerSelectedPath(model);
+    if (path.len == 0) return false;
+    const node = ws.findNodeByPath(path) orelse return false;
+    model.selected_file_id = node.id;
+    return true;
+}
+
+fn refreshExplorerHeader(model: *Model) void {
+    if (model.workspace_scan_truncated) {
+        model.explorer_header_label = std.fmt.bufPrint(
+            &model.explorer_header_buf,
+            "{s} — {d}+ items (scan capped)",
+            .{ model.project_name, model.workspace_node_count },
+        ) catch "Workspace — scan capped";
+    } else {
+        model.explorer_header_label = model.project_name;
     }
-    model.explorer_filtered_count = count;
-    model.file_nodes = model.explorer_filtered[0..count];
+}
+
+fn syncExplorerScanMeta(model: *Model, ws: *workspace_store.WorkspaceBuffers) void {
+    model.workspace_node_count = ws.file_node_count;
+    model.workspace_scan_truncated = ws.scan_truncated;
+    refreshWorkspaceFileCount(model);
+    refreshExplorerHeader(model);
 }
 
 fn renameSelectedFile(model: *Model) void {
@@ -5252,8 +5339,9 @@ fn renameSelectedFile(model: *Model) void {
     if (model.tab_histories) |store| store.rename(old_path, new_rel) catch {};
     model.file_nodes = ws.fileNodesSlice();
     model.open_tabs = ws.tabsSlice();
-    model.workspace_node_count = ws.file_node_count;
-    refreshWorkspaceFileCount(model);
+    syncExplorerScanMeta(model, ws);
+    setExplorerSelectedPath(model, new_rel);
+    model.explorer_collapse.expandAncestors(new_rel);
     applyExplorerFilter(model);
     model.selected_file_id = id;
     model.active_tab_id = id;
@@ -5449,8 +5537,9 @@ fn duplicateSelectedFile(model: *Model) void {
     };
     model.file_nodes = ws.fileNodesSlice();
     model.open_tabs = ws.tabsSlice();
-    model.workspace_node_count = ws.file_node_count;
-    refreshWorkspaceFileCount(model);
+    syncExplorerScanMeta(model, ws);
+    setExplorerSelectedPath(model, path_buf[0..n]);
+    model.explorer_collapse.expandAncestors(path_buf[0..n]);
     applyExplorerFilter(model);
     model.selected_file_id = new_id;
     model.active_tab_id = new_id;
@@ -5770,9 +5859,7 @@ fn stageAllChanges(model: *Model) void {
     };
     _ = model.governor.spawn("feature.scm", "git add") catch {};
     const status = bufs.stageAll(modelIo(model), model.project_path);
-    model.git_entries = bufs.entriesSlice();
-    model.git_summary = bufs.summary;
-    model.git_branch = bufs.branch();
+    syncGitModel(model, bufs);
     model.governor.killFeature("feature.scm");
     model.process_count = model.governor.aliveCount();
     model.current_view = .ide;
@@ -5797,9 +5884,7 @@ fn commitChanges(model: *Model) void {
     };
     _ = model.governor.spawn("feature.scm", "git commit") catch {};
     const status = bufs.commitWithMessage(modelIo(model), model.project_path, msg);
-    model.git_entries = bufs.entriesSlice();
-    model.git_summary = bufs.summary;
-    model.git_branch = bufs.branch();
+    syncGitModel(model, bufs);
     model.governor.killFeature("feature.scm");
     model.process_count = model.governor.aliveCount();
     model.current_view = .ide;
@@ -5822,9 +5907,7 @@ fn unstageAllChanges(model: *Model) void {
     };
     _ = model.governor.spawn("feature.scm", "git reset") catch {};
     const status = bufs.unstageAll(modelIo(model), model.project_path);
-    model.git_entries = bufs.entriesSlice();
-    model.git_summary = bufs.summary;
-    model.git_branch = bufs.branch();
+    syncGitModel(model, bufs);
     model.governor.killFeature("feature.scm");
     model.process_count = model.governor.aliveCount();
     model.current_view = .ide;
@@ -5859,9 +5942,7 @@ fn discardWorkingTreeChanges(model: *Model) void {
     };
     _ = model.governor.spawn("feature.scm", "git checkout") catch {};
     const status = bufs.discardWorkingTree(modelIo(model), model.project_path);
-    model.git_entries = bufs.entriesSlice();
-    model.git_summary = bufs.summary;
-    model.git_branch = bufs.branch();
+    syncGitModel(model, bufs);
     model.governor.killFeature("feature.scm");
     model.process_count = model.governor.aliveCount();
     model.current_view = .ide;
@@ -5902,13 +5983,15 @@ fn refreshExplorer(model: *Model) void {
     };
     model.file_nodes = ws.fileNodesSlice();
     model.open_tabs = ws.tabsSlice();
-    model.workspace_node_count = ws.file_node_count;
-    refreshWorkspaceFileCount(model);
+    syncExplorerScanMeta(model, ws);
     applyExplorerFilter(model);
 
     if (new_id != 0) {
         model.active_tab_id = new_id;
-        model.selected_file_id = new_id;
+        if (!restoreExplorerSelection(model, ws)) {
+            model.selected_file_id = new_id;
+            if (ws.findNode(new_id)) |active| setExplorerSelectedPath(model, active.path);
+        }
         if (ws.findNode(new_id)) |node| {
             model.status_language = workspace_store.scannerLanguage(node.path);
         }
@@ -5917,7 +6000,10 @@ fn refreshExplorer(model: *Model) void {
         model.document.clear();
         model.document_dirty = false;
         model.active_tab_id = 0;
-        model.selected_file_id = 0;
+        if (!restoreExplorerSelection(model, ws)) {
+            model.selected_file_id = 0;
+            model.explorer_selected_path_len = 0;
+        }
         refreshDocStats(model);
         refreshBreadcrumb(model);
     }
@@ -6149,10 +6235,11 @@ fn createFolder(model: *Model) void {
     };
     model.file_nodes = ws.fileNodesSlice();
     model.open_tabs = ws.tabsSlice();
-    model.workspace_node_count = ws.file_node_count;
-    refreshWorkspaceFileCount(model);
-    applyExplorerFilter(model);
+    syncExplorerScanMeta(model, ws);
     model.selected_file_id = id;
+    setExplorerSelectedPath(model, rel);
+    model.explorer_collapse.expandAncestors(rel);
+    applyExplorerFilter(model);
     model.current_view = .ide;
     model.selected_activity = .explorer;
     model.toast = "Folder created";
@@ -6223,8 +6310,8 @@ fn newUntitledBuffer(model: *Model) void {
     };
     model.file_nodes = ws.fileNodesSlice();
     model.open_tabs = ws.tabsSlice();
-    model.workspace_node_count = ws.file_node_count;
-    refreshWorkspaceFileCount(model);
+    syncExplorerScanMeta(model, ws);
+    setExplorerSelectedPath(model, rel);
     applyExplorerFilter(model);
     model.selected_file_id = id;
     model.active_tab_id = id;
@@ -6484,7 +6571,10 @@ fn persistPrefs(model: *Model) void {
 
 fn refreshGitStatus(model: *Model) void {
     if (!model.workspace_from_disk) {
+        if (model.git_bufs) |bufs| bufs.clear();
+        model.git_entries = &.{};
         model.git_summary = "no workspace";
+        applyExplorerFilter(model);
         model.toast = "Open a workspace for git";
         return;
     }
@@ -6494,13 +6584,8 @@ fn refreshGitStatus(model: *Model) void {
     };
     _ = model.governor.spawn("feature.scm", "git status") catch {};
     bufs.refresh(modelIo(model), model.project_path);
-    model.git_entries = bufs.entriesSlice();
-    model.git_summary = bufs.summary;
-    model.git_branch = bufs.branch();
+    syncGitModel(model, bufs);
     if (bufs.branch_len > 0) model.project_branch = bufs.branch();
-    model.git_diff_text = bufs.diffText();
-    model.git_diff_status = bufs.diff_status;
-    model.selected_git_entry_id = 0;
     model.governor.killFeature("feature.scm");
     model.process_count = model.governor.aliveCount();
     appendOutputLabeled(model, .git, "git", bufs.summary);

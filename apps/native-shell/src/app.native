@@ -60,9 +60,13 @@
           <column width="260" gap="6" padding="8" background="surface">
             <if test="{showSidebarExplorer}">
               <row gap="6" cross="center">
-                <text size="lg" grow="1" wrap="false">{project_name}</text>
-                <button size="sm" variant="ghost" on-press="refresh_explorer">Refresh</button>
+                <text size="lg" grow="1" wrap="false">{explorerHeaderLabel}</text>
+                <button size="sm" variant="ghost" on-press="refresh_explorer" label="Refresh Explorer">Refresh</button>
                 <button size="sm" variant="ghost" on-press="create_new_file" label="New file">+</button>
+              </row>
+              <row gap="4">
+                <button size="sm" variant="ghost" on-press="collapse_all_explorer" label="Collapse all Explorer folders">Collapse All</button>
+                <button size="sm" variant="ghost" on-press="expand_all_explorer" label="Expand all Explorer folders">Expand All</button>
               </row>
               <text-field text="{explorerFilterText}" placeholder="Filter files..." on-input="update_explorer_filter" label="Explorer filter" />
               <text-field text="{newFilePathText}" placeholder="path/to/file.ts" on-input="update_new_file_path" on-submit="create_new_file" label="New file path" />
@@ -71,8 +75,16 @@
                   <for each="file_nodes" key="id" as="n">
                     <list-item on-press="select_file:{n.id}" selected="{n.id == selected_file_id}" padding="4" gap="4" cross="center" label="{n.name}">
                       <text size="sm" foreground="text_muted" wrap="false">{n.indent}</text>
-                      <text size="sm" foreground="text_muted" wrap="false">{n.kind_mark}</text>
+                      <if test="{n.is_dir}">
+                        <button size="sm" variant="ghost" on-press="toggle_explorer_folder:{n.id}" label="{n.chevron_label}">{n.chevron}</button>
+                      </if>
+                      <if test="{n.is_file}">
+                        <text size="sm" foreground="text_muted" wrap="false">·</text>
+                      </if>
                       <text grow="1" wrap="false">{n.name}</text>
+                      <if test="{n.has_scm}">
+                        <badge variant="secondary">{n.scm_label}</badge>
+                      </if>
                     </list-item>
                   </for>
                 </column>

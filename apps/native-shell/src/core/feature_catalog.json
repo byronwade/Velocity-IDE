@@ -442,7 +442,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "files",
     "implementation": "native",
     "priority": "P0"

@@ -182,6 +182,7 @@ test {
     _ = @import("processes/process_governor.zig");
     _ = @import("workspace/scanner.zig");
     _ = @import("workspace/workspace_store.zig");
+    _ = @import("workspace/explorer_projection.zig");
     _ = @import("workspace/search.zig");
     _ = @import("workspace/find_in_doc.zig");
     _ = @import("workspace/quick_open.zig");
