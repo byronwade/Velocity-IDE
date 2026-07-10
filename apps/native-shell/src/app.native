@@ -657,7 +657,7 @@
 
   <if test="{notificationsOpen}">
     <dialog on-dismiss="toggle_notifications_panel" label="Notification history">
-      <column width="760" gap="8" padding="4">
+      <column width="760" height="560" gap="8" padding="4">
         <row gap="8" cross="center">
           <icon name="info" width="14" height="14" foreground="text_muted" />
           <text grow="1">Notifications</text>
@@ -705,7 +705,7 @@
 
   <if test="{diff_review_open}">
     <dialog on-dismiss="close_diff_review" label="Read-only Diff Review">
-      <column width="880" gap="8" padding="4">
+      <column width="900" height="640" gap="8" padding="4">
         <row gap="8" cross="center">
           <text grow="1">{diff_review_title}</text>
           <badge variant="secondary">Read-only</badge>
@@ -723,7 +723,7 @@
             </if>
           </if>
         </row>
-        <scroll height="500" label="Unified line diff">
+        <scroll grow="1" label="Unified line diff">
           <column gap="1">
             <for each="diff_lines" key="id" as="line">
               <row gap="6" padding="3" background="surface_subtle" label="{line.kind_label}">
@@ -740,7 +740,7 @@
 
   <if test="{snippet_picker_open}">
     <dialog on-dismiss="close_snippet_picker" label="Append Snippet picker">
-      <column width="620" gap="8" padding="4">
+      <column width="620" height="480" gap="8" padding="4">
         <row gap="8" cross="center">
           <text grow="1">Append Snippet</text>
           <button size="sm" variant="ghost" icon="refresh-cw" on-press="reload_snippets" label="Reload workspace and user snippets" />
@@ -748,7 +748,7 @@
         </row>
         <text size="sm" foreground="text_muted" wrap="true">Bodies are appended literally at the end of the document. Caret insertion is unavailable.</text>
         <search-field text="{snippetQueryText}" placeholder="Search prefix or description..." on-input="update_snippet_query" label="Snippet search" />
-        <scroll height="320" label="Available literal snippets">
+        <scroll grow="1" label="Available literal snippets">
           <column gap="2">
             <for each="snippet_items" key="id" as="snippet">
               <list-item on-press="append_snippet:{snippet.id}" padding="8" gap="8" cross="center" label="{snippet.description}">
@@ -765,9 +765,9 @@
 
   <if test="{command_palette_open}">
     <dialog on-dismiss="close_command_palette" label="Command palette">
-      <column width="560" gap="8" padding="4">
+      <column width="600" height="440" gap="8" padding="4">
         <search-field text="{commandQuery}" placeholder="Type a command..." on-input="update_command_query" label="Command search" />
-        <scroll height="320" label="Command results">
+        <scroll grow="1" label="Command results">
           <column gap="2">
             <for each="command_items" as="cmd">
               <list-item on-press="run_command:{cmd.id}" padding="8" gap="8" cross="center" label="{cmd.title}">
@@ -784,9 +784,9 @@
 
   <if test="{quick_open_visible}">
     <dialog on-dismiss="close_quick_open" label="Quick open">
-      <column width="560" gap="8" padding="4">
+      <column width="600" height="400" gap="8" padding="4">
         <search-field text="{quickQueryText}" placeholder="Go to file..." on-input="update_quick_query" label="Quick open" />
-        <scroll height="280" label="Quick open results">
+        <scroll grow="1" label="Quick open results">
           <column gap="2">
             <for each="quick_items" key="id" as="item">
               <list-item on-press="open_quick_item:{item.id}" padding="8" gap="8" cross="center" label="{item.path}">
@@ -801,14 +801,14 @@
 
   <if test="{symbol_palette_open}">
     <dialog on-dismiss="close_symbol_palette" label="Go to Symbol">
-      <column width="560" gap="8" padding="4">
+      <column width="600" height="420" gap="8" padding="4">
         <row gap="6" cross="center">
           <text grow="1">Go to Symbol</text>
           <badge variant="secondary">{outlineStatus}</badge>
           <button size="sm" variant="ghost" icon="x" on-press="close_symbol_palette" label="Close symbol palette" />
         </row>
         <search-field text="{symbolQueryText}" placeholder="Filter symbols..." on-input="update_symbol_query" label="Symbol search" />
-        <scroll height="280" label="Symbol results">
+        <scroll grow="1" label="Symbol results">
           <column gap="2">
             <for each="outline_symbols" key="id" as="sym">
               <list-item on-press="open_symbol_item:{sym.id}" padding="8" gap="8" cross="center" label="{sym.name}">
@@ -825,9 +825,9 @@
 
   <if test="{shortcuts_help_visible}">
     <dialog on-dismiss="toggle_shortcuts_help" label="Keyboard Shortcuts">
-      <column width="480" gap="8" padding="4">
+      <column width="520" height="440" gap="8" padding="4">
         <text>Keyboard Shortcuts</text>
-        <scroll height="320" label="Registered keyboard shortcuts">
+        <scroll grow="1" label="Registered keyboard shortcuts">
           <column gap="4">
             <for each="shortcut_help_items" key="id" as="shortcut">
               <row gap="8" padding="4" cross="center">
