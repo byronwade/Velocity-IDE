@@ -429,45 +429,45 @@
 
           <!-- Full-page secondary views (settings / plugins / placeholders) -->
           <if test="{isDebug}">
-            <column grow="1" gap="10" padding="16">
-              <text>Debug</text>
-              <text foreground="text_muted">DAP adapters start only on demand via Process Governor.</text>
+            <column grow="1" gap="8" padding="16" cross="start">
+              <text size="lg">Debug</text>
+              <text foreground="text_muted" wrap="true">DAP adapters start only on demand via Process Governor.</text>
             </column>
           </if>
           <if test="{isTesting}">
-            <column grow="1" gap="10" padding="16">
-              <text>Testing</text>
-              <text foreground="text_muted">Test discovery is lazy. No scanner before this panel.</text>
+            <column grow="1" gap="8" padding="16" cross="start">
+              <text size="lg">Testing</text>
+              <text foreground="text_muted" wrap="true">Test discovery is lazy. No scanner before this panel.</text>
             </column>
           </if>
           <if test="{isFeatures}">
-            <column grow="1" gap="10" padding="16">
-              <text>Feature Toggle Matrix</text>
-              <text foreground="text_muted">{featureMatrixSummary}</text>
-              <button variant="secondary" on-press="instant_safe_mode">Instant Safe Mode</button>
+            <column grow="1" gap="8" padding="16" cross="start">
+              <text size="lg">Feature Toggle Matrix</text>
+              <text foreground="text_muted" wrap="true">{featureMatrixSummary}</text>
+              <button size="sm" variant="secondary" on-press="instant_safe_mode">Instant Safe Mode</button>
             </column>
           </if>
           <if test="{isProcesses}">
-            <column grow="1" gap="10" padding="16">
-              <text>Process Governor</text>
-              <text foreground="text_muted">{processGovernorSummary}</text>
+            <column grow="1" gap="8" padding="16" cross="start">
+              <text size="lg">Process Governor</text>
+              <text foreground="text_muted" wrap="true">{processGovernorSummary}</text>
               <text size="sm" foreground="text_muted">alive={process_count} terminal={terminal_process_count}</text>
-              <button variant="secondary" on-press="kill_all_workspace_processes">Kill All Workspace Processes</button>
+              <button size="sm" variant="secondary" on-press="kill_all_workspace_processes">Kill All Workspace Processes</button>
             </column>
           </if>
           <if test="{isPlugins}">
-            <column grow="1" gap="10" padding="16">
-              <text>Plugin Registry</text>
-              <text foreground="text_muted">Curated, permissioned, signed. Locked until trusted.</text>
-              <scroll grow="1">
-                <column gap="8">
+            <column grow="1" gap="8" padding="16" cross="start">
+              <text size="lg">Plugin Registry</text>
+              <text foreground="text_muted" wrap="true">Curated, permissioned, signed. Locked until trusted.</text>
+              <scroll grow="1" label="Plugin registry">
+                <column gap="8" width="720">
                   <for each="plugins" as="plug">
                     <column gap="4" padding="10" background="surface_subtle">
                       <row gap="8" cross="center">
-                        <text grow="1">{plug.name}</text>
+                        <text grow="1" wrap="false">{plug.name}</text>
                         <badge variant="secondary">{plug.trust}</badge>
                       </row>
-                      <text size="sm" foreground="text_muted">{plug.id} / v{plug.version}</text>
+                      <text size="sm" foreground="text_muted" wrap="false">{plug.id} / v{plug.version}</text>
                     </column>
                   </for>
                 </column>
@@ -483,82 +483,82 @@
               </row>
               <text-field text="{settingsQueryText}" placeholder="Search settings..." on-input="update_settings_query" label="Settings search" />
               <scroll grow="1" label="Settings sections">
-                <column gap="14">
+                <column gap="12" width="720">
                   <if test="{showSettingsAppearance}">
-                    <column gap="6" padding="10" background="surface_subtle">
+                    <column gap="4" padding="10" background="surface_subtle" cross="start">
                       <row gap="6" cross="center">
                         <icon name="sun" width="14" height="14" foreground="text_muted" />
                         <text>Appearance</text>
                       </row>
-                      <button variant="secondary" on-press="switch_theme" label="Change color theme">Color theme: {themeLabel}</button>
+                      <button size="sm" variant="secondary" on-press="switch_theme" label="Change color theme">Color theme: {themeLabel}</button>
                       <text size="sm" foreground="text_muted">Window: {windowStatusLabel}</text>
                     </column>
                   </if>
                   <if test="{showSettingsEditor}">
-                    <column gap="6" padding="10" background="surface_subtle">
+                    <column gap="4" padding="10" background="surface_subtle" cross="start">
                       <row gap="6" cross="center">
                         <icon name="edit" width="14" height="14" foreground="text_muted" />
                         <text>Editor</text>
                       </row>
-                      <button variant="ghost" on-press="toggle_find_case" label="Toggle case-sensitive find">{findCaseLabel}</button>
-                      <button variant="ghost" on-press="toggle_trim_trailing" label="Toggle trimming trailing whitespace">{trimTrailingLabel}</button>
-                      <button variant="ghost" on-press="toggle_final_newline" label="Toggle final newline insertion">{finalNewlineLabel}</button>
-                      <button variant="ghost" on-press="cycle_indent_size" label="Change editor indentation size">{indentSizeLabel}</button>
-                      <button variant="ghost" on-press="toggle_word_wrap" label="Toggle editor word wrap">{wordWrapLabel}</button>
+                      <button size="sm" variant="ghost" on-press="toggle_find_case" label="Toggle case-sensitive find">{findCaseLabel}</button>
+                      <button size="sm" variant="ghost" on-press="toggle_trim_trailing" label="Toggle trimming trailing whitespace">{trimTrailingLabel}</button>
+                      <button size="sm" variant="ghost" on-press="toggle_final_newline" label="Toggle final newline insertion">{finalNewlineLabel}</button>
+                      <button size="sm" variant="ghost" on-press="cycle_indent_size" label="Change editor indentation size">{indentSizeLabel}</button>
+                      <button size="sm" variant="ghost" on-press="toggle_word_wrap" label="Toggle editor word wrap">{wordWrapLabel}</button>
                     </column>
                   </if>
                   <if test="{showSettingsWorkspace}">
-                    <column gap="6" padding="10" background="surface_subtle">
+                    <column gap="4" padding="10" background="surface_subtle" cross="start">
                       <row gap="6" cross="center">
                         <icon name="folder" width="14" height="14" foreground="text_muted" />
                         <text>Workspace</text>
                       </row>
-                      <button variant="ghost" on-press="toggle_terminal" label="Toggle integrated terminal panel">{terminalPanelLabel}</button>
-                      <button variant="ghost" on-press="toggle_agent_panel" label="Toggle AI agent panel">{agentPanelLabel}</button>
-                      <button variant="ghost" on-press="toggle_auto_save" label="Toggle automatic file saving">{autoSaveLabel}</button>
-                      <button variant="ghost" on-press="toggle_search_case" label="Workspace Search: Match Case">{searchCaseLabel}</button>
-                      <button variant="ghost" on-press="toggle_search_whole_word" label="Workspace Search: Match Whole Word">{searchWholeWordLabel}</button>
-                      <button variant="ghost" on-press="cycle_disk_poll_interval" label="Files: Cycle Disk Poll Interval">{diskPollIntervalLabel}</button>
-                      <button variant="ghost" on-press="toggle_sidebar" label="Toggle workspace sidebar">{sidebarLabel}</button>
-                      <button variant="ghost" on-press="toggle_focus_mode" label="Toggle focus mode">{focusModeLabel}</button>
-                      <button variant="ghost" on-press="save_prefs">Save Preferences</button>
+                      <button size="sm" variant="ghost" on-press="toggle_terminal" label="Toggle integrated terminal panel">{terminalPanelLabel}</button>
+                      <button size="sm" variant="ghost" on-press="toggle_agent_panel" label="Toggle AI agent panel">{agentPanelLabel}</button>
+                      <button size="sm" variant="ghost" on-press="toggle_auto_save" label="Toggle automatic file saving">{autoSaveLabel}</button>
+                      <button size="sm" variant="ghost" on-press="toggle_search_case" label="Workspace Search: Match Case">{searchCaseLabel}</button>
+                      <button size="sm" variant="ghost" on-press="toggle_search_whole_word" label="Workspace Search: Match Whole Word">{searchWholeWordLabel}</button>
+                      <button size="sm" variant="ghost" on-press="cycle_disk_poll_interval" label="Files: Cycle Disk Poll Interval">{diskPollIntervalLabel}</button>
+                      <button size="sm" variant="ghost" on-press="toggle_sidebar" label="Toggle workspace sidebar">{sidebarLabel}</button>
+                      <button size="sm" variant="ghost" on-press="toggle_focus_mode" label="Toggle focus mode">{focusModeLabel}</button>
+                      <button size="sm" variant="ghost" on-press="save_prefs">Save Preferences</button>
                     </column>
                   </if>
                   <if test="{showSettingsAccessibility}">
-                    <column gap="6" padding="10" background="surface_subtle">
+                    <column gap="4" padding="10" background="surface_subtle" cross="start">
                       <row gap="6" cross="center">
                         <icon name="eye" width="14" height="14" foreground="text_muted" />
                         <text>Accessibility</text>
                       </row>
                       <text size="sm" foreground="text_muted">{systemHighContrastLabel}</text>
                       <text size="sm" foreground="text_muted">{systemReduceMotionLabel}</text>
-                      <button variant="ghost" on-press="toggle_shortcuts_help" label="Open keyboard shortcuts help">Keyboard Shortcuts</button>
-                      <button variant="ghost" on-press="toggle_notifications_panel" label="Open notification history">Notification History</button>
+                      <button size="sm" variant="ghost" on-press="toggle_shortcuts_help" label="Open keyboard shortcuts help">Keyboard Shortcuts</button>
+                      <button size="sm" variant="ghost" on-press="toggle_notifications_panel" label="Open notification history">Notification History</button>
                     </column>
                   </if>
                   <if test="{showSettingsFeatures}">
-                    <column gap="6" padding="10" background="surface_subtle">
+                    <column gap="4" padding="10" background="surface_subtle" cross="start">
                       <row gap="6" cross="center">
                         <icon name="wrench" width="14" height="14" foreground="text_muted" />
                         <text>Features</text>
                       </row>
-                      <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
-                      <button variant="ghost" on-press="open_process_governor">Process Governor</button>
-                      <button variant="ghost" on-press="open_plugin_registry">Plugins</button>
-                      <button variant="ghost" on-press="run_perf">Refresh Performance Metrics</button>
+                      <button size="sm" variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
+                      <button size="sm" variant="ghost" on-press="open_process_governor">Process Governor</button>
+                      <button size="sm" variant="ghost" on-press="open_plugin_registry">Plugins</button>
+                      <button size="sm" variant="ghost" on-press="run_perf">Refresh Performance Metrics</button>
                     </column>
                   </if>
                   <if test="{showSettingsAbout}">
-                    <column gap="6" padding="10" background="surface_subtle">
+                    <column gap="4" padding="10" background="surface_subtle" cross="start">
                       <row gap="6" cross="center">
                         <icon name="info" width="14" height="14" foreground="text_muted" />
                         <text>About</text>
                       </row>
                       <text size="sm" foreground="text_muted">Telemetry off | Surveys off | Plugins locked</text>
                       <text size="sm" foreground="text_muted">{app_version_label}</text>
-                      <button variant="secondary" on-press="check_for_updates">Check for Updates</button>
-                      <button variant="ghost" on-press="toggle_notifications_panel">Notifications</button>
-                      <button variant="ghost" on-press="go_launch">Back to Launch</button>
+                      <button size="sm" variant="secondary" on-press="check_for_updates">Check for Updates</button>
+                      <button size="sm" variant="ghost" on-press="toggle_notifications_panel">Notifications</button>
+                      <button size="sm" variant="ghost" on-press="go_launch">Back to Launch</button>
                     </column>
                   </if>
                   <if test="{showSettingsNoResults}">

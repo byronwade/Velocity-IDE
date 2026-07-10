@@ -1,9 +1,9 @@
 //! Velocity design tokens.
-//! Warm, clean, editor-first palette — a hand-tuned neutral foundation with a
-//! subtle warm undertone (stone/sand rather than cold zinc), hairline borders,
-//! monochrome primary, and a single restrained amber signal for focus and
-//! selection. Original palette; no third-party brand assets or proprietary
-//! fonts.
+//! Monochrome, editor-first palette — a neutral graphite foundation (near-equal
+//! RGB, no warm or cold cast) with hairline borders and a single **electric
+//! blue** brand signal used for the primary action, focus, and selection.
+//! Everything else stays grayscale so the blue always reads as the one point of
+//! emphasis. Original palette; no third-party brand assets or proprietary fonts.
 
 const native_sdk = @import("native_sdk");
 const canvas = native_sdk.canvas;
@@ -11,56 +11,59 @@ const Color = canvas.Color;
 
 pub const ThemePreference = enum { dark, light, high_contrast };
 
-/// Dark canvas: warm near-black ("ink") with gently lifted surfaces for a
-/// Cursor-like sense of depth, kept warm so it never reads blue or clinical.
+/// Dark canvas: neutral graphite near-black with gently lifted surfaces for a
+/// sense of depth. The one saturated hue is electric blue, reserved for the
+/// primary action, focus ring, selection, and informational accents.
 pub const dark_colors = canvas.ColorTokens{
-    .background = Color.rgb8(13, 12, 11),
-    .surface = Color.rgb8(20, 18, 16),
-    .surface_subtle = Color.rgb8(28, 25, 23),
-    .surface_pressed = Color.rgba8(255, 246, 235, 20),
-    .text = Color.rgb8(247, 244, 239),
-    .text_muted = Color.rgb8(151, 143, 133),
-    .border = Color.rgba8(255, 244, 230, 20),
-    .accent = Color.rgb8(246, 243, 238),
-    .accent_text = Color.rgb8(20, 17, 14),
-    .destructive = Color.rgb8(233, 92, 78),
-    .destructive_text = Color.rgb8(252, 248, 244),
-    .success = Color.rgb8(78, 190, 130),
-    .success_text = Color.rgb8(13, 12, 11),
+    .background = Color.rgb8(13, 14, 16),
+    .surface = Color.rgb8(19, 21, 24),
+    .surface_subtle = Color.rgb8(27, 30, 34),
+    .surface_pressed = Color.rgba8(255, 255, 255, 20),
+    .text = Color.rgb8(234, 236, 240),
+    .text_muted = Color.rgb8(139, 145, 154),
+    .border = Color.rgba8(255, 255, 255, 23),
+    // Electric blue brand signal.
+    .accent = Color.rgb8(48, 128, 255),
+    .accent_text = Color.rgb8(255, 255, 255),
+    .destructive = Color.rgb8(235, 90, 78),
+    .destructive_text = Color.rgb8(255, 255, 255),
+    .success = Color.rgb8(64, 190, 132),
+    .success_text = Color.rgb8(13, 14, 16),
     .warning = Color.rgb8(224, 158, 82),
-    .warning_text = Color.rgb8(24, 18, 12),
-    .info = Color.rgb8(126, 164, 244),
-    .info_text = Color.rgb8(13, 12, 11),
-    .focus_ring = Color.rgb8(219, 170, 108),
-    .shadow = Color.rgba8(0, 0, 0, 170),
-    .scrim = Color.rgba8(10, 8, 6, 178),
-    .disabled = Color.rgb8(48, 44, 40),
+    .warning_text = Color.rgb8(20, 16, 10),
+    .info = Color.rgb8(90, 162, 255),
+    .info_text = Color.rgb8(13, 14, 16),
+    .focus_ring = Color.rgb8(90, 162, 255),
+    .shadow = Color.rgba8(0, 0, 0, 180),
+    .scrim = Color.rgba8(6, 8, 12, 184),
+    .disabled = Color.rgb8(44, 47, 52),
 };
 
-/// Light canvas: warm paper — an off-white background with warm ink text,
-/// soft warm shadows, and the same amber signal for continuity with dark.
+/// Light canvas: neutral off-white paper with graphite text. Same electric blue
+/// signal, deepened slightly for contrast against the light background.
 pub const light_colors = canvas.ColorTokens{
-    .background = Color.rgb8(250, 249, 246),
-    .surface = Color.rgb8(255, 255, 253),
-    .surface_subtle = Color.rgb8(244, 242, 237),
-    .surface_pressed = Color.rgb8(232, 228, 220),
-    .text = Color.rgb8(28, 25, 22),
-    .text_muted = Color.rgb8(122, 114, 104),
-    .border = Color.rgb8(232, 227, 218),
-    .accent = Color.rgb8(28, 25, 22),
-    .accent_text = Color.rgb8(250, 249, 246),
-    .destructive = Color.rgb8(206, 68, 56),
-    .destructive_text = Color.rgb8(255, 252, 249),
-    .success = Color.rgb8(28, 148, 98),
-    .success_text = Color.rgb8(255, 255, 253),
-    .warning = Color.rgb8(190, 122, 38),
-    .warning_text = Color.rgb8(255, 253, 249),
-    .info = Color.rgb8(44, 98, 214),
-    .info_text = Color.rgb8(255, 255, 253),
-    .focus_ring = Color.rgb8(198, 146, 84),
-    .shadow = Color.rgba8(60, 50, 38, 28),
-    .scrim = Color.rgba8(40, 32, 24, 44),
-    .disabled = Color.rgb8(240, 237, 230),
+    .background = Color.rgb8(249, 250, 251),
+    .surface = Color.rgb8(255, 255, 255),
+    .surface_subtle = Color.rgb8(240, 242, 245),
+    .surface_pressed = Color.rgb8(226, 230, 236),
+    .text = Color.rgb8(23, 26, 31),
+    .text_muted = Color.rgb8(105, 112, 122),
+    .border = Color.rgb8(223, 226, 231),
+    // Electric blue brand signal (deepened for light backgrounds).
+    .accent = Color.rgb8(20, 104, 240),
+    .accent_text = Color.rgb8(255, 255, 255),
+    .destructive = Color.rgb8(210, 58, 48),
+    .destructive_text = Color.rgb8(255, 255, 255),
+    .success = Color.rgb8(24, 150, 100),
+    .success_text = Color.rgb8(255, 255, 255),
+    .warning = Color.rgb8(184, 118, 32),
+    .warning_text = Color.rgb8(255, 255, 255),
+    .info = Color.rgb8(20, 104, 240),
+    .info_text = Color.rgb8(255, 255, 255),
+    .focus_ring = Color.rgb8(20, 104, 240),
+    .shadow = Color.rgba8(20, 28, 42, 26),
+    .scrim = Color.rgba8(18, 26, 40, 46),
+    .disabled = Color.rgb8(237, 239, 243),
 };
 
 pub fn tokens(preference: ThemePreference, high_contrast: bool, reduce_motion: bool) canvas.DesignTokens {
