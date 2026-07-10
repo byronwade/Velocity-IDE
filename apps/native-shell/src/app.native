@@ -656,8 +656,9 @@
   </column>
 
   <if test="{notificationsOpen}">
-    <dialog on-dismiss="toggle_notifications_panel" label="Notification history">
-      <column width="760" height="560" gap="8" padding="4">
+    <column grow="1" main="center" cross="center" padding="60" background="scrim" label="Notification history">
+      <card width="760" height="560">
+        <column grow="1" gap="8" padding="16">
         <row gap="8" cross="center">
           <icon name="info" width="14" height="14" foreground="text_muted" />
           <text grow="1">Notifications</text>
@@ -682,7 +683,7 @@
           <button size="sm" variant="ghost" selected="{notification_source_filter == notification_source_launch}" on-press="set_notification_source_filter:{notification_source_launch}">Launch</button>
           <button size="sm" variant="ghost" selected="{notification_source_filter == notification_source_git}" on-press="set_notification_source_filter:{notification_source_git}">Git</button>
         </row>
-        <scroll height="260" label="Notification history">
+        <scroll grow="1" label="Notification history">
           <column gap="4">
             <for each="notifications" key="id" as="n">
               <column gap="2" padding="8" background="surface_subtle">
@@ -699,13 +700,15 @@
             </for>
           </column>
         </scroll>
-      </column>
-    </dialog>
+        </column>
+      </card>
+    </column>
   </if>
 
   <if test="{diff_review_open}">
-    <dialog on-dismiss="close_diff_review" label="Read-only Diff Review">
-      <column width="900" height="640" gap="8" padding="4">
+    <column grow="1" main="center" cross="center" padding="48" background="scrim" label="Read-only Diff Review">
+      <card width="920" height="660">
+        <column grow="1" gap="8" padding="16">
         <row gap="8" cross="center">
           <text grow="1">{diff_review_title}</text>
           <badge variant="secondary">Read-only</badge>
@@ -734,13 +737,15 @@
             </for>
           </column>
         </scroll>
-      </column>
-    </dialog>
+        </column>
+      </card>
+    </column>
   </if>
 
   <if test="{snippet_picker_open}">
-    <dialog on-dismiss="close_snippet_picker" label="Append Snippet picker">
-      <column width="620" height="480" gap="8" padding="4">
+    <column grow="1" main="center" cross="center" padding="60" background="scrim" label="Append Snippet picker">
+      <card width="640" height="480">
+        <column grow="1" gap="8" padding="16">
         <row gap="8" cross="center">
           <text grow="1">Append Snippet</text>
           <button size="sm" variant="ghost" icon="refresh-cw" on-press="reload_snippets" label="Reload workspace and user snippets" />
@@ -759,8 +764,9 @@
           </column>
         </scroll>
         <text size="sm" foreground="text_muted">{snippet_status}</text>
-      </column>
-    </dialog>
+        </column>
+      </card>
+    </column>
   </if>
 
   <if test="{command_palette_open}">
@@ -785,62 +791,70 @@
   </if>
 
   <if test="{quick_open_visible}">
-    <dialog on-dismiss="close_quick_open" label="Quick open">
-      <column width="600" height="400" gap="8" padding="4">
-        <search-field text="{quickQueryText}" placeholder="Go to file..." on-input="update_quick_query" label="Quick open" />
-        <scroll grow="1" label="Quick open results">
-          <column gap="2">
-            <for each="quick_items" key="id" as="item">
-              <list-item on-press="open_quick_item:{item.id}" padding="8" gap="8" cross="center" label="{item.path}">
-                <text grow="1" wrap="false">{item.path}</text>
-              </list-item>
-            </for>
-          </column>
-        </scroll>
-      </column>
-    </dialog>
+    <column grow="1" main="center" cross="center" padding="80" background="scrim" label="Quick open">
+      <card width="620" height="420">
+        <column grow="1" gap="8" padding="12">
+          <search-field text="{quickQueryText}" placeholder="Go to file..." on-input="update_quick_query" label="Quick open" />
+          <scroll grow="1" label="Quick open results">
+            <column gap="2">
+              <for each="quick_items" key="id" as="item">
+                <list-item on-press="open_quick_item:{item.id}" padding="8" gap="8" cross="center" label="{item.path}">
+                  <text grow="1" wrap="false">{item.path}</text>
+                </list-item>
+              </for>
+            </column>
+          </scroll>
+        </column>
+      </card>
+    </column>
   </if>
 
   <if test="{symbol_palette_open}">
-    <dialog on-dismiss="close_symbol_palette" label="Go to Symbol">
-      <column width="600" height="420" gap="8" padding="4">
-        <row gap="6" cross="center">
-          <text grow="1">Go to Symbol</text>
-          <badge variant="secondary">{outlineStatus}</badge>
-          <button size="sm" variant="ghost" icon="x" on-press="close_symbol_palette" label="Close symbol palette" />
-        </row>
-        <search-field text="{symbolQueryText}" placeholder="Filter symbols..." on-input="update_symbol_query" label="Symbol search" />
-        <scroll grow="1" label="Symbol results">
-          <column gap="2">
-            <for each="outline_symbols" key="id" as="sym">
-              <list-item on-press="open_symbol_item:{sym.id}" padding="8" gap="8" cross="center" label="{sym.name}">
-                <badge variant="secondary">{sym.kind}</badge>
-                <text grow="1" wrap="false">{sym.name}</text>
-                <text size="sm" foreground="text_muted">L{sym.line}</text>
-              </list-item>
-            </for>
-          </column>
-        </scroll>
-      </column>
-    </dialog>
+    <column grow="1" main="center" cross="center" padding="80" background="scrim" label="Go to Symbol">
+      <card width="620" height="440">
+        <column grow="1" gap="8" padding="12">
+          <row gap="6" cross="center">
+            <text grow="1">Go to Symbol</text>
+            <badge variant="secondary">{outlineStatus}</badge>
+            <button size="sm" variant="ghost" icon="x" on-press="close_symbol_palette" label="Close symbol palette" />
+          </row>
+          <search-field text="{symbolQueryText}" placeholder="Filter symbols..." on-input="update_symbol_query" label="Symbol search" />
+          <scroll grow="1" label="Symbol results">
+            <column gap="2">
+              <for each="outline_symbols" key="id" as="sym">
+                <list-item on-press="open_symbol_item:{sym.id}" padding="8" gap="8" cross="center" label="{sym.name}">
+                  <badge variant="secondary">{sym.kind}</badge>
+                  <text grow="1" wrap="false">{sym.name}</text>
+                  <text size="sm" foreground="text_muted">L{sym.line}</text>
+                </list-item>
+              </for>
+            </column>
+          </scroll>
+        </column>
+      </card>
+    </column>
   </if>
 
   <if test="{shortcuts_help_visible}">
-    <dialog on-dismiss="toggle_shortcuts_help" label="Keyboard Shortcuts">
-      <column width="520" height="440" gap="8" padding="4">
-        <text>Keyboard Shortcuts</text>
-        <scroll grow="1" label="Registered keyboard shortcuts">
-          <column gap="4">
-            <for each="shortcut_help_items" key="id" as="shortcut">
-              <row gap="8" padding="4" cross="center">
-                <text grow="1" size="sm">{shortcut.label}</text>
-                <text size="sm" foreground="text_muted">{shortcut.hint}</text>
-              </row>
-            </for>
-          </column>
-        </scroll>
-        <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>
-      </column>
-    </dialog>
+    <column grow="1" main="center" cross="center" padding="60" background="scrim" label="Keyboard Shortcuts">
+      <card width="540" height="460">
+        <column grow="1" gap="8" padding="16">
+          <row gap="8" cross="center">
+            <text grow="1">Keyboard Shortcuts</text>
+            <button size="sm" variant="ghost" icon="x" on-press="toggle_shortcuts_help" label="Close keyboard shortcuts" />
+          </row>
+          <scroll grow="1" label="Registered keyboard shortcuts">
+            <column gap="4">
+              <for each="shortcut_help_items" key="id" as="shortcut">
+                <row gap="8" padding="4" cross="center">
+                  <text grow="1" size="sm">{shortcut.label}</text>
+                  <text size="sm" foreground="text_muted">{shortcut.hint}</text>
+                </row>
+              </for>
+            </column>
+          </scroll>
+        </column>
+      </card>
+    </column>
   </if>
 </stack>
