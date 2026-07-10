@@ -31,6 +31,7 @@ jobs:
           - review-snippet
           - terminal
           - diagnostics
+          - lsp
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -50,6 +51,9 @@ jobs:
             xvfb
       - name: Install project dependencies
         run: npm ci
+      - name: Install typescript-language-server (lsp suite)
+        if: matrix.suite == 'lsp'
+        run: npm install -g typescript-language-server typescript
       - name: Run smoke suite
         # Start Xvfb first so D-Bus-activated GTK portals inherit DISPLAY.
         run: xvfb-run -a dbus-run-session -- npm run smoke:${{ matrix.suite }}

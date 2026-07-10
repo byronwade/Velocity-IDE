@@ -34,7 +34,8 @@
     "smoke:explorer": "npm --workspace @velocity/native-shell run explorer-smoke",
     "smoke:review-snippet": "npm --workspace @velocity/native-shell run review-snippet-smoke",
     "smoke:terminal": "npm --workspace @velocity/native-shell run terminal-smoke",
-    "smoke:diagnostics": "npm --workspace @velocity/native-shell run diagnostics-smoke"
+    "smoke:diagnostics": "npm --workspace @velocity/native-shell run diagnostics-smoke",
+  "smoke:lsp": "npm --workspace @velocity/native-shell run lsp-smoke"
   },
   "engines": {
     "node": ">=22"
