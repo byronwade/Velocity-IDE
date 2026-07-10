@@ -141,13 +141,13 @@ pub const Options = struct {
 // threads (Zig 0.16 routes std time through `std.Io`; syscalls are
 // simpler here and match the raw-fd I/O layer below).
 
-fn nowMs() u64 {
+pub fn nowMs() u64 {
     var ts: posix.system.timespec = undefined;
     if (posix.errno(posix.system.clock_gettime(.MONOTONIC, &ts)) != .SUCCESS) return 0;
     return @as(u64, @intCast(ts.sec)) * 1000 + @as(u64, @intCast(ts.nsec)) / 1_000_000;
 }
 
-fn sleepMs(ms: u64) void {
+pub fn sleepMs(ms: u64) void {
     var req: posix.system.timespec = .{
         .sec = @intCast(ms / 1000),
         .nsec = @intCast((ms % 1000) * 1_000_000),
@@ -471,7 +471,7 @@ pub const HttpRequest = struct {
     }
 };
 
-fn constantTimeEql(a: []const u8, b: []const u8) bool {
+pub fn constantTimeEql(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
     var diff: u8 = 0;
     for (a, b) |x, y| diff |= x ^ y;
@@ -497,7 +497,7 @@ pub fn writeAllFd(fd: posix.fd_t, bytes: []const u8) error{WriteFailed}!void {
     }
 }
 
-fn readFd(fd: posix.fd_t, buf: []u8) usize {
+pub fn readFd(fd: posix.fd_t, buf: []u8) usize {
     while (true) {
         const rc = posix.system.read(fd, buf.ptr, buf.len);
         switch (posix.errno(rc)) {
@@ -604,7 +604,7 @@ const Runtime = struct {
     }
 };
 
-fn ignoreSigpipe() void {
+pub fn ignoreSigpipe() void {
     posix.sigaction(.PIPE, &.{
         .handler = .{ .handler = posix.SIG.IGN },
         .mask = posix.sigemptyset(),
@@ -612,7 +612,7 @@ fn ignoreSigpipe() void {
     }, null);
 }
 
-fn boundPort(server: *const std.Io.net.Server) !u16 {
+pub fn boundPort(server: *const std.Io.net.Server) !u16 {
     var sa: posix.sockaddr.in = undefined;
     var sa_len: posix.socklen_t = @sizeOf(posix.sockaddr.in);
     const rc = posix.system.getsockname(server.socket.handle, @ptrCast(&sa), &sa_len);
@@ -667,7 +667,7 @@ fn exitBroker(rt: *Runtime, reason: []const u8) noreturn {
 
 /// Another thread already owns teardown and will `exit` the whole
 /// process; keep this thread out of the way until then.
-fn parkUntilExit() noreturn {
+pub fn parkUntilExit() noreturn {
     while (true) sleepMs(1000);
 }
 
@@ -676,7 +676,7 @@ fn parkUntilExit() noreturn {
 /// `-pid` reaches the whole tree (e.g. typescript-language-server AND
 /// its tsserver node child). Reaps the direct child when the main
 /// thread has not already done so; grandchildren reparent to init.
-fn escalateKillServerTree(child_pid: posix.pid_t, grace_ms: u64) void {
+pub fn escalateKillServerTree(child_pid: posix.pid_t, grace_ms: u64) void {
     if (child_pid <= 0) return;
     posix.kill(-child_pid, .TERM) catch return; // ProcessNotFound: already gone
     const deadline = nowMs() + grace_ms;
@@ -720,7 +720,14 @@ fn termSignalHandler(_: posix.SIG) callconv(.c) void {
     std.process.exit(0);
 }
 
-fn installDeathBackstop() void {
+/// Arm the SIGTERM-handler backstop with the pid whose process group
+/// must be SIGKILLed if this broker dies uncleanly. Shared by the LSP
+/// and PTY broker binaries.
+pub fn armDeathBackstop(pid: posix.pid_t) void {
+    g_server_pid.store(pid, .monotonic);
+}
+
+pub fn installDeathBackstop() void {
     posix.sigaction(.TERM, &.{
         .handler = .{ .handler = termSignalHandler },
         .mask = posix.sigemptyset(),
@@ -739,7 +746,7 @@ fn installDeathBackstop() void {
 
 // ---------------------------------------------------------- HTTP serving
 
-fn respond(io: std.Io, stream: std.Io.net.Stream, status: []const u8, body: []const u8) void {
+pub fn respond(io: std.Io, stream: std.Io.net.Stream, status: []const u8, body: []const u8) void {
     _ = io;
     var buf: [512]u8 = undefined;
     const head = std.fmt.bufPrint(&buf, "HTTP/1.1 {s}\r\nContent-Type: application/json\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n", .{ status, body.len }) catch return;

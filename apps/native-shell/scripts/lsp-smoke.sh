@@ -14,7 +14,6 @@ export PATH="$REPO_ROOT/.tools/node_modules/.bin:${PATH:-}"
 . "$SHELL_ROOT/scripts/smoke-common.sh"
 
 # 1. The broker binary is not part of the app build yet — build it.
-bash "$SHELL_ROOT/scripts/build-lsp-broker.sh"
 
 # 2. Find typescript-language-server: PATH first, then a local install
 #    (LSP_SMOKE_TLS_DIR or the CI scratch install), else SKIP honestly.
@@ -64,6 +63,9 @@ cleanup() {
 trap cleanup EXIT
 
 native build --yes -Dautomation=true
+# The app build above installed the managed Zig toolchain; now the broker
+# (its build script resolves zig from that toolchain on fresh runners).
+bash "$SHELL_ROOT/scripts/build-lsp-broker.sh"
 rm -rf .zig-cache/native-sdk-automation
 if test -z "${DISPLAY:-}" && command -v xvfb-run >/dev/null 2>&1; then
   xvfb-run -a ./zig-out/bin/velocity-ide >"$LOG_FILE" 2>&1 &
