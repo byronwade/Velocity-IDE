@@ -1,7 +1,9 @@
 //! Velocity design tokens.
-//! Inspired by modern agent-first / developer-dashboard precision (dark-first,
-//! hairline borders, monochrome foundation) — original palette, no third-party
-//! brand assets or proprietary fonts.
+//! Warm, clean, editor-first palette — a hand-tuned neutral foundation with a
+//! subtle warm undertone (stone/sand rather than cold zinc), hairline borders,
+//! monochrome primary, and a single restrained amber signal for focus and
+//! selection. Original palette; no third-party brand assets or proprietary
+//! fonts.
 
 const native_sdk = @import("native_sdk");
 const canvas = native_sdk.canvas;
@@ -9,53 +11,56 @@ const Color = canvas.Color;
 
 pub const ThemePreference = enum { dark, light, high_contrast };
 
-/// Dark canvas: near-black with slightly lifted surfaces for Cursor-like depth.
+/// Dark canvas: warm near-black ("ink") with gently lifted surfaces for a
+/// Cursor-like sense of depth, kept warm so it never reads blue or clinical.
 pub const dark_colors = canvas.ColorTokens{
-    .background = Color.rgb8(9, 9, 11),
-    .surface = Color.rgb8(14, 14, 16),
-    .surface_subtle = Color.rgb8(22, 22, 24),
-    .surface_pressed = Color.rgba8(255, 255, 255, 24),
-    .text = Color.rgb8(250, 250, 250),
-    .text_muted = Color.rgb8(113, 113, 122),
-    .border = Color.rgba8(255, 255, 255, 18),
-    .accent = Color.rgb8(250, 250, 250),
-    .accent_text = Color.rgb8(9, 9, 11),
-    .destructive = Color.rgb8(239, 68, 68),
-    .destructive_text = Color.rgb8(250, 250, 250),
-    .success = Color.rgb8(34, 197, 94),
-    .success_text = Color.rgb8(9, 9, 11),
-    .warning = Color.rgb8(245, 158, 11),
-    .warning_text = Color.rgb8(9, 9, 11),
-    .info = Color.rgb8(96, 165, 250),
-    .info_text = Color.rgb8(9, 9, 11),
-    .focus_ring = Color.rgb8(161, 161, 170),
-    .shadow = Color.rgba8(0, 0, 0, 180),
-    .scrim = Color.rgba8(0, 0, 0, 160),
-    .disabled = Color.rgb8(39, 39, 42),
+    .background = Color.rgb8(13, 12, 11),
+    .surface = Color.rgb8(20, 18, 16),
+    .surface_subtle = Color.rgb8(28, 25, 23),
+    .surface_pressed = Color.rgba8(255, 246, 235, 20),
+    .text = Color.rgb8(247, 244, 239),
+    .text_muted = Color.rgb8(151, 143, 133),
+    .border = Color.rgba8(255, 244, 230, 20),
+    .accent = Color.rgb8(246, 243, 238),
+    .accent_text = Color.rgb8(20, 17, 14),
+    .destructive = Color.rgb8(233, 92, 78),
+    .destructive_text = Color.rgb8(252, 248, 244),
+    .success = Color.rgb8(78, 190, 130),
+    .success_text = Color.rgb8(13, 12, 11),
+    .warning = Color.rgb8(224, 158, 82),
+    .warning_text = Color.rgb8(24, 18, 12),
+    .info = Color.rgb8(126, 164, 244),
+    .info_text = Color.rgb8(13, 12, 11),
+    .focus_ring = Color.rgb8(219, 170, 108),
+    .shadow = Color.rgba8(0, 0, 0, 170),
+    .scrim = Color.rgba8(10, 8, 6, 178),
+    .disabled = Color.rgb8(48, 44, 40),
 };
 
+/// Light canvas: warm paper — an off-white background with warm ink text,
+/// soft warm shadows, and the same amber signal for continuity with dark.
 pub const light_colors = canvas.ColorTokens{
-    .background = Color.rgb8(250, 250, 250),
-    .surface = Color.rgb8(255, 255, 255),
-    .surface_subtle = Color.rgb8(245, 245, 245),
-    .surface_pressed = Color.rgb8(229, 229, 229),
-    .text = Color.rgb8(10, 10, 10),
-    .text_muted = Color.rgb8(115, 115, 115),
-    .border = Color.rgb8(229, 229, 229),
-    .accent = Color.rgb8(23, 23, 23),
-    .accent_text = Color.rgb8(250, 250, 250),
-    .destructive = Color.rgb8(239, 68, 68),
-    .destructive_text = Color.rgb8(250, 250, 250),
-    .success = Color.rgb8(22, 163, 74),
-    .success_text = Color.rgb8(250, 250, 250),
-    .warning = Color.rgb8(217, 119, 6),
-    .warning_text = Color.rgb8(250, 250, 250),
-    .info = Color.rgb8(37, 99, 235),
-    .info_text = Color.rgb8(250, 250, 250),
-    .focus_ring = Color.rgb8(161, 161, 161),
-    .shadow = Color.rgba8(0, 0, 0, 26),
-    .scrim = Color.rgba8(0, 0, 0, 40),
-    .disabled = Color.rgb8(245, 245, 245),
+    .background = Color.rgb8(250, 249, 246),
+    .surface = Color.rgb8(255, 255, 253),
+    .surface_subtle = Color.rgb8(244, 242, 237),
+    .surface_pressed = Color.rgb8(232, 228, 220),
+    .text = Color.rgb8(28, 25, 22),
+    .text_muted = Color.rgb8(122, 114, 104),
+    .border = Color.rgb8(232, 227, 218),
+    .accent = Color.rgb8(28, 25, 22),
+    .accent_text = Color.rgb8(250, 249, 246),
+    .destructive = Color.rgb8(206, 68, 56),
+    .destructive_text = Color.rgb8(255, 252, 249),
+    .success = Color.rgb8(28, 148, 98),
+    .success_text = Color.rgb8(255, 255, 253),
+    .warning = Color.rgb8(190, 122, 38),
+    .warning_text = Color.rgb8(255, 253, 249),
+    .info = Color.rgb8(44, 98, 214),
+    .info_text = Color.rgb8(255, 255, 253),
+    .focus_ring = Color.rgb8(198, 146, 84),
+    .shadow = Color.rgba8(60, 50, 38, 28),
+    .scrim = Color.rgba8(40, 32, 24, 44),
+    .disabled = Color.rgb8(240, 237, 230),
 };
 
 pub fn tokens(preference: ThemePreference, high_contrast: bool, reduce_motion: bool) canvas.DesignTokens {
@@ -77,8 +82,9 @@ pub fn tokens(preference: ThemePreference, high_contrast: bool, reduce_motion: b
             .dark, .high_contrast => dark_colors,
         };
     }
-    // Compact IDE density — tighter radii for Cursor-like chrome
-    out.radius = .{ .sm = 3, .md = 5, .lg = 7, .xl = 10 };
+    // Clean, softly rounded chrome — enough radius to feel modern and calm
+    // without drifting into a bubbly, low-density look.
+    out.radius = .{ .sm = 4, .md = 7, .lg = 11, .xl = 15 };
     out.pixel_snap = .{ .geometry = true, .text = true, .scale = 1 };
     return out;
 }
