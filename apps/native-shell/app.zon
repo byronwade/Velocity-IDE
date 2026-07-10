@@ -26,7 +26,7 @@
                         .fill = true,
                         .role = "Velocity IDE canvas",
                         .accessibility_label = "Velocity IDE",
-                        .gpu_backend = "metal",
+                        .gpu_backend = "software",
                         .gpu_pixel_format = "bgra8_unorm",
                         .gpu_present_mode = "timer",
                         .gpu_alpha_mode = "opaque",
