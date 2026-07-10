@@ -205,8 +205,8 @@
                  Each tab is its own flat cell (active = selected fill), carries a
                  dirty dot when unsaved, and its own close affordance. -->
             <row height="34" gap="2" padding="4" background="surface" cross="center">
-              <button size="sm" variant="ghost" icon="chevron-left" on-press="navigate_back" label="{navigationBackLabel}" />
-              <button size="sm" variant="ghost" icon="chevron-right" on-press="navigate_forward" label="{navigationForwardLabel}" />
+              <button size="sm" variant="ghost" icon="chevron-left" on-press="navigate_back" label="{navigationBackLabel}">Back</button>
+              <button size="sm" variant="ghost" icon="chevron-right" on-press="navigate_forward" label="{navigationForwardLabel}">Forward</button>
               <spacer width="4" />
               <row gap="2" grow="1" cross="center">
                 <for each="open_tabs" key="id" as="t">
