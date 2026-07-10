@@ -102,8 +102,26 @@ horizontal scrolling in chrome; no fake responsive breakpoints.
 
 - Overlays center via a scrim `column` + `card` (the markup `dialog` element
   renders in place in the reference renderer, so it is not used for centered
-  modals).
+  modals). Palette-family overlays anchor to the top (`main="start"`).
+- `overflow="ellipsis"` is a **text-leaf** attribute only — not valid on
+  `button`. Tab/breadcrumb button labels rely on the control's own truncation.
 - Built-in vector icons only (compile-checked set); no custom icon fonts.
 - Editor is a native `<textarea>` (no gutter/decoration/caret API yet) — line
   numbers and inline decorations are out of scope until the editor island lands.
 - Status-bar height is SDK-default; not independently themable today.
+- Theme has no absolute setter — only a `switch_theme` cycle
+  (dark → light → high-contrast). High-contrast uses the SDK house pack.
+
+## Verification & performance
+
+Validated in CI (the local `native` toolchain download is egress-blocked):
+`native test` (252 tests) + strict `native check`, all 8 smoke suites, and a
+`screenshot-tour` that captures every surface at 1280×800, the light and
+high-contrast themes, and the 960×640 overflow-contract stress states plus a
+1680×1050 wide window. Overlays are sized so card + scrim margin ≤ the 960×640
+minimum. Performance: the changes are render/token/state only — no new timers,
+effects, process spawns, or unbounded state — so first paint stays spawn-free
+(the perf smoke asserts this) and the honest HUD continues to measure or report
+`n/a`. Observed HUD values in CI (software renderer): command-palette
+request-to-present ~20-27 ms measured; boot-to-first-paint reported and varying
+by runner. Real-hardware baselines remain a roadmap item (`02-performance.md`).
