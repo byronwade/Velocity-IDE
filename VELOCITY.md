@@ -46,6 +46,7 @@ npm run dev
 
 ## Docs
 
+- Roadmap todo list: `docs/roadmap/README.md`
 - Plan: `docs/velocity/00-master-plan.md`
 - Research: `docs/velocity/11-vscode-feature-parity-research.md`
 - Matrix: `docs/velocity/14-feature-parity-matrix.md`

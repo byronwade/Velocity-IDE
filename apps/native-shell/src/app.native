@@ -207,9 +207,11 @@
               <button size="sm" variant="ghost" icon="chevron-left" on-press="navigate_back" label="{navigationBackLabel}">Back</button>
               <button size="sm" variant="ghost" icon="chevron-right" on-press="navigate_forward" label="{navigationForwardLabel}">Forward</button>
               <spacer width="4" />
-              <for each="open_tabs" key="id" as="t">
-                <button size="sm" variant="ghost" selected="{t.id == active_tab_id}" on-press="select_tab:{t.id}">{t.title}</button>
-              </for>
+              <tabs>
+                <for each="open_tabs" key="id" as="t">
+                  <button size="sm" selected="{t.id == active_tab_id}" on-press="select_tab:{t.id}">{t.title}</button>
+                </for>
+              </tabs>
               <button size="sm" variant="ghost" icon="x" on-press="close_active_tab" label="Close tab" />
               <spacer grow="1" />
               <button size="sm" variant="ghost" icon="send" on-press="toggle_agent_panel">{agentPanelLabel}</button>
