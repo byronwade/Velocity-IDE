@@ -15,6 +15,10 @@ jobs:
     env:
       LIBGL_ALWAYS_SOFTWARE: "1"
       GALLIUM_DRIVER: llvmpipe
+      GTK_A11Y: none
+      # GitHub-hosted runners deny the user namespaces required by WebKit's
+      # Bubblewrap sandbox. Velocity does not enable a WebView in this shell.
+      WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1"
     strategy:
       fail-fast: false
       matrix:
