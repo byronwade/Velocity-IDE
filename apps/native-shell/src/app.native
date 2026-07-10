@@ -171,9 +171,7 @@
               </scroll>
               <column gap="4" padding="6" background="surface_subtle">
                 <text size="sm" foreground="text_muted">{git_diff_status}</text>
-                <scroll height="120" label="Git diff">
-                  <text size="sm" wrap="true">{gitDiffText}</text>
-                </scroll>
+                <button size="sm" variant="secondary" on-press="open_scm_diff" label="Open selected source control diff in read-only review">Open SCM Diff</button>
               </column>
             </if>
 
@@ -229,6 +227,7 @@
                   <badge variant="secondary">{dirtyLabel}</badge>
                   <button size="sm" variant="ghost" on-press="go_to_symbol" label="Go to symbol">@</button>
                   <button size="sm" variant="ghost" on-press="run_quick_open">Go to</button>
+                  <button size="sm" variant="ghost" on-press="open_snippet_picker" label="Append a literal snippet at the end of the document">Append Snippet</button>
                   <button size="sm" variant="ghost" on-press="restore_backup">Backup</button>
                   <button size="sm" variant="primary" on-press="save_file">Save</button>
                 </row>
@@ -640,6 +639,66 @@
             </for>
           </column>
         </scroll>
+      </column>
+    </column>
+  </if>
+
+  <if test="{diff_review_open}">
+    <column grow="1" main="start" cross="center" padding="24" background="scrim">
+      <column width="880" gap="8" padding="12" background="surface" label="Read-only Diff Review">
+        <row gap="8" cross="center">
+          <text grow="1">{diff_review_title}</text>
+          <badge variant="secondary">Read-only</badge>
+          <button size="sm" variant="ghost" on-press="copy_diff_internal" label="Copy diff to the application internal buffer">Copy Internally</button>
+          <button size="sm" variant="ghost" on-press="close_diff_review" label="Close Diff Review">Close</button>
+        </row>
+        <row gap="6" cross="center">
+          <text size="sm" foreground="text_muted" grow="1">{diff_review_status}</text>
+          <if test="{diff_review_is_scm}">
+            <if test="{diff_unstaged_available}">
+              <button size="sm" variant="secondary" on-press="open_unstaged_scm_diff" label="Review unstaged working tree changes">Unstaged</button>
+            </if>
+            <if test="{diff_staged_available}">
+              <button size="sm" variant="secondary" on-press="open_staged_scm_diff" label="Review staged index changes">Staged</button>
+            </if>
+          </if>
+        </row>
+        <scroll height="500" label="Unified line diff">
+          <column gap="1">
+            <for each="diff_lines" key="id" as="line">
+              <row gap="6" padding="3" background="surface_subtle" label="{line.kind_label}">
+                <badge variant="secondary">{line.marker}</badge>
+                <text size="sm" foreground="text_muted" wrap="false">{line.kind_label}</text>
+                <text size="sm" grow="1" wrap="false">{line.text}</text>
+              </row>
+            </for>
+          </column>
+        </scroll>
+      </column>
+    </column>
+  </if>
+
+  <if test="{snippet_picker_open}">
+    <column grow="1" main="start" cross="center" padding="24" background="scrim">
+      <column width="620" gap="8" padding="12" background="surface" label="Append Snippet picker">
+        <row gap="8" cross="center">
+          <text grow="1">Append Snippet</text>
+          <button size="sm" variant="ghost" on-press="reload_snippets" label="Reload workspace and user snippets">Reload</button>
+          <button size="sm" variant="ghost" on-press="close_snippet_picker" label="Close Append Snippet picker">Close</button>
+        </row>
+        <text size="sm" foreground="text_muted" wrap="true">Bodies are appended literally at the end of the document. Caret insertion is unavailable.</text>
+        <search-field text="{snippetQueryText}" placeholder="Search prefix or description..." on-input="update_snippet_query" label="Snippet search" />
+        <scroll height="320" label="Available literal snippets">
+          <column gap="2">
+            <for each="snippet_items" key="id" as="snippet">
+              <list-item on-press="append_snippet:{snippet.id}" padding="8" gap="8" cross="center" label="{snippet.description}">
+                <badge variant="secondary">{snippet.prefix}</badge>
+                <text grow="1" wrap="true">{snippet.description}</text>
+              </list-item>
+            </for>
+          </column>
+        </scroll>
+        <text size="sm" foreground="text_muted">{snippet_status}</text>
       </column>
     </column>
   </if>

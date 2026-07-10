@@ -2,7 +2,7 @@
   "id": "feature.diff-editor",
   "name": "Diff Editor",
   "mode": "dev",
-  "defaultEnabled": false,
+  "defaultEnabled": true,
   "activation": [
     "onWorkspaceOpen"
   ],
@@ -15,7 +15,7 @@
   },
   "dependencies": [],
   "permissions": [],
-  "status": "stub",
+  "status": "working",
   "implementation": "native",
   "priority": "P1",
   "category": "files"

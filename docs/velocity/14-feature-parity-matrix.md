@@ -41,8 +41,8 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | File Decorations | `feature.file-decorations` | dev | P2 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
 | Drag and Drop | `feature.drag-drop` | core | P2 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
 | Dirty State | `feature.dirty-state` | core | P0 | native | False | 2 | 0 | low | working | bounded per-tab copies and undo/redo histories, partial-conflict Save All, disk polling | |
-| Compare Files | `feature.compare-files` | dev | P2 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
-| Diff Editor | `feature.diff-editor` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
+| Compare Files | `feature.compare-files` | dev | P2 | native | False | 8 | 0 | low | working | bounded active-vs-disk unified review | read-only overlay |
+| Diff Editor | `feature.diff-editor` | dev | P1 | native | False | 16 | 0 | low | working | bounded unified line renderer | explicit truncation |
 | Merge Editor | `feature.merge-editor` | dev | P2 | native | False | 24 | 0 | low | stub | docs/11 + contrib | |
 | Editor Island | `feature.editor-island` | core | P0 | native | False | 32 | 0 | low | scaffold / SDK-blocked rich backends | typed protocol; textarea runtime unchanged | Monaco requires stable WebView messaging/focus/IME/a11y; textarea gutter API also absent |
 | Monaco Bridge | `feature.monaco-bridge` | core | P1 | webview | False | 80 | 0 | low | scaffold / blocked by SDK | typed backend only; no WebView | stable WebView lifecycle + bidirectional messaging/focus/IME/a11y |
@@ -51,7 +51,7 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Column Selection | `feature.column-selection` | core | P2 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
 | Find Replace | `feature.find-replace` | core | P0 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
 | Search Selection | `feature.search-selection` | core | P2 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
-| Snippets | `feature.snippets` | core | P1 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
+| Snippets | `feature.snippets` | core | P1 | native | False | 8 | 0 | low | working | versioned workspace/user literal snippets | append-only until caret API |
 | Syntax Highlighting | `feature.syntax-highlighting` | core | P0 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Semantic Tokens | `feature.semantic-tokens` | dev | P1 | process | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Bracket Matching | `feature.bracket-matching` | core | P1 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
@@ -98,7 +98,7 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | SCM Core | `feature.scm-core` | dev | P0 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Git Provider | `feature.git-provider` | dev | P0 | process | False | 24 | 1 | low | stub | docs/11 + contrib | |
 | Git Status | `feature.git-status` | dev | P0 | process | False | 8 | 1 | low | stub | docs/11 + contrib | |
-| Git Diff | `feature.git-diff` | dev | P0 | process | False | 16 | 1 | low | stub | docs/11 + contrib | |
+| Git Diff | `feature.git-diff` | dev | P0 | process | False | 16 | 1 | low | working | bounded staged/unstaged unified review | literal argv paths |
 | Git Stage/Commit | `feature.git-stage-commit` | dev | P0 | process | False | 8 | 1 | low | working | per-file/all stage/unstage, guarded restore, commit | |
 | Git Branches | `feature.git-branches` | dev | P1 | process | False | 8 | 1 | low | stub | docs/11 + contrib | |
 | Git Merge Conflicts | `feature.git-merge-conflicts` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |

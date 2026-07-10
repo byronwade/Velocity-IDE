@@ -14,6 +14,7 @@
     "test-smoke": "bash scripts/test-smoke.sh",
     "launch-smoke": "bash scripts/launch-smoke.sh",
     "explorer-smoke": "bash scripts/explorer-smoke.sh",
+    "review-snippet-smoke": "bash scripts/review-snippet-smoke.sh",
     "doctor": "native doctor"
   },
   "engines": {

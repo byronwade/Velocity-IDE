@@ -1213,11 +1213,25 @@ test "compare with saved copy branch clear recent insert uuid" {
     var model = main.initialModel();
     main.update(&model, .{ .open_project = "acme-dashboard" });
     main.update(&model, .compare_with_saved);
-    try testing.expectEqualStrings("Matches disk", model.toast);
+    try testing.expect(model.diff_review_open);
+    try testing.expect(model.diff_lines.len >= 3);
+    try testing.expect(std.mem.indexOf(u8, model.diff_review_title, "Diff Review") != null);
+    main.update(&model, .close_diff_review);
+    try testing.expect(!model.diff_review_open);
     model.document.set("changed locally");
     model.document_dirty = true;
     main.update(&model, .compare_with_saved);
-    try testing.expect(std.mem.indexOf(u8, model.toast, "Differs") != null);
+    try testing.expect(model.diff_review_open);
+    var saw_addition = false;
+    var saw_deletion = false;
+    for (model.diff_lines) |line| {
+        if (line.kind == .addition) saw_addition = true;
+        if (line.kind == .deletion) saw_deletion = true;
+    }
+    try testing.expect(saw_addition);
+    try testing.expect(saw_deletion);
+    main.update(&model, .dismiss_overlay);
+    try testing.expect(!model.diff_review_open);
     main.update(&model, .copy_git_branch);
     try testing.expect(model.path_toast.len > 0);
     model.prefs.setLastPath("fixtures/acme-dashboard");
@@ -1232,6 +1246,35 @@ test "compare with saved copy branch clear recent insert uuid" {
     main.update(&model, .insert_uuid);
     try testing.expect(model.document.text().len == 36);
     try testing.expectEqualStrings("Inserted UUID", model.toast);
+}
+
+test "fixture snippet picker appends literally and undo restores document" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    const before = try testing.allocator.dupe(u8, model.document.text());
+    defer testing.allocator.free(before);
+    main.update(&model, .open_snippet_picker);
+    try testing.expect(model.snippet_picker_open);
+    try testing.expect(model.snippet_items.len >= 2);
+    const snippet = model.snippet_items[0];
+    main.update(&model, .{ .append_snippet = snippet.id });
+    try testing.expect(!model.snippet_picker_open);
+    try testing.expect(model.document_dirty);
+    try testing.expect(std.mem.endsWith(u8, model.document.text(), snippet.body));
+    main.update(&model, .undo_edit);
+    try testing.expectEqualStrings(before, model.document.text());
+}
+
+test "snippet append refuses the document cap" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .open_snippet_picker);
+    try testing.expect(model.snippet_items.len > 0);
+    var full: [model_mod.max_document]u8 = [_]u8{'x'} ** model_mod.max_document;
+    model.document.set(&full);
+    main.update(&model, .{ .append_snippet = model.snippet_items[0].id });
+    try testing.expectEqualStrings("Append Snippet refused: document limit exceeded", model.toast);
+    try testing.expectEqual(@as(usize, model_mod.max_document), model.document.text().len);
 }
 
 test "format hard wrap copy document go to symbol" {

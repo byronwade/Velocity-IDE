@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "snippets": [
+    {
+      "prefix": "component",
+      "body": "\nexport function FixtureSnippet() {\n  return null;\n}\n",
+      "description": "Append a fixture component"
+    },
+    {
+      "prefix": "note",
+      "body": "\n// fixture snippet\n",
+      "description": "Append a fixture note"
+    }
+  ]
+}

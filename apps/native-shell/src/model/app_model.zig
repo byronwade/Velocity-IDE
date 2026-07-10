@@ -38,6 +38,8 @@ const perf_model = @import("../perf/perf_model.zig");
 const startup_timer = @import("../perf/startup_timer.zig");
 const output_registry = @import("../core/output_registry.zig");
 const notification_store = @import("../core/notification_store.zig");
+const snippets_mod = @import("../workspace/snippets.zig");
+const unified_diff = @import("../workspace/unified_diff.zig");
 
 pub const header_natural_height: f32 = 36;
 pub const max_command_query = 64;
@@ -86,6 +88,8 @@ pub const BreadcrumbSeg = struct {
 pub const OutputLine = output_registry.Line;
 pub const OutputChannel = output_registry.Channel;
 pub const NotificationItem = notification_store.Item;
+pub const Snippet = snippets_mod.Snippet;
+pub const DiffLine = unified_diff.ReviewLine;
 
 pub const ClosedTab = struct {
     path: []const u8 = "",
@@ -316,6 +320,16 @@ pub const Msg = union(enum) {
     close_symbol_palette,
     update_symbol_query: canvas.TextInputEvent,
     open_symbol_item: u32,
+    open_snippet_picker,
+    close_snippet_picker,
+    update_snippet_query: canvas.TextInputEvent,
+    append_snippet: u32,
+    reload_snippets,
+    open_scm_diff,
+    open_staged_scm_diff,
+    open_unstaged_scm_diff,
+    close_diff_review,
+    copy_diff_internal,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
     chrome_changed: native_sdk.WindowChrome,
@@ -552,6 +566,16 @@ pub const Model = struct {
     problems_filter_status_buf: [96]u8 = undefined,
     git_diff_text: []const u8 = "",
     git_diff_status: []const u8 = "—",
+    diff_review: ?*unified_diff.Review = null,
+    diff_lines: []const DiffLine = &.{},
+    diff_review_open: bool = false,
+    diff_review_title: []const u8 = "Diff Review",
+    diff_review_status: []const u8 = "No diff",
+    diff_review_is_scm: bool = false,
+    diff_staged_available: bool = false,
+    diff_unstaged_available: bool = false,
+    diff_mode_staged: git_status.DiffMode = .staged,
+    diff_mode_unstaged: git_status.DiffMode = .unstaged,
     closed_tabs: [8]ClosedTab = [_]ClosedTab{.{}} ** 8,
     closed_tab_count: u32 = 0,
     closed_path_pool: [8][240]u8 = undefined,
@@ -593,6 +617,17 @@ pub const Model = struct {
     quick_bufs: ?*quick_open.QuickOpenBuffers = null,
     quick_items: []const QuickItem = &.{},
     quick_open_visible: bool = false,
+    snippet_registry: ?*snippets_mod.Registry = null,
+    snippets: []const Snippet = &.{},
+    snippet_items: []const Snippet = &.{},
+    snippet_filtered: [snippets_mod.max_snippets]Snippet = [_]Snippet{.{}} ** snippets_mod.max_snippets,
+    snippet_filtered_count: u32 = 0,
+    snippet_query: canvas.TextBuffer(64) = .{},
+    snippet_picker_open: bool = false,
+    snippet_status: []const u8 = "Snippets not loaded",
+    snippet_status_buf: [128]u8 = undefined,
+    user_snippets_path_buf: [512]u8 = undefined,
+    user_snippets_path_len: usize = 0,
     goto_line_input: canvas.TextBuffer(max_goto_line) = .{},
     goto_line_label: []const u8 = "",
     goto_line_buf: [32]u8 = undefined,
@@ -801,6 +836,7 @@ pub const Model = struct {
         "problems_status",
         "problems_filter_status_buf",
         "git_diff_text",
+        "diff_review",
         "closed_tabs",
         "closed_tab_count",
         "closed_path_pool",
@@ -833,6 +869,16 @@ pub const Model = struct {
         "breadcrumb_buf",
         "quick_query",
         "quick_bufs",
+        "snippet_registry",
+        "snippets",
+        "snippet_filtered",
+        "snippet_filtered_count",
+        "snippet_query",
+        "snippet_status_buf",
+        "user_snippets_path_buf",
+        "user_snippets_path_len",
+        "diff_mode_staged",
+        "diff_mode_unstaged",
         "goto_line_input",
         "goto_line_buf",
         "goto_line_label",
@@ -996,6 +1042,10 @@ pub const Model = struct {
         return model.symbol_query.text();
     }
 
+    pub fn snippetQueryText(model: *const Model) []const u8 {
+        return model.snippet_query.text();
+    }
+
     pub fn isFeatures(model: *const Model) bool {
         return model.current_view == .features;
     }
@@ -1030,10 +1080,6 @@ pub const Model = struct {
 
     pub fn showPlaceholderPanel(model: *const Model) bool {
         return model.current_view == .debug or model.current_view == .testing or model.current_view == .features or model.current_view == .processes;
-    }
-
-    pub fn gitDiffText(model: *const Model) []const u8 {
-        return model.git_diff_text;
     }
 
     pub fn problemsStatus(model: *const Model) []const u8 {
@@ -1348,6 +1394,14 @@ pub const Model = struct {
             std.heap.page_allocator.destroy(store);
             model.tab_histories = null;
         }
+        if (model.snippet_registry) |registry| {
+            std.heap.page_allocator.destroy(registry);
+            model.snippet_registry = null;
+        }
+        if (model.diff_review) |review| {
+            std.heap.page_allocator.destroy(review);
+            model.diff_review = null;
+        }
     }
 };
 
@@ -1425,6 +1479,12 @@ pub fn initialModelAt(clock: native_sdk.Clock, boot_ns: u64) Model {
     var model: Model = .{};
     model.perf_timer = startup_timer.Timer.init(clock, boot_ns);
     return model;
+}
+
+pub fn setUserSnippetsPath(model: *Model, path: []const u8) void {
+    const length = @min(path.len, model.user_snippets_path_buf.len);
+    @memcpy(model.user_snippets_path_buf[0..length], path[0..length]);
+    model.user_snippets_path_len = length;
 }
 
 /// Sync update used by unit tests (no effects channel).
@@ -1618,13 +1678,13 @@ fn pushNotificationHistory(model: *Model, text: []const u8) void {
     if (text.len == 0) return;
     const severity: notification_store.Severity =
         if (std.ascii.indexOfIgnoreCase(text, "failed") != null or
-            std.ascii.indexOfIgnoreCase(text, "error") != null or
-            std.ascii.indexOfIgnoreCase(text, "could not") != null)
+        std.ascii.indexOfIgnoreCase(text, "error") != null or
+        std.ascii.indexOfIgnoreCase(text, "could not") != null)
             .@"error"
         else if (std.ascii.indexOfIgnoreCase(text, "changed") != null or
-            std.ascii.indexOfIgnoreCase(text, "unavailable") != null or
-            std.ascii.indexOfIgnoreCase(text, "refused") != null or
-            std.ascii.indexOfIgnoreCase(text, "cancel") != null)
+        std.ascii.indexOfIgnoreCase(text, "unavailable") != null or
+        std.ascii.indexOfIgnoreCase(text, "refused") != null or
+        std.ascii.indexOfIgnoreCase(text, "cancel") != null)
             .warning
         else
             .info;
@@ -1644,7 +1704,7 @@ fn pushNotificationHistory(model: *Model, text: []const u8) void {
         if (model.problems.len > 0 or std.mem.indexOf(u8, text, "diagnostic") != null)
             .open_problems
         else if (std.mem.indexOf(u8, text, "changed externally") != null or
-            std.mem.indexOf(u8, text, "polling unavailable") != null)
+        std.mem.indexOf(u8, text, "polling unavailable") != null)
             .reload_workspace
         else
             .none;
@@ -1936,6 +1996,12 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 closeSavedTabs(model);
             } else if (std.mem.eql(u8, id, "compare_with_saved")) {
                 compareWithSaved(model);
+            } else if (std.mem.eql(u8, id, "append_snippet")) {
+                openSnippetPicker(model);
+            } else if (std.mem.eql(u8, id, "reload_snippets")) {
+                reloadSnippets(model, true);
+            } else if (std.mem.eql(u8, id, "open_scm_diff")) {
+                openSelectedScmDiff(model, null);
             } else if (std.mem.eql(u8, id, "copy_git_branch")) {
                 copyGitBranch(model);
             } else if (std.mem.eql(u8, id, "clear_recent_projects")) {
@@ -2419,6 +2485,19 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             }
             model.toast = "Symbol not found";
         },
+        .open_snippet_picker => openSnippetPicker(model),
+        .close_snippet_picker => closeSnippetPicker(model),
+        .update_snippet_query => |edit| {
+            model.snippet_query.apply(edit);
+            filterSnippets(model);
+        },
+        .append_snippet => |id| appendSnippet(model, id),
+        .reload_snippets => reloadSnippets(model, true),
+        .open_scm_diff => openSelectedScmDiff(model, null),
+        .open_staged_scm_diff => openSelectedScmDiff(model, .staged),
+        .open_unstaged_scm_diff => openSelectedScmDiff(model, .unstaged),
+        .close_diff_review => closeDiffReview(model),
+        .copy_diff_internal => copyDiffInternal(model),
         .open_git_entry => |id| openGitEntry(model, id),
         .select_git_entry => |id| selectGitEntry(model, id),
         .stage_git_entry => |id| stageGitEntry(model, id),
@@ -2851,6 +2930,22 @@ fn ensureGitBuffers(model: *Model) !*git_status.GitBuffers {
     g.* = .{};
     model.git_bufs = g;
     return g;
+}
+
+fn ensureSnippetRegistry(model: *Model) !*snippets_mod.Registry {
+    if (model.snippet_registry) |registry| return registry;
+    const registry = try std.heap.page_allocator.create(snippets_mod.Registry);
+    registry.* = .{};
+    model.snippet_registry = registry;
+    return registry;
+}
+
+fn ensureDiffReview(model: *Model) !*unified_diff.Review {
+    if (model.diff_review) |review| return review;
+    const review = try std.heap.page_allocator.create(unified_diff.Review);
+    review.* = .{};
+    model.diff_review = review;
+    return review;
 }
 
 fn ensureTaskBuffers(model: *Model) !*task_detector.TaskDetector {
@@ -3453,6 +3548,7 @@ fn openWorkspacePath(model: *Model, path: []const u8) void {
     const restored = if (meta.scan_error.len == 0) restoreHotExit(model, ws) else null;
     refreshTasks(model);
     refreshLaunchProfiles(model);
+    reloadSnippets(model, false);
     if (meta.scan_error.len > 0) {
         model.toast = meta.scan_error;
     } else if (restored) |summary| {
@@ -4609,10 +4705,6 @@ fn openGitEntry(model: *Model, entry_id: u32) void {
         for (bufs.entriesSlice()) |entry| {
             if (entry.id == entry_id) {
                 model.selected_git_entry_id = entry_id;
-                // Always load diff preview for the selected entry.
-                bufs.loadDiff(modelIo(model), model.project_path, entry_id);
-                model.git_diff_text = bufs.diffText();
-                model.git_diff_status = bufs.diff_status;
 
                 if (ws.findNodeByPath(entry.path)) |node| {
                     if (node.is_dir) {
@@ -4646,10 +4738,15 @@ fn selectGitEntry(model: *Model, entry_id: u32) void {
     for (bufs.entriesSlice()) |entry| {
         if (entry.id != entry_id) continue;
         model.selected_git_entry_id = entry_id;
-        bufs.loadDiff(modelIo(model), model.project_path, entry_id);
-        model.git_diff_text = bufs.diffText();
-        model.git_diff_status = bufs.diff_status;
-        model.toast = bufs.diff_status;
+        model.diff_staged_available = bufs.supportsMode(entry_id, .staged);
+        model.diff_unstaged_available = bufs.supportsMode(entry_id, .unstaged);
+        model.git_diff_status = if (model.diff_unstaged_available and model.diff_staged_available)
+            "Selected · staged and unstaged changes"
+        else if (model.diff_staged_available)
+            "Selected · staged changes"
+        else
+            "Selected · unstaged changes";
+        model.toast = "Git entry selected";
         return;
     }
     model.toast = "Git entry not found";
@@ -4760,13 +4857,8 @@ fn previewGitDiff(model: *Model, entry_id: u32) void {
         return;
     };
     if (bufs.entry_count == 0) refreshGitStatus(model);
-    bufs.loadDiff(modelIo(model), model.project_path, entry_id);
-    model.git_diff_text = bufs.diffText();
-    model.git_diff_status = bufs.diff_status;
-    model.current_view = .ide;
-    model.selected_activity = .scm;
-    model.show_sidebar = true;
-    model.toast = bufs.diff_status;
+    model.selected_git_entry_id = entry_id;
+    openSelectedScmDiff(model, null);
 }
 
 fn clearFind(model: *Model) void {
@@ -4781,6 +4873,14 @@ fn clearFind(model: *Model) void {
 }
 
 fn dismissOverlay(model: *Model) void {
+    if (model.diff_review_open) {
+        closeDiffReview(model);
+        return;
+    }
+    if (model.snippet_picker_open) {
+        closeSnippetPicker(model);
+        return;
+    }
     if (model.symbol_palette_open) {
         model.symbol_palette_open = false;
         model.symbol_query.clear();
@@ -6064,6 +6164,151 @@ fn closeSavedTabs(model: *Model) void {
     model.toast = msg;
 }
 
+fn reloadSnippets(model: *Model, announce: bool) void {
+    const registry = ensureSnippetRegistry(model) catch {
+        model.snippet_status = "Snippet registry allocation failed";
+        if (announce) model.toast = model.snippet_status;
+        return;
+    };
+    const user_path = model.user_snippets_path_buf[0..model.user_snippets_path_len];
+    const summary = registry.load(modelIo(model), model.project_path, user_path);
+    model.snippets = registry.slice();
+    filterSnippets(model);
+    model.snippet_status = std.fmt.bufPrint(
+        &model.snippet_status_buf,
+        "{d} snippets loaded{s}",
+        .{ summary.loaded, if (summary.rejected > 0) " · rejected invalid entries" else "" },
+    ) catch "Snippets loaded";
+    if (announce) model.toast = model.snippet_status;
+}
+
+fn filterSnippets(model: *Model) void {
+    model.snippet_filtered_count = 0;
+    const query = model.snippet_query.text();
+    for (model.snippets) |snippet| {
+        if (query.len > 0 and
+            std.ascii.indexOfIgnoreCase(snippet.prefix, query) == null and
+            std.ascii.indexOfIgnoreCase(snippet.description, query) == null)
+        {
+            continue;
+        }
+        if (model.snippet_filtered_count >= model.snippet_filtered.len) break;
+        model.snippet_filtered[model.snippet_filtered_count] = snippet;
+        model.snippet_filtered_count += 1;
+    }
+    model.snippets = if (model.snippet_registry) |registry|
+        registry.slice()
+    else
+        &.{};
+    model.snippet_items = model.snippet_filtered[0..model.snippet_filtered_count];
+}
+
+fn openSnippetPicker(model: *Model) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace before appending a snippet";
+        return;
+    }
+    if (model.snippet_registry == null) reloadSnippets(model, false);
+    model.snippet_query.clear();
+    filterSnippets(model);
+    model.snippet_picker_open = true;
+    model.toast = "";
+}
+
+fn closeSnippetPicker(model: *Model) void {
+    model.snippet_picker_open = false;
+    model.snippet_query.clear();
+    model.toast = "";
+}
+
+fn appendSnippet(model: *Model, snippet_id: u32) void {
+    const registry = model.snippet_registry orelse {
+        model.toast = "Reload snippets before appending";
+        return;
+    };
+    var selected: ?Snippet = null;
+    for (registry.slice()) |snippet| {
+        if (snippet.id == snippet_id) {
+            selected = snippet;
+            break;
+        }
+    }
+    const snippet = selected orelse {
+        model.toast = "Snippet not found";
+        return;
+    };
+    const current = model.document.text();
+    if (snippet.body.len > max_document - current.len) {
+        model.toast = "Append Snippet refused: document limit exceeded";
+        return;
+    }
+    var output: [max_document]u8 = undefined;
+    @memcpy(output[0..current.len], current);
+    @memcpy(output[current.len..][0..snippet.body.len], snippet.body);
+    model.snippet_picker_open = false;
+    model.snippet_query.clear();
+    applyDocumentTransform(model, output[0 .. current.len + snippet.body.len], "Snippet appended");
+}
+
+fn syncDiffReview(model: *Model, review: *unified_diff.Review, is_scm: bool) void {
+    model.diff_lines = review.slice();
+    model.diff_review_title = review.title;
+    model.diff_review_status = review.status;
+    model.diff_review_is_scm = is_scm;
+    model.diff_review_open = true;
+}
+
+fn openSelectedScmDiff(model: *Model, requested_mode: ?git_status.DiffMode) void {
+    if (!model.workspace_from_disk) {
+        model.toast = "Open a workspace first";
+        return;
+    }
+    if (model.selected_git_entry_id == 0) {
+        model.toast = "Select a Git entry first";
+        return;
+    }
+    const entry = gitEntryById(model, model.selected_git_entry_id) orelse {
+        model.toast = "Git entry not found";
+        return;
+    };
+    const buffers = model.git_bufs orelse {
+        model.toast = "Refresh Git status first";
+        return;
+    };
+    model.diff_staged_available = buffers.supportsMode(entry.id, .staged);
+    model.diff_unstaged_available = buffers.supportsMode(entry.id, .unstaged);
+    const mode: git_status.DiffMode = requested_mode orelse if (model.diff_unstaged_available) .unstaged else .staged;
+    if (!buffers.supportsMode(entry.id, mode)) {
+        model.toast = if (mode == .staged) "No staged diff for selected entry" else "No unstaged diff for selected entry";
+        return;
+    }
+    buffers.loadDiff(modelIo(model), model.project_path, entry.id, mode);
+    model.git_diff_text = buffers.diffText();
+    model.git_diff_status = buffers.diff_status;
+    const review = ensureDiffReview(model) catch {
+        model.toast = "Diff review allocation failed";
+        return;
+    };
+    review.parseUnified(buffers.diffText(), entry.path, mode.label(), buffers.diff_truncated);
+    syncDiffReview(model, review, true);
+    model.toast = "";
+}
+
+fn closeDiffReview(model: *Model) void {
+    model.diff_review_open = false;
+    model.diff_lines = &.{};
+    model.toast = "";
+}
+
+fn copyDiffInternal(model: *Model) void {
+    const review = model.diff_review orelse {
+        model.toast = "No diff review to copy";
+        return;
+    };
+    model.path_toast = review.copyText(&model.path_toast_buf);
+    model.toast = "Diff copied to internal buffer (OS clipboard unavailable)";
+}
+
 fn compareWithSaved(model: *Model) void {
     if (!model.workspace_from_disk) {
         model.toast = "Open a workspace first";
@@ -6083,14 +6328,13 @@ fn compareWithSaved(model: *Model) void {
         model.toast = "Read disk failed";
         return;
     };
-    var status: [64]u8 = undefined;
-    const n = edit_transforms.compareBuffers(model.document.text(), disk_buf[0..disk_len], &status) orelse {
-        model.toast = "Compare failed";
+    const review = ensureDiffReview(model) catch {
+        model.toast = "Diff review allocation failed";
         return;
     };
-    const tn = @min(n, model.action_toast_buf.len);
-    @memcpy(model.action_toast_buf[0..tn], status[0..tn]);
-    model.toast = model.action_toast_buf[0..tn];
+    review.build(disk_buf[0..disk_len], model.document.text(), rel);
+    syncDiffReview(model, review, false);
+    model.toast = "";
     model.disk_changed = ws.activeFileChanged(modelIo(model));
 }
 

@@ -2,7 +2,7 @@
 
 - **id:** `feature.snippets`
 - **mode:** `core`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `native`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `8`
@@ -11,7 +11,8 @@
 
 ## Rules
 
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+- Loads bounded schema version 1 from `.velocity/snippets.json`.
+- Optionally loads the file named by `VELOCITY_USER_CONFIG`; workspace prefixes override user prefixes.
+- Rejects oversized entries, tabstops, placeholders, `$()` substitutions, and backtick substitutions.
+- `Append Snippet` appends the literal body because the native textarea has no caret API. It uses normal undo, dirty-state, auto-save, and safe-save behavior.
+- Limits: 16 KiB source, 32 snippets, 48-byte prefixes, 1 KiB bodies, and 160-byte descriptions.

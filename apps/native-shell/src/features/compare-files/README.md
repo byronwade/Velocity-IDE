@@ -2,7 +2,7 @@
 
 - **id:** `feature.compare-files`
 - **mode:** `dev`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `native`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `8`
@@ -11,7 +11,6 @@
 
 ## Rules
 
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+- `Compare with Saved` compares the active in-memory text against a bounded disk read.
+- Results open in the shared read-only Diff Review overlay; the working copy remains active and unchanged.
+- Matching files still render a valid metadata/context review, and large reviews report truncation.

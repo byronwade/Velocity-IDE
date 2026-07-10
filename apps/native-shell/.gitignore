@@ -7,4 +7,7 @@ node_modules/
 !fixtures/**/node_modules/
 !fixtures/**/node_modules/**
 .velocity/
+!fixtures/acme-dashboard/.velocity/
+fixtures/acme-dashboard/.velocity/*
+!fixtures/acme-dashboard/.velocity/snippets.json
 *.log

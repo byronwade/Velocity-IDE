@@ -693,7 +693,7 @@
     "id": "feature.compare-files",
     "name": "Compare Files",
     "mode": "dev",
-    "defaultEnabled": false,
+    "defaultEnabled": true,
     "startupAllowed": false,
     "memoryBudgetMB": 8,
     "processBudget": {
@@ -706,7 +706,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "files",
     "implementation": "native",
     "priority": "P2"
@@ -715,7 +715,7 @@
     "id": "feature.diff-editor",
     "name": "Diff Editor",
     "mode": "dev",
-    "defaultEnabled": false,
+    "defaultEnabled": true,
     "startupAllowed": false,
     "memoryBudgetMB": 16,
     "processBudget": {
@@ -728,7 +728,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "files",
     "implementation": "native",
     "priority": "P1"
@@ -944,7 +944,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "editor",
     "implementation": "native",
     "priority": "P1"
@@ -2008,7 +2008,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "scm",
     "implementation": "process",
     "priority": "P0"

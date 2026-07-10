@@ -157,6 +157,9 @@ pub fn main(init: std.process.Init) !void {
     app_state.model = model_mod.initialModelAt(perf_clock, boot_ns);
     defer app_state.model.deinit();
     app_state.model.io = init.io;
+    if (init.environ_map.get("VELOCITY_USER_CONFIG")) |path| {
+        model_mod.setUserSnippetsPath(&app_state.model, path);
+    }
     model_mod.ensurePrefsOnBoot(&app_state.model);
 
     try runner.runWithOptions(app_state.app(), .{

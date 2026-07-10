@@ -2,7 +2,7 @@
 
 - **id:** `feature.git-diff`
 - **mode:** `dev`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `process`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `16`
@@ -11,7 +11,7 @@
 
 ## Rules
 
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+- `Open SCM Diff` opens the shared read-only Diff Review instead of replacing the editor or showing raw text in the sidebar.
+- Git XY status selects safely available staged (`git diff --cached`) and unstaged (`git diff`) modes; untracked files use bounded `--no-index`.
+- Paths are passed as literal argv values after `--`; no shell interpolation is used.
+- Raw Git output is capped at 32 KiB before bounded line projection.

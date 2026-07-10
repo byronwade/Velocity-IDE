@@ -19,7 +19,8 @@ This repository contains:
 | Document stats | Status bar line + byte counts |
 | Breadcrumb | Active relative path in editor header |
 | Problems | Marker + terminal/test diagnostics, severity/source filters |
-| SCM diff | Bounded git diff preview on entry open |
+| Diff review | Read-only bounded unified line review for saved files and staged/unstaged SCM |
+| Snippets | Bounded workspace/user literal snippets with searchable append picker |
 | Editor transforms | Toggle comment, indent/outdent, reopen closed tab |
 | Search (MVP) | Bounded in-process workspace text search |
 | SCM (MVP) | Lazy `git status` / branch via governor |

@@ -6,6 +6,19 @@ const std = @import("std");
 pub const max_entries: usize = 64;
 pub const max_path: usize = 240;
 pub const max_status: usize = 2;
+pub const max_diff_bytes: usize = 32 * 1024;
+
+pub const DiffMode = enum {
+    unstaged,
+    staged,
+
+    pub fn label(mode: DiffMode) []const u8 {
+        return switch (mode) {
+            .unstaged => "unstaged",
+            .staged => "staged",
+        };
+    }
+};
 
 pub const GitEntry = struct {
     id: u32 = 0,
@@ -24,12 +37,14 @@ pub const GitBuffers = struct {
     branch_len: usize = 0,
     summary: []const u8 = "not loaded",
     available: bool = false,
-    diff_buf: [8 * 1024]u8 = undefined,
+    diff_buf: [max_diff_bytes]u8 = undefined,
     diff_len: usize = 0,
     diff_status: []const u8 = "—",
+    diff_mode: DiffMode = .unstaged,
+    diff_truncated: bool = false,
     selected_entry_id: u32 = 0,
 
-    pub fn entriesSlice(self: *GitBuffers) []const GitEntry {
+    pub fn entriesSlice(self: *const GitBuffers) []const GitEntry {
         return self.entries[0..self.entry_count];
     }
 
@@ -49,12 +64,27 @@ pub const GitBuffers = struct {
         self.available = false;
         self.diff_len = 0;
         self.diff_status = "—";
+        self.diff_mode = .unstaged;
+        self.diff_truncated = false;
         self.selected_entry_id = 0;
     }
 
-    /// Load a bounded `git diff` / `git diff --no-index` style preview for one path.
-    pub fn loadDiff(self: *GitBuffers, io: std.Io, cwd: []const u8, entry_id: u32) void {
+    pub fn supportsMode(self: *const GitBuffers, entry_id: u32, mode: DiffMode) bool {
+        for (self.entriesSlice()) |entry| {
+            if (entry.id != entry_id or entry.status.len < 2) continue;
+            return switch (mode) {
+                .staged => entry.status[0] != ' ' and entry.status[0] != '?',
+                .unstaged => entry.status[1] != ' ' or entry.status[0] == '?',
+            };
+        }
+        return false;
+    }
+
+    /// Load a bounded staged or unstaged unified diff for one literal path.
+    pub fn loadDiff(self: *GitBuffers, io: std.Io, cwd: []const u8, entry_id: u32, mode: DiffMode) void {
         self.diff_len = 0;
+        self.diff_truncated = false;
+        self.diff_mode = mode;
         self.selected_entry_id = entry_id;
         var path: []const u8 = "";
         var status: []const u8 = "";
@@ -73,6 +103,10 @@ pub const GitBuffers = struct {
             self.diff_status = "no workspace";
             return;
         }
+        if (!self.supportsMode(entry_id, mode)) {
+            self.diff_status = if (mode == .staged) "no staged diff" else "no unstaged diff";
+            return;
+        }
 
         var gpa_state: std.heap.DebugAllocator(.{}) = .init;
         defer _ = gpa_state.deinit();
@@ -83,19 +117,27 @@ pub const GitBuffers = struct {
             std.process.run(gpa, io, .{
                 .argv = &.{ "git", "diff", "--no-index", "--", "/dev/null", path },
                 .cwd = .{ .path = cwd },
-                .stdout_limit = .limited(self.diff_buf.len),
+                .stdout_limit = .limited(self.diff_buf.len + 1),
+                .stderr_limit = .limited(1024),
+            })
+        else if (mode == .staged)
+            std.process.run(gpa, io, .{
+                .argv = &.{ "git", "diff", "--cached", "--", path },
+                .cwd = .{ .path = cwd },
+                .stdout_limit = .limited(self.diff_buf.len + 1),
                 .stderr_limit = .limited(1024),
             })
         else
             std.process.run(gpa, io, .{
-                .argv = &.{ "git", "diff", "HEAD", "--", path },
+                .argv = &.{ "git", "diff", "--", path },
                 .cwd = .{ .path = cwd },
-                .stdout_limit = .limited(self.diff_buf.len),
+                .stdout_limit = .limited(self.diff_buf.len + 1),
                 .stderr_limit = .limited(1024),
             });
 
         const run = result catch {
-            self.diff_status = "diff failed";
+            self.diff_truncated = true;
+            self.diff_status = "diff exceeds bounded review limit";
             return;
         };
         defer {
@@ -115,7 +157,8 @@ pub const GitBuffers = struct {
         const n = @min(run.stdout.len, self.diff_buf.len);
         @memcpy(self.diff_buf[0..n], run.stdout[0..n]);
         self.diff_len = n;
-        self.diff_status = "diff loaded";
+        self.diff_truncated = run.stdout.len > self.diff_buf.len;
+        self.diff_status = if (self.diff_truncated) "diff loaded (truncated)" else mode.label();
     }
 
     /// True only when `cwd` is itself a usable git work-tree root.
@@ -654,4 +697,28 @@ test "per-path operations reject absolute traversal and git metadata paths" {
     try std.testing.expectEqualStrings("unsafe path", g.unstagePath(std.testing.io, "/unused", "/absolute.txt"));
     try std.testing.expectEqualStrings("unsafe path", g.restorePath(std.testing.io, "/unused", ".git/config"));
     try std.testing.expectEqualStrings("unsafe path", g.stagePath(std.testing.io, "/unused", "dir\\..\\outside.txt"));
+}
+
+test "selected entry exposes separate staged and unstaged diffs" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [128]u8 = undefined;
+    const cwd = try initTestRepo(&tmp, &path_buf);
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "tracked.txt", .data = "staged\n" });
+    try runTestGit(cwd, &.{ "git", "add", "--", "tracked.txt" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "tracked.txt", .data = "unstaged\n" });
+
+    var g: GitBuffers = .{};
+    g.refresh(std.testing.io, cwd);
+    try std.testing.expectEqual(@as(u32, 1), g.entry_count);
+    const id = g.entries[0].id;
+    try std.testing.expect(g.supportsMode(id, .staged));
+    try std.testing.expect(g.supportsMode(id, .unstaged));
+
+    g.loadDiff(std.testing.io, cwd, id, .staged);
+    try std.testing.expectEqualStrings("staged", g.diff_status);
+    try std.testing.expect(std.mem.indexOf(u8, g.diffText(), "+staged") != null);
+    g.loadDiff(std.testing.io, cwd, id, .unstaged);
+    try std.testing.expectEqualStrings("unstaged", g.diff_status);
+    try std.testing.expect(std.mem.indexOf(u8, g.diffText(), "+unstaged") != null);
 }
