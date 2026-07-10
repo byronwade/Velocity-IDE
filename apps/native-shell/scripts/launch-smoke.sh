@@ -5,18 +5,20 @@ SHELL_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_ROOT="$(cd "$SHELL_ROOT/../.." && pwd)"
 cd "$SHELL_ROOT"
 export PATH="$REPO_ROOT/.tools/node_modules/.bin:${PATH:-}"
+# shellcheck source=apps/native-shell/scripts/smoke-common.sh
+. "$SHELL_ROOT/scripts/smoke-common.sh"
 
 native build --yes -Dautomation=true
 rm -rf .zig-cache/native-sdk-automation
-./zig-out/bin/velocity-ide >/tmp/velocity-launch-smoke.out 2>&1 &
+LOG_FILE=/tmp/velocity-launch-smoke.out
+./zig-out/bin/velocity-ide >"$LOG_FILE" 2>&1 &
 APP_PID=$!
 cleanup() {
   kill "$APP_PID" 2>/dev/null || true
   wait "$APP_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
-sleep 3
-kill -0 "$APP_PID"
+smoke_wait_for_app "$APP_PID" "$LOG_FILE"
 
 OPEN_ID="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=listitem name="acme-dashboard".*/\1/p' | head -1)"
 test -n "$OPEN_ID"
