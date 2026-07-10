@@ -348,6 +348,101 @@ fn childExec(plan: *const ChildPlan) noreturn {
     linux.exit_group(127);
 }
 
+// -------------------------------------------------- session escalation
+//
+// The LSP broker kills the child's process GROUP, which covers a
+// pipe-spawned server tree. A PTY shell is different: interactive
+// shells enable job control, so every background pipeline
+// (`sleep 300 &`) gets its OWN process group inside the shell's
+// SESSION (the shell became a session leader via setsid). Killing the
+// leader's group alone would leak those jobs — proven by the spike.
+// So the PTY teardown escalates over every pid whose /proc session id
+// is the shell's: TERM all -> bounded grace -> KILL all.
+
+/// Parse the session id (4th field after the comm ")" in
+/// /proc/<pid>/stat). Zombies return null — they cannot be signalled
+/// and must not stall the escalation grace loop. Pure; unit-tested.
+pub fn sessionIdFromStat(stat_text: []const u8) ?posix.pid_t {
+    // comm may contain spaces/parens; the LAST ')' ends it.
+    const close = std.mem.lastIndexOfScalar(u8, stat_text, ')') orelse return null;
+    var fields = std.mem.tokenizeScalar(u8, stat_text[close + 1 ..], ' ');
+    const state = fields.next() orelse return null;
+    if (std.mem.eql(u8, state, "Z")) return null;
+    _ = fields.next() orelse return null; // ppid
+    _ = fields.next() orelse return null; // pgrp
+    const session_text = fields.next() orelse return null;
+    return std.fmt.parseInt(posix.pid_t, session_text, 10) catch null;
+}
+
+/// Scan /proc for live processes in `session`; deliver `sig` to each
+/// when non-null. Returns how many were found. Raw syscalls only.
+fn sweepSession(session: posix.pid_t, sig: ?posix.SIG) usize {
+    var found: usize = 0;
+    const dir_rc = linux.open("/proc", .{ .ACCMODE = .RDONLY, .DIRECTORY = true, .CLOEXEC = true }, 0);
+    if (posix.errno(dir_rc) != .SUCCESS) return 0;
+    const dir_fd: posix.fd_t = @intCast(dir_rc);
+    defer _ = linux.close(dir_fd);
+    var ents: [8192]u8 = undefined;
+    while (true) {
+        const n_rc = linux.getdents64(dir_fd, &ents, ents.len);
+        if (posix.errno(n_rc) != .SUCCESS) break;
+        const n: usize = @intCast(n_rc);
+        if (n == 0) break;
+        var off: usize = 0;
+        while (off < n) {
+            const ent: *align(1) linux.dirent64 = @ptrCast(&ents[off]);
+            const reclen: usize = ent.reclen;
+            if (reclen == 0) break;
+            const name_ptr: [*:0]const u8 = @ptrCast(@as([*]const u8, @ptrCast(ent)) + @offsetOf(linux.dirent64, "name"));
+            const name = std.mem.sliceTo(name_ptr, 0);
+            off += reclen;
+            const pid = std.fmt.parseInt(posix.pid_t, name, 10) catch continue;
+            if (statSessionOf(pid) != session) continue;
+            found += 1;
+            if (sig) |s| _ = linux.kill(pid, s);
+        }
+    }
+    return found;
+}
+
+fn statSessionOf(pid: posix.pid_t) ?posix.pid_t {
+    var path_buf: [48]u8 = undefined;
+    const path = std.fmt.bufPrintZ(&path_buf, "/proc/{d}/stat", .{pid}) catch return null;
+    const rc = linux.open(path, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
+    if (posix.errno(rc) != .SUCCESS) return null;
+    const fd: posix.fd_t = @intCast(rc);
+    defer _ = linux.close(fd);
+    var stat_buf: [512]u8 = undefined;
+    const n = broker.readFd(fd, &stat_buf);
+    if (n == 0) return null;
+    return sessionIdFromStat(stat_buf[0..n]);
+}
+
+/// TERM every process in the shell's session -> bounded grace -> KILL
+/// the stragglers. Also signals the leader's own group (covers the
+/// window before a fork'd job moves to its new group) and reaps the
+/// direct child so its stat entry doesn't read as alive.
+pub fn escalateKillSession(leader: posix.pid_t, grace_ms: u64) void {
+    if (leader <= 0) return;
+    _ = linux.kill(-leader, .TERM);
+    _ = sweepSession(leader, .TERM);
+    const deadline = broker.nowMs() + grace_ms;
+    while (broker.nowMs() < deadline) {
+        reapDirectChild(leader);
+        if (sweepSession(leader, null) == 0) return;
+        broker.sleepMs(25);
+    }
+    _ = linux.kill(-leader, .KILL);
+    _ = sweepSession(leader, .KILL);
+    broker.sleepMs(20);
+    reapDirectChild(leader);
+}
+
+fn reapDirectChild(child_pid: posix.pid_t) void {
+    var status: u32 = 0;
+    _ = linux.waitpid(child_pid, &status, linux.W.NOHANG);
+}
+
 // -------------------------------------------------------------- runtime
 
 const Runtime = struct {
@@ -398,7 +493,7 @@ fn exitBroker(rt: *Runtime, reason: []const u8) noreturn {
     if (std.fmt.bufPrint(&line_storage, "{{\"event\":\"broker_exit\",\"reason\":\"{s}\"}}", .{reason})) |line| {
         rt.emitLine(line);
     } else |_| {}
-    broker.escalateKillServerTree(rt.child_pid, rt.opts.grace_ms);
+    escalateKillSession(rt.child_pid, rt.opts.grace_ms);
     std.process.exit(0);
 }
 
@@ -443,9 +538,9 @@ fn childWaitMain(rt: *Runtime) void {
     // Let the pump drain what the kernel still buffers on the master.
     broker.sleepMs(200);
     if (rt.teardown_started.swap(true, .monotonic)) broker.parkUntilExit();
-    // Escalate on the (dead leader's) group so orphaned grandchildren
-    // holding the slave open are also torn down.
-    broker.escalateKillServerTree(rt.child_pid, rt.opts.grace_ms);
+    // Escalate over the (dead leader's) whole session so orphaned
+    // background jobs holding the slave open are also torn down.
+    escalateKillSession(rt.child_pid, rt.opts.grace_ms);
     var line_storage: [96]u8 = undefined;
     const line = if (linux.W.IFEXITED(status))
         std.fmt.bufPrint(&line_storage, "{{\"event\":\"pty_exit\",\"reason\":\"exited\",\"code\":{d}}}", .{linux.W.EXITSTATUS(status)})
@@ -867,24 +962,35 @@ test "input body accepts empty payload and rejects malformed/oversized" {
     try testing.expectError(error.InputTooLarge, decodeInputBody("{\"b64\":\"ZWNobyBoaQo=\"}", &test_scratch, &small_out));
 }
 
-test "input decode is bounded by max_input_raw_bytes" {
-    // 48 KiB + 3 raw bytes encodes to a body-cap-sized payload that must
-    // be refused by the decode bound, not by a buffer overrun.
-    const raw_len = max_input_raw_bytes + 3;
+test "input decode is bounded at both the body cap and the decode buffer" {
+    // (a) A body over the 64 KiB POST cap is refused before parsing —
+    // this is the outer bound that makes >48 KiB decoded impossible.
+    const oversized = try testing.allocator.alloc(u8, max_post_body_bytes + 1);
+    defer testing.allocator.free(oversized);
+    @memset(oversized, 'x');
+    var out: [max_input_raw_bytes]u8 = undefined;
+    try testing.expectError(error.Malformed, decodeInputBody(oversized, &test_scratch, &out));
+
+    // (b) A well-formed body whose decoded size exceeds the caller's
+    // buffer is refused by the decode bound, never a buffer overrun.
+    const raw_len = 40 * 1024;
     const raw = try testing.allocator.alloc(u8, raw_len);
     defer testing.allocator.free(raw);
     @memset(raw, 'x');
     const b64_len = std.base64.standard.Encoder.calcSize(raw_len);
-    const body = try testing.allocator.alloc(u8, b64_len + 32);
-    defer testing.allocator.free(body);
     const b64_storage = try testing.allocator.alloc(u8, b64_len);
     defer testing.allocator.free(b64_storage);
     const b64 = std.base64.standard.Encoder.encode(b64_storage, raw);
+    const body = try testing.allocator.alloc(u8, b64_len + 32);
+    defer testing.allocator.free(body);
     const rendered = try std.fmt.bufPrint(body, "{{\"b64\":\"{s}\"}}", .{b64});
-    var out: [max_input_raw_bytes]u8 = undefined;
+    var small_out: [32 * 1024]u8 = undefined;
     const big_scratch = try testing.allocator.alloc(u8, 512 * 1024);
     defer testing.allocator.free(big_scratch);
-    try testing.expectError(error.InputTooLarge, decodeInputBody(rendered, big_scratch, &out));
+    try testing.expectError(error.InputTooLarge, decodeInputBody(rendered, big_scratch, &small_out));
+    // The same body decodes fine into a big-enough buffer.
+    const ok = try decodeInputBody(rendered, big_scratch, &out);
+    try testing.expectEqual(raw_len, ok.len);
 }
 
 // --------------------------------------------------- base64 chunk bounds
@@ -938,6 +1044,21 @@ test "wrong or truncated tokens are refused, exact token accepted" {
     try testing.expect(authStatus("fee8c75f", expected) != null);
     try testing.expect(authStatus("", expected) != null);
     try testing.expectEqual(@as(?[]const u8, null), authStatus(expected, expected));
+}
+
+// --------------------------------------------------- session escalation
+
+test "session id parses from /proc stat text, zombies excluded" {
+    // Real shape, including a comm with spaces and parens.
+    const stat = "1234 (tmux: server (x)) S 1 1234 1234 0 -1 4194560 100 0 0 0";
+    try testing.expectEqual(@as(?posix.pid_t, 1234), sessionIdFromStat(stat));
+    const other = "77 (sleep) S 42 900 4321 0 -1 0 0";
+    try testing.expectEqual(@as(?posix.pid_t, 4321), sessionIdFromStat(other));
+    const zombie = "78 (sleep) Z 42 900 4321 0 -1 0 0";
+    try testing.expectEqual(@as(?posix.pid_t, null), sessionIdFromStat(zombie));
+    try testing.expectEqual(@as(?posix.pid_t, null), sessionIdFromStat("garbage with no comm"));
+    try testing.expectEqual(@as(?posix.pid_t, null), sessionIdFromStat("1 (x) S 1"));
+    try testing.expectEqual(@as(?posix.pid_t, null), sessionIdFromStat(""));
 }
 
 // ---------------------------------------------------------- shell argv
