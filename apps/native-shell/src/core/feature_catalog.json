@@ -1672,7 +1672,7 @@
     "startupAllowed": false,
     "memoryBudgetMB": 32,
     "processBudget": {
-      "maxProcesses": 1,
+      "maxProcesses": 2,
       "killOnWorkspaceClose": true,
       "idleSuspend": true
     },
@@ -1681,14 +1681,14 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "prototype",
-    "integrationStatus": "scaffold",
+    "status": "working",
+    "integrationStatus": "wired",
     "blockedBySdk": {
-      "scope": "interactive PTY transport only; pipe command runner remains available",
+      "scope": "non-Linux interactive PTY only; Linux interactive sessions run via the governed sidecar broker (sidecar/pty_broker.zig), and the pipe command runner remains the default path",
       "unblockCriteria": [
-        "supported cross-platform PTY spawn API",
-        "streaming stdin/stdout and resize events",
-        "process-tree close and cancellation lifecycle integrated with Effects"
+        "macOS openpty ioctl variant in the sidecar broker (expected-compatible, untested)",
+        "Windows ConPTY adapter (CreatePseudoConsole + Job Objects)",
+        "ANSI rendering (colors/cursor addressing) — sequences are currently stripped before the scrollback ring"
       ]
     },
     "category": "terminal",

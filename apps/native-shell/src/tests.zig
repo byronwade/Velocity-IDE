@@ -509,6 +509,210 @@ test "lsp teardown on workspace close kills the feature and cancels the timer" {
     try testing.expect(model.lsp == null);
 }
 
+fn ptyDataLine(buf: []u8, raw: []const u8) []const u8 {
+    var b64_buf: [512]u8 = undefined;
+    const b64 = std.base64.standard.Encoder.encode(&b64_buf, raw);
+    return std.fmt.bufPrint(buf, "{{\"event\":\"data\",\"b64\":\"{s}\"}}", .{b64}) catch unreachable;
+}
+
+test "interactive shell stays off without the switch and reports honest unavailability" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    defer model.deinit();
+    model.pty_test_broker_path = ""; // simulate a missing broker binary
+
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    model_mod.updateFx(&model, .toggle_terminal, &fx);
+    // Panel open + workspace open alone must never spawn a PTY process.
+    try testing.expectEqual(@as(usize, 0), fx.pendingSpawnCount());
+    try testing.expectEqualStrings("off", model.ptyStatusLabel());
+    try testing.expect(model.pty == null);
+
+    // Switch on with no broker binary: honest unavailable state, still
+    // no process, one probe attempt per episode.
+    model_mod.updateFx(&model, .toggle_pty_terminal, &fx);
+    try testing.expect(model.pty_enabled);
+    try testing.expectEqual(@as(usize, 0), fx.pendingSpawnCount());
+    try testing.expectEqualStrings("unavailable", model.ptyStatusLabel());
+    try testing.expect(model.pty == null);
+    try testing.expect(model.pty_activation_attempted);
+    model_mod.updateFx(&model, .clear_toast, &fx);
+    try testing.expectEqual(@as(usize, 0), fx.pendingSpawnCount());
+
+    model_mod.updateFx(&model, .toggle_pty_terminal, &fx); // back off for hygiene
+    try testing.expectEqualStrings("off", model.ptyStatusLabel());
+    try testing.expect(!model.pty_enabled);
+}
+
+test "pty broker spawn, handshake, coalesced input, stripped output, and exit code" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    defer model.deinit();
+    model.pty_test_broker_path = "/opt/velocity/velocity-pty-broker";
+
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    model_mod.updateFx(&model, .toggle_terminal, &fx);
+    model_mod.updateFx(&model, .toggle_pty_terminal, &fx);
+
+    // Governed spawn: exactly one broker process, ledgered under
+    // feature.terminal with PTY ownership, http liveness + workspace cwd.
+    try testing.expectEqual(@as(usize, 1), fx.pendingSpawnCount());
+    const spawn_request = fx.pendingSpawnAt(0).?;
+    try testing.expectEqual(model_mod.pty_broker_effect_key, spawn_request.key);
+    try testing.expectEqualStrings("/opt/velocity/velocity-pty-broker", spawn_request.argv[0]);
+    try testing.expectEqualStrings("--liveness=http", spawn_request.argv[1]);
+    try testing.expect(std.mem.startsWith(u8, spawn_request.argv[3], "--cwd=/"));
+    const record = model.governor.recordForEffect(model_mod.pty_broker_effect_key).?;
+    try testing.expect(record.pty_owned);
+    try testing.expect(!record.terminal_owned); // pipe/tasks are not starved
+    try testing.expectEqualStrings("feature.terminal", record.parent_feature);
+    try testing.expectEqualStrings("starting", model.ptyStatusLabel());
+
+    // listening -> heartbeat timer armed, session running.
+    model_mod.updateFx(&model, .{ .pty_broker_line = .{
+        .key = model_mod.pty_broker_effect_key,
+        .line = "{\"event\":\"listening\",\"port\":34609,\"token\":\"5341c3c1bee76b4e0666a641c60d8dcb\"}",
+    } }, &fx);
+    try testing.expect(pendingTimerByKey(&fx, model_mod.pty_heartbeat_timer_key) != null);
+    try testing.expectEqualStrings("running", model.ptyStatusLabel());
+
+    // Submitting a command routes to the PTY as one authenticated
+    // /input POST (base64 of "export V=42\n").
+    model.terminal_command.set("export V=42");
+    model_mod.updateFx(&model, .run_terminal_command, &fx);
+    const first_input = lastPendingFetch(&fx).?;
+    try testing.expect(std.mem.indexOf(u8, first_input.url, "127.0.0.1:34609/input") != null);
+    try testing.expectEqualStrings("X-Broker-Token", first_input.headers[0].name);
+    try testing.expectEqualStrings("5341c3c1bee76b4e0666a641c60d8dcb", first_input.headers[0].value);
+    try testing.expectEqualStrings("{\"b64\":\"ZXhwb3J0IFY9NDIK\"}", first_input.body);
+    const fetch_count_after_first = fx.pendingFetchCount();
+
+    // Submits while the POST is in flight coalesce (no second fetch).
+    model.terminal_command.set("echo $V");
+    model_mod.updateFx(&model, .run_terminal_command, &fx);
+    try testing.expectEqual(fetch_count_after_first, fx.pendingFetchCount());
+
+    // The 204 ack releases the queue: one follow-up POST with the
+    // coalesced line.
+    try fx.feedResponse(first_input.key, 204, "");
+    model_mod.updateFx(&model, .{ .pty_send_response = .{ .key = first_input.key, .outcome = .ok, .status = 204 } }, &fx);
+    const second_input = lastPendingFetch(&fx).?;
+    try testing.expectEqualStrings("{\"b64\":\"ZWNobyAkVgo=\"}", second_input.body);
+    try fx.feedResponse(second_input.key, 204, "");
+    model_mod.updateFx(&model, .{ .pty_send_response = .{ .key = second_input.key, .outcome = .ok, .status = 204 } }, &fx);
+
+    // PTY output (with ANSI color) lands stripped in the panel lines.
+    var line_buf: [512]u8 = undefined;
+    model_mod.updateFx(&model, .{ .pty_broker_line = .{
+        .key = model_mod.pty_broker_effect_key,
+        .line = ptyDataLine(&line_buf, "\x1b[32m42\x1b[0m\r\n"),
+    } }, &fx);
+    var found = false;
+    for (model.term_lines) |line| {
+        if (std.mem.eql(u8, line, "42")) found = true;
+        try testing.expect(std.mem.indexOfScalar(u8, line, 0x1b) == null);
+    }
+    try testing.expect(found);
+
+    // Heartbeat tick -> authenticated /hb POST.
+    model_mod.updateFx(&model, .{ .pty_heartbeat_timer = .{
+        .key = model_mod.pty_heartbeat_timer_key,
+        .outcome = .fired,
+    } }, &fx);
+    const hb_request = lastPendingFetch(&fx).?;
+    try testing.expect(std.mem.indexOf(u8, hb_request.url, "/hb") != null);
+    try testing.expectEqualStrings("X-Broker-Token", hb_request.headers[0].name);
+    try fx.feedResponse(hb_request.key, 204, "");
+    model_mod.updateFx(&model, .{ .pty_hb_response = .{ .key = hb_request.key, .outcome = .ok, .status = 204 } }, &fx);
+
+    // Shell exit: code surfaces in the scrollback, scrollback survives.
+    model_mod.updateFx(&model, .{ .pty_broker_line = .{
+        .key = model_mod.pty_broker_effect_key,
+        .line = "{\"event\":\"pty_exit\",\"reason\":\"exited\",\"code\":3}",
+    } }, &fx);
+    try testing.expectEqualStrings("exited", model.ptyStatusLabel());
+    try testing.expect(model.ptyRestartVisible());
+    var found_exit = false;
+    for (model.term_lines) |line| {
+        if (std.mem.eql(u8, line, "[shell exited 3]")) found_exit = true;
+    }
+    try testing.expect(found_exit);
+    try fx.feedExitReason(model_mod.pty_broker_effect_key, 0, .exited);
+    model_mod.updateFx(&model, .{ .pty_broker_exit = .{
+        .key = model_mod.pty_broker_effect_key,
+        .code = 0,
+        .reason = .exited,
+    } }, &fx);
+    try testing.expect(!model.governor.recordForEffect(model_mod.pty_broker_effect_key).?.alive);
+    try testing.expect(model.pty != null); // scrollback retained
+    try testing.expectEqual(@as(usize, 0), fx.pendingSpawnCount());
+
+    // Restart respawns a fresh governed broker.
+    model_mod.updateFx(&model, .restart_pty_terminal, &fx);
+    try testing.expectEqual(@as(usize, 1), fx.pendingSpawnCount());
+    try testing.expectEqualStrings("starting", model.ptyStatusLabel());
+
+    // Switch off tears everything down: timer cancelled, ledger closed,
+    // runtime freed, panel handed back to the pipe runner.
+    model_mod.updateFx(&model, .toggle_pty_terminal, &fx);
+    try testing.expect(model.pty == null);
+    try testing.expectEqualStrings("off", model.ptyStatusLabel());
+    try testing.expect(pendingTimerByKey(&fx, model_mod.pty_heartbeat_timer_key) == null);
+    try testing.expect(!model.governor.recordForEffect(model_mod.pty_broker_effect_key).?.alive);
+}
+
+test "pty session dies cleanly on panel close and workspace close, no auto-respawn" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    defer model.deinit();
+    model.pty_test_broker_path = "/opt/velocity/velocity-pty-broker";
+
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    model_mod.updateFx(&model, .toggle_terminal, &fx);
+    model_mod.updateFx(&model, .toggle_pty_terminal, &fx);
+    model_mod.updateFx(&model, .{ .pty_broker_line = .{
+        .key = model_mod.pty_broker_effect_key,
+        .line = "{\"event\":\"listening\",\"port\":34609,\"token\":\"5341c3c1bee76b4e0666a641c60d8dcb\"}",
+    } }, &fx);
+    try testing.expect(model.pty != null);
+    try testing.expect(pendingTimerByKey(&fx, model_mod.pty_heartbeat_timer_key) != null);
+
+    // Panel close: session torn down, switch resets, timer cancelled.
+    model_mod.updateFx(&model, .toggle_terminal, &fx);
+    try testing.expect(model.pty == null);
+    try testing.expect(!model.pty_enabled);
+    try testing.expect(pendingTimerByKey(&fx, model_mod.pty_heartbeat_timer_key) == null);
+    try testing.expect(!model.governor.recordForEffect(model_mod.pty_broker_effect_key).?.alive);
+
+    // Reopening the panel must NOT silently respawn a process.
+    const spawns = fx.pendingSpawnCount();
+    model_mod.updateFx(&model, .toggle_terminal, &fx);
+    try testing.expectEqual(spawns, fx.pendingSpawnCount());
+
+    // Workspace close (go_launch) kills a fresh session the same way.
+    model_mod.updateFx(&model, .toggle_pty_terminal, &fx);
+    try testing.expect(model.pty != null);
+    model_mod.updateFx(&model, .go_launch, &fx);
+    try testing.expect(model.pty == null);
+    try testing.expect(!model.pty_enabled);
+    try testing.expect(pendingTimerByKey(&fx, model_mod.pty_heartbeat_timer_key) == null);
+    try testing.expect(!model.governor.recordForEffect(model_mod.pty_broker_effect_key).?.alive);
+
+    // A broker exit delivered after teardown stays a no-op.
+    model_mod.updateFx(&model, .{ .pty_broker_exit = .{
+        .key = model_mod.pty_broker_effect_key,
+        .code = 0,
+        .reason = .cancelled,
+    } }, &fx);
+    try testing.expect(model.pty == null);
+}
+
 test "rejected disk poll stays disarmed without re-arm storm" {
     var fx = model_mod.Effects.init(testing.allocator);
     defer fx.deinit();

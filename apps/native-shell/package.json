@@ -29,7 +29,9 @@
     "terminal-smoke": "bash scripts/terminal-smoke.sh",
     "diagnostics-smoke": "bash scripts/diagnostics-smoke.sh",
     "lsp-smoke": "bash scripts/lsp-smoke.sh",
+    "pty-terminal-smoke": "bash scripts/pty-terminal-smoke.sh",
     "build-lsp-broker": "bash scripts/build-lsp-broker.sh",
+    "build-pty-broker": "bash scripts/build-pty-broker.sh",
     "doctor": "native doctor"
   },
   "engines": {

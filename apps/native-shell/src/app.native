@@ -392,6 +392,15 @@
                       </for>
                     </column>
                   </scroll>
+                  <row gap="4" cross="center" label="Interactive shell mode">
+                    <text size="sm" foreground="text_muted">INTERACTIVE SHELL</text>
+                    <switch checked="{ptyModeActive}" on-toggle="toggle_pty_terminal" label="Toggle interactive shell (PTY)" />
+                    <badge variant="secondary">PTY: {ptyStatusLabel}</badge>
+                    <if test="{ptyRestartVisible}">
+                      <button size="sm" variant="ghost" icon="refresh-cw" on-press="restart_pty_terminal" label="Restart interactive shell">Restart Shell</button>
+                    </if>
+                    <spacer grow="1" />
+                  </row>
                   <row gap="4" cross="center">
                     <text-field text="{terminalCommandText}" placeholder="echo hello" on-input="update_terminal_command" on-submit="run_terminal_command" grow="1" label="Terminal command" />
                     <button size="sm" variant="ghost" icon="chevron-up" on-press="terminal_history_older" label="Older command" />

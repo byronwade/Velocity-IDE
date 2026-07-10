@@ -21,6 +21,9 @@ pub const Ownership = struct {
     task: bool = false,
     lsp: bool = false,
     debug: bool = false,
+    /// Interactive PTY session (sidecar broker); budgeted separately from
+    /// the pipe runner so an open interactive shell never starves tasks.
+    pty: bool = false,
 };
 
 pub const OwnershipCounts = struct {
@@ -28,6 +31,7 @@ pub const OwnershipCounts = struct {
     task: u32 = 0,
     lsp: u32 = 0,
     debug: u32 = 0,
+    pty: u32 = 0,
 };
 
 pub const ProcessRecord = struct {
@@ -48,6 +52,7 @@ pub const ProcessRecord = struct {
     lsp_owned: bool = false,
     task_owned: bool = false,
     debug_owned: bool = false,
+    pty_owned: bool = false,
     effect_key: u64 = 0,
     status: ProcessStatus = .running,
     exit_code: i32 = 0,
@@ -80,6 +85,7 @@ pub const Governor = struct {
         if (self.count >= max_tracked) return error.ProcessBudgetExceeded;
         if (ownership.terminal and self.aliveOwned(.terminal)) return error.TerminalProcessBudgetExceeded;
         if (ownership.task and self.aliveOwned(.task)) return error.TaskProcessBudgetExceeded;
+        if (ownership.pty and self.aliveOwned(.pty)) return error.PtyProcessBudgetExceeded;
         const id = self.next_id;
         self.next_id += 1;
         const idx = self.count;
@@ -92,6 +98,7 @@ pub const Governor = struct {
             .task_owned = ownership.task,
             .lsp_owned = ownership.lsp,
             .debug_owned = ownership.debug,
+            .pty_owned = ownership.pty,
             .effect_key = effect_key,
             .status = .running,
             .alive = true,
@@ -148,13 +155,14 @@ pub const Governor = struct {
         return null;
     }
 
-    const OwnedKind = enum { terminal, task };
+    const OwnedKind = enum { terminal, task, pty };
 
     fn aliveOwned(self: *const Governor, kind: OwnedKind) bool {
         for (self.records[0..self.count]) |record| {
             if (!record.alive) continue;
             if (kind == .terminal and record.terminal_owned) return true;
             if (kind == .task and record.task_owned) return true;
+            if (kind == .pty and record.pty_owned) return true;
         }
         return false;
     }
@@ -175,6 +183,7 @@ pub const Governor = struct {
             if (record.task_owned) counts.task += 1;
             if (record.lsp_owned) counts.lsp += 1;
             if (record.debug_owned) counts.debug += 1;
+            if (record.pty_owned) counts.pty += 1;
         }
         return counts;
     }
@@ -205,6 +214,22 @@ test "governor enforces terminal and task budgets and records effect outcome" {
     try std.testing.expect(!record.alive);
     try std.testing.expectEqual(ProcessStatus.cancelled, record.status);
     try std.testing.expectEqual(@as(i32, 130), record.exit_code);
+}
+
+test "governor enforces the single interactive PTY budget independently" {
+    var g: Governor = .{};
+    _ = try g.spawnEffect("feature.terminal", "velocity-pty-broker", 90, .{ .pty = true });
+    // A second interactive session is refused...
+    try std.testing.expectError(
+        error.PtyProcessBudgetExceeded,
+        g.spawnEffect("feature.terminal", "velocity-pty-broker", 91, .{ .pty = true }),
+    );
+    // ...but the pipe runner / tasks are NOT starved by an open shell.
+    _ = try g.spawnEffect("feature.terminal", "echo hi", 92, .{ .terminal = true, .task = true });
+    try std.testing.expectEqual(@as(u32, 1), g.aliveOwnershipCounts().pty);
+    g.closeEffect(90, .cancelled, -1);
+    try std.testing.expectEqual(@as(u32, 0), g.aliveOwnershipCounts().pty);
+    _ = try g.spawnEffect("feature.terminal", "velocity-pty-broker", 93, .{ .pty = true });
 }
 
 test "governor reports live ownership counts" {

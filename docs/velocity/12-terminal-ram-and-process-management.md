@@ -31,9 +31,18 @@ Velocity keeps a higher default for usability but **hard-caps** and uses a ring
 buffer to avoid unbounded growth.
 
 ## Status
-Prototype: the non-interactive pipe runner captures command output. A bounded
-PTY session/output/input/resize protocol now exists, but its transport is
-explicitly unavailable and no interactive shell is claimed. It is unblocked
-only by an SDK-supported cross-platform PTY with streamed stdin/stdout, resize,
-cancellation/exit, and process-tree lifecycle hooks. Existing contiguous pipe
-line storage remains separate to avoid regressing borrowed UI/diagnostic data.
+Working (Linux): the terminal panel's explicit "Interactive shell" switch runs
+a REAL PTY session through the governed sidecar broker
+(`apps/native-shell/sidecar/pty_broker.zig` + `src/terminal/pty_runtime.zig`):
+shell state persists across commands (cd, env vars, functions), output streams
+into the bounded 2,000-line ring with ANSI sequences STRIPPED (colors/cursor
+addressing are not rendered yet — an honest limitation), the shell's exit code
+surfaces in the scrollback, and panel close / workspace close / the switch
+tear the whole shell session tree down (broker session sweep + PDEATHSIG
+backstop). No broker/shell process exists before the user flips the switch.
+The non-interactive pipe runner stays the default path (and the honest
+fallback when the broker binary is absent or the platform is not Linux);
+tasks/tests/launch profiles stay on it so their exit codes keep driving
+status. Existing contiguous pipe line storage remains separate to avoid
+regressing borrowed UI/diagnostic data. macOS/Windows PTY remain gated (see
+sidecar README platform gates).

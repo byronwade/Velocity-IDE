@@ -22,6 +22,7 @@ const outline_mod = @import("../workspace/outline.zig");
 const go_to_def_mod = @import("../workspace/go_to_def.zig");
 const editor_view = @import("../workspace/editor_view.zig");
 const terminal_session = @import("../terminal/terminal_session.zig");
+const pty_runtime = @import("../terminal/pty_runtime.zig");
 const process_governor = @import("../processes/process_governor.zig");
 const lsp_session = @import("../lsp/lsp_session.zig");
 const broker_transport = @import("../lsp/broker_transport.zig");
@@ -349,6 +350,13 @@ pub const Msg = union(enum) {
     copy_diff_internal,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
+    toggle_pty_terminal,
+    restart_pty_terminal,
+    pty_broker_line: native_sdk.EffectLine,
+    pty_broker_exit: native_sdk.EffectExit,
+    pty_heartbeat_timer: native_sdk.EffectTimer,
+    pty_send_response: native_sdk.EffectResponse,
+    pty_hb_response: native_sdk.EffectResponse,
     toggle_lsp,
     lsp_broker_line: native_sdk.EffectLine,
     lsp_broker_exit: native_sdk.EffectExit,
@@ -444,6 +452,11 @@ pub const Msg = union(enum) {
         "close_command_palette",
         "terminal_line",
         "terminal_exit",
+        "pty_broker_line",
+        "pty_broker_exit",
+        "pty_heartbeat_timer",
+        "pty_send_response",
+        "pty_hb_response",
         "lsp_broker_line",
         "lsp_broker_exit",
         "lsp_heartbeat_timer",
@@ -457,6 +470,13 @@ pub const toast_timer_key: u64 = 0x746f617374_01;
 pub const disk_poll_timer_key: u64 = 0x6469736b_706f6c6c;
 pub const search_debounce_timer_key: u64 = 0x73656172_63686462;
 pub const terminal_process_effect_key: u64 = 0x7465726d_696e616c;
+/// Interactive PTY effect keys. The broker spawn and heartbeat timer are
+/// fixed keys; input/heartbeat POSTs rotate a sequence into the low bits
+/// (same collision-avoidance scheme as the LSP keys below).
+pub const pty_broker_effect_key: u64 = 0x7074795f_62726f6b; // "pty_brok"
+pub const pty_heartbeat_timer_key: u64 = 0x7074795f_74696d72; // "pty_timr"
+pub const pty_send_key_base: u64 = 0x70747973_00000000; // "ptys"
+pub const pty_hb_key_base: u64 = 0x70747968_00000000; // "ptyh"
 /// LSP effect keys. The broker spawn and heartbeat timer are fixed keys;
 /// send/heartbeat POSTs rotate a sequence into the low bits so a completed
 /// fetch slot can never collide with the next POST.
@@ -707,6 +727,18 @@ pub const Model = struct {
     terminal_stopping: bool = false,
     terminal_process_id: u32 = 0,
     governor: process_governor.Governor = .{},
+    /// Terminal panel toggle: the interactive PTY session is explicit
+    /// opt-in (performance gate: no broker/shell process before the user
+    /// flips the switch). Session-scoped — never persisted.
+    pty_enabled: bool = false,
+    pty: ?*pty_runtime.Runtime = null,
+    pty_status: pty_runtime.Status = .off,
+    /// One activation attempt per enable episode so honest unavailable
+    /// states persist instead of re-probing every message.
+    pty_activation_attempted: bool = false,
+    /// Test seam: skip the on-disk probe and use this broker path (an
+    /// empty string simulates a missing broker binary).
+    pty_test_broker_path: ?[]const u8 = null,
     /// Settings toggle: LSP activation requires BOTH this AND a supported
     /// file opening (performance gate: no process before then).
     lsp_enabled: bool = false,
@@ -999,6 +1031,11 @@ pub const Model = struct {
         "terminal_stopping",
         "terminal_process_id",
         "governor",
+        "pty_enabled",
+        "pty",
+        "pty_status",
+        "pty_activation_attempted",
+        "pty_test_broker_path",
         "lsp",
         "lsp_status",
         "lsp_activation_attempted",
@@ -1482,8 +1519,27 @@ pub const Model = struct {
     }
 
     pub fn terminalStatus(model: *const Model) []const u8 {
+        if (model.pty != null) return model.pty_status.label();
         if (model.terminal) |t| return t.status;
         return "idle";
+    }
+
+    /// Whether the interactive-shell switch is on.
+    pub fn ptyModeActive(model: *const Model) bool {
+        return model.pty_enabled;
+    }
+
+    /// Honest interactive session state for the terminal panel header.
+    pub fn ptyStatusLabel(model: *const Model) []const u8 {
+        return model.pty_status.label();
+    }
+
+    /// Restart affordance: the switch is on but the shell/broker ended.
+    pub fn ptyRestartVisible(model: *const Model) bool {
+        return model.pty_enabled and switch (model.pty_status) {
+            .exited, .stopped, .failed => true,
+            else => false,
+        };
     }
 
     /// Honest LSP session state for the Problems panel header status line.
@@ -1493,7 +1549,7 @@ pub const Model = struct {
 
     pub fn processGovernorSummary(model: *const Model) []const u8 {
         _ = model;
-        return "Pipe terminal via governor / no PTY yet";
+        return "Pipe terminal + interactive PTY via governor";
     }
 
     pub fn themeLabel(model: *const Model) []const u8 {
@@ -1720,6 +1776,11 @@ fn cancelOwnedEffects(model: *Model, fx: *Effects) void {
     // server tree (PDEATHSIG + heartbeat lapse are the backstops).
     teardownLsp(model, fx, if (model.lsp_enabled) .stopped else .off);
     model.lsp_activation_attempted = false;
+    // Workspace close kills the interactive shell too: broker cancel
+    // triggers the broker's session sweep (PDEATHSIG is the backstop).
+    teardownPty(model, fx, .off);
+    model.pty_enabled = false;
+    model.pty_activation_attempted = false;
     model.governor.killAll();
     model.process_count = 0;
     model.terminal_process_count = 0;
@@ -1767,6 +1828,360 @@ pub fn updateFx(model: *Model, msg: Msg, fx: *Effects) void {
     if ((!messageClosesWindow(msg) or model.hot_exit_persist_failed) and model.current_view != .launch) {
         reconcileDiskPoll(model, fx);
         reconcileLsp(model, msg, fx);
+        reconcilePty(model, fx);
+    }
+}
+
+// ------------------------------------------------------------------ PTY
+// Effect wiring for the interactive terminal's sidecar broker
+// (sidecar/README.md "PTY broker" section), mirroring the LSP wiring
+// below: governed spawn with NDJSON .lines output, X-Broker-Token'd
+// /input POSTs (strictly serial — PTY bytes must not reorder), a 10 s
+// heartbeat timer, and teardown on panel close / workspace close.
+
+/// Post-update reconciliation, mirroring `reconcileLsp`: activation when
+/// the explicit switch + an open disk workspace + the visible bottom
+/// panel line up, input pumping while a session lives, teardown when the
+/// gate closes (panel closed, workspace closed, or switch flipped off).
+fn reconcilePty(model: *Model, fx: *Effects) void {
+    if (model.pty) |runtime| {
+        if (!model.pty_enabled or !model.workspace_from_disk or !model.bottom_panel_open) {
+            teardownPty(model, fx, .off);
+            model.pty_enabled = false;
+            model.pty_activation_attempted = false;
+            return;
+        }
+        pumpPtyInput(model, fx, runtime);
+        return;
+    }
+    if (!pty_runtime.shouldActivate(
+        model.pty_enabled,
+        model.workspace_from_disk,
+        model.bottom_panel_open,
+        model.pty_activation_attempted,
+    )) return;
+    activatePty(model, fx);
+}
+
+fn activatePty(model: *Model, fx: *Effects) void {
+    model.pty_activation_attempted = true;
+    if (!pty_runtime.platform_supported) {
+        model.pty_status = .unavailable_platform;
+        model.toast = model.pty_status.detail();
+        return;
+    }
+    var broker_buf: [pty_runtime.max_path_bytes]u8 = undefined;
+    var broker_path: []const u8 = undefined;
+    if (model.pty_test_broker_path) |path| {
+        if (path.len == 0) {
+            model.pty_status = .unavailable_broker;
+            model.toast = model.pty_status.detail();
+            return;
+        }
+        broker_path = path;
+    } else switch (pty_runtime.probe(
+        modelIo(model),
+        model.env_path_buf[0..model.env_path_len],
+        &broker_buf,
+    )) {
+        .no_broker => {
+            model.pty_status = .unavailable_broker;
+            model.toast = model.pty_status.detail();
+            return;
+        },
+        .available => |path| broker_path = path,
+    }
+
+    // The runtime Io requires a full PATH_MAX output buffer for realpath
+    // (testing.io is laxer); resolve wide, then bound into session limits.
+    var real_buf: [std.fs.max_path_bytes]u8 = undefined;
+    var cwd_arg_buf: [pty_runtime.max_path_bytes + 8]u8 = undefined;
+    const real_len = std.Io.Dir.cwd().realPathFile(modelIo(model), model.project_path, &real_buf) catch {
+        model.pty_status = .failed;
+        model.toast = "Interactive shell: could not resolve the workspace root";
+        return;
+    };
+    if (real_len > pty_runtime.max_path_bytes) {
+        model.pty_status = .failed;
+        model.toast = "Interactive shell: workspace root path exceeds the session limit";
+        return;
+    }
+    const cwd_arg = std.fmt.bufPrint(&cwd_arg_buf, "--cwd={s}", .{real_buf[0..real_len]}) catch {
+        model.pty_status = .failed;
+        return;
+    };
+
+    const runtime = std.heap.page_allocator.create(pty_runtime.Runtime) catch {
+        model.pty_status = .failed;
+        model.toast = "Interactive shell: session allocation failed";
+        return;
+    };
+    runtime.reset();
+    _ = model.governor.spawnEffect(
+        "feature.terminal",
+        "velocity-pty-broker (interactive shell)",
+        pty_broker_effect_key,
+        .{ .pty = true },
+    ) catch {
+        std.heap.page_allocator.destroy(runtime);
+        model.pty_status = .failed;
+        model.toast = "Interactive shell process budget is in use";
+        return;
+    };
+    model.pty = runtime;
+    fx.spawn(.{
+        .key = pty_broker_effect_key,
+        .argv = &.{ broker_path, "--liveness=http", pty_runtime.hb_window_ms_arg, cwd_arg },
+        .output = .lines,
+        .max_line_bytes = pty_runtime.max_broker_line_bytes,
+        .on_line = Effects.lineMsg(.pty_broker_line),
+        .on_exit = Effects.exitMsg(.pty_broker_exit),
+    });
+    model.pty_status = .starting;
+    model.process_count = model.governor.aliveCount();
+    syncTermLines(model);
+    appendOutput(model, "Terminal: interactive shell starting (PTY broker)");
+}
+
+/// Cancel every live PTY effect and close the ledger WITHOUT freeing the
+/// runtime: the scrollback stays visible and Restart stays possible.
+fn stopPtyTransport(model: *Model, fx: ?*Effects, status: pty_runtime.Status) void {
+    if (fx) |effects| {
+        effects.cancelTimer(pty_heartbeat_timer_key);
+        effects.cancel(pty_broker_effect_key);
+        if (model.pty) |runtime| {
+            if (runtime.current_send_key != 0) effects.cancel(runtime.current_send_key);
+            if (runtime.current_hb_key != 0) effects.cancel(runtime.current_hb_key);
+        }
+    }
+    model.governor.closeEffect(pty_broker_effect_key, .cancelled, native_sdk.effect_error_exit_code);
+    model.pty_status = status;
+    model.process_count = model.governor.aliveCount();
+}
+
+/// Full teardown: cancel effects, close the ledger, free the runtime,
+/// and hand the panel back to the pipe runner's buffers.
+fn teardownPty(model: *Model, fx: ?*Effects, status: pty_runtime.Status) void {
+    stopPtyTransport(model, fx, status);
+    if (model.pty) |runtime| {
+        std.heap.page_allocator.destroy(runtime);
+        model.pty = null;
+    }
+    syncTermLines(model);
+}
+
+fn togglePtyTerminal(model: *Model, fx: ?*Effects) void {
+    if (model.pty_enabled) {
+        model.pty_enabled = false;
+        model.pty_activation_attempted = false;
+        teardownPty(model, fx, .off);
+        model.toast = "Interactive shell stopped";
+        return;
+    }
+    if (!model.workspace_from_disk) {
+        model.toast = "Interactive shell needs an open disk workspace";
+        return;
+    }
+    model.pty_enabled = true;
+    model.pty_activation_attempted = false;
+    model.pty_status = .off;
+    // reconcilePty (updateFx) performs the actual governed activation.
+}
+
+fn restartPtyTerminal(model: *Model, fx: ?*Effects) void {
+    if (!model.pty_enabled) {
+        model.toast = "Turn the interactive shell on first";
+        return;
+    }
+    teardownPty(model, fx, .off);
+    model.pty_activation_attempted = false;
+    // reconcilePty respawns on this same update pass.
+}
+
+/// Point the terminal panel's line binding at whichever source is live:
+/// the interactive ring while a PTY session exists, else the pipe
+/// runner's buffers.
+fn syncTermLines(model: *Model) void {
+    if (model.pty) |runtime| {
+        model.term_lines = runtime.viewSlice();
+        return;
+    }
+    if (model.terminal) |term| {
+        model.term_lines = term.linesSlice();
+        return;
+    }
+    model.term_lines = &.{};
+}
+
+/// Route one submitted command line into the interactive shell. The PTY
+/// echoes input itself, so no prompt line is pushed here; command
+/// history is still recorded for the arrow-key recall.
+fn sendPtyCommand(model: *Model, fx: ?*Effects, cmd: []const u8) void {
+    const runtime = model.pty orelse return;
+    if (cmd.len == 0) {
+        model.toast = "Enter a command";
+        return;
+    }
+    if (runtime.transport.phase == .exited) {
+        model.toast = "Interactive shell exited; use Restart Shell or turn the switch off";
+        return;
+    }
+    if (ensureTerminalBuffers(model)) |term| term.pushHistory(cmd) else |_| {}
+    runtime.queueLine(cmd) catch {
+        model.toast = "Interactive shell input buffer is full";
+        return;
+    };
+    if (fx) |effects| pumpPtyInput(model, effects, runtime);
+}
+
+/// Issue the next `/input` POST (strictly one in flight; keystrokes
+/// submitted meanwhile coalesce in the bounded queue).
+fn pumpPtyInput(model: *Model, fx: *Effects, runtime: *pty_runtime.Runtime) void {
+    _ = model;
+    const body = runtime.dueInput() orelse return;
+    var url_buf: [64]u8 = undefined;
+    const url = std.fmt.bufPrint(&url_buf, "http://127.0.0.1:{d}/input", .{runtime.transport.port}) catch return;
+    fx.fetch(.{
+        .key = runtime.takeSendKey(pty_send_key_base),
+        .method = .POST,
+        .url = url,
+        .headers = &.{.{ .name = "X-Broker-Token", .value = runtime.transport.authToken() }},
+        .body = body,
+        .on_response = Effects.responseMsg(.pty_send_response),
+    });
+}
+
+fn handlePtyBrokerLine(model: *Model, fx: ?*Effects, line: native_sdk.EffectLine) void {
+    if (line.key != pty_broker_effect_key) return;
+    const runtime = model.pty orelse return;
+    if (line.truncated) {
+        runtime.line_error_count += 1;
+        return;
+    }
+    const incoming = runtime.transport.onLine(line.line, &runtime.scratch) catch {
+        runtime.line_error_count += 1;
+        return;
+    };
+    switch (incoming) {
+        .listening => {
+            if (fx) |effects| {
+                effects.startTimer(.{
+                    .key = pty_heartbeat_timer_key,
+                    .interval_ms = @intCast(pty_runtime.heartbeat_interval_ms),
+                    .mode = .repeating,
+                    .on_fire = Effects.timerMsg(.pty_heartbeat_timer),
+                });
+            }
+            runtime.session.accept(.{ .started = 1 });
+            model.pty_status = .running;
+            // Ship anything typed while the broker was starting.
+            if (fx) |effects| pumpPtyInput(model, effects, runtime);
+        },
+        .output => |bytes| {
+            runtime.acceptOutput(bytes);
+            syncTermLines(model);
+        },
+        .pty_exit => |exit| {
+            // The shell ended on its own; the spawn's on_exit finishes
+            // the ledger cleanup. Surface the exit code honestly.
+            if (fx) |effects| effects.cancelTimer(pty_heartbeat_timer_key);
+            runtime.noteExit(exit.code);
+            model.pty_status = .exited;
+            syncTermLines(model);
+        },
+        .broker_exit => |reason| {
+            if (fx) |effects| effects.cancelTimer(pty_heartbeat_timer_key);
+            runtime.noteStopped("[interactive shell stopped]");
+            model.pty_status = if (reason == .heartbeat_lapsed) .failed else .stopped;
+            syncTermLines(model);
+        },
+        .broker_error => runtime.line_error_count += 1,
+    }
+}
+
+fn handlePtyBrokerExit(model: *Model, fx: ?*Effects, exit: native_sdk.EffectExit) void {
+    if (exit.key != pty_broker_effect_key) return;
+    model.governor.closeEffect(pty_broker_effect_key, switch (exit.reason) {
+        .exited => .exited,
+        .cancelled => .cancelled,
+        .rejected => .rejected,
+        .signaled => .signaled,
+        .spawn_failed => .spawn_failed,
+    }, exit.code);
+    if (fx) |effects| effects.cancelTimer(pty_heartbeat_timer_key);
+    model.process_count = model.governor.aliveCount();
+    const runtime = model.pty orelse return;
+    // The runtime (scrollback) is kept until teardown; only sessions that
+    // died without a terminal NDJSON line need their status corrected.
+    switch (model.pty_status) {
+        .starting, .running => {
+            model.pty_status = switch (exit.reason) {
+                .spawn_failed, .rejected => .failed,
+                else => .stopped,
+            };
+            if (exit.reason == .spawn_failed) model.toast = "PTY broker failed to start";
+            runtime.noteStopped("[interactive shell stopped]");
+            syncTermLines(model);
+        },
+        else => {},
+    }
+}
+
+fn handlePtyHeartbeatTimer(model: *Model, fx: ?*Effects, timer: native_sdk.EffectTimer) void {
+    if (timer.key != pty_heartbeat_timer_key) return;
+    const runtime = model.pty orelse return;
+    if (timer.outcome == .rejected) {
+        stopPtyTransport(model, fx, .failed);
+        model.toast = "Interactive shell heartbeat timer unavailable; session stopped";
+        return;
+    }
+    if (!runtime.transport.canSend() or runtime.hb_in_flight) return;
+    const effects = fx orelse return;
+    var url_buf: [48]u8 = undefined;
+    const url = std.fmt.bufPrint(&url_buf, "http://127.0.0.1:{d}/hb", .{runtime.transport.port}) catch return;
+    effects.fetch(.{
+        .key = runtime.takeHbKey(pty_hb_key_base),
+        .method = .POST,
+        .url = url,
+        .headers = &.{.{ .name = "X-Broker-Token", .value = runtime.transport.authToken() }},
+        .on_response = Effects.responseMsg(.pty_hb_response),
+    });
+    runtime.hb_in_flight = true;
+}
+
+fn handlePtySendResponse(model: *Model, fx: ?*Effects, response: native_sdk.EffectResponse) void {
+    const runtime = model.pty orelse return;
+    if (response.key != runtime.current_send_key) return;
+    if (response.outcome == .cancelled) return;
+    if (response.outcome != .ok or response.status != 204) {
+        // The broker is refusing input (shell likely dying — expect a
+        // pty_exit line). Drop the in-flight bytes; never retry, PTY
+        // bytes must not reorder.
+        runtime.failInput();
+        model.toast = "Interactive shell input failed; the shell may be exiting";
+        return;
+    }
+    runtime.ackInput();
+    if (fx) |effects| pumpPtyInput(model, effects, runtime);
+}
+
+fn handlePtyHbResponse(model: *Model, fx: ?*Effects, response: native_sdk.EffectResponse) void {
+    const runtime = model.pty orelse return;
+    if (response.key != runtime.current_hb_key) return;
+    runtime.hb_in_flight = false;
+    if (response.outcome == .cancelled) return;
+    if (response.outcome == .ok and response.status == 204) {
+        runtime.hb_fail_count = 0;
+        return;
+    }
+    runtime.hb_fail_count += 1;
+    // Three misses is the broker's own lapse budget; stop honestly first
+    // (keep the scrollback — Restart stays available).
+    if (runtime.hb_fail_count >= 3) {
+        stopPtyTransport(model, fx, .failed);
+        runtime.noteStopped("[interactive shell stopped]");
+        syncTermLines(model);
+        model.toast = "Interactive shell heartbeat failed; session stopped";
     }
 }
 
@@ -3039,7 +3454,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .stop_terminal_task => stopTerminalTask(model, fx),
         .clear_terminal => {
             if (model.terminal) |t| t.clear();
-            model.term_lines = &.{};
+            if (model.pty) |runtime| runtime.clearScrollback();
+            syncTermLines(model);
             model.toast = "Terminal cleared";
         },
         .update_search_query => |edit| {
@@ -3267,7 +3683,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             if (!model.terminal_async or line.key != model.terminal_effect_key) return;
             if (ensureTerminalBuffers(model)) |term| {
                 term.pushLine(line.line);
-                model.term_lines = term.linesSlice();
+                syncTermLines(model);
                 term.status = "running";
                 mirrorTaskOutput(model, line.line);
             } else |_| {}
@@ -3288,7 +3704,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 var exit_buf: [48]u8 = undefined;
                 const exit_msg = std.fmt.bufPrint(&exit_buf, "[exit {d} / {s}]", .{ exit.code, @tagName(exit.reason) }) catch "[exit]";
                 term.pushLine(exit_msg);
-                model.term_lines = term.linesSlice();
+                syncTermLines(model);
                 mirrorTaskOutput(model, exit_msg);
             } else |_| {}
             clearActiveCommand(model, switch (exit.reason) {
@@ -3312,6 +3728,13 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 };
             }
         },
+        .toggle_pty_terminal => togglePtyTerminal(model, fx),
+        .restart_pty_terminal => restartPtyTerminal(model, fx),
+        .pty_broker_line => |line| handlePtyBrokerLine(model, fx, line),
+        .pty_broker_exit => |exit| handlePtyBrokerExit(model, fx, exit),
+        .pty_heartbeat_timer => |timer| handlePtyHeartbeatTimer(model, fx, timer),
+        .pty_send_response => |response| handlePtySendResponse(model, fx, response),
+        .pty_hb_response => |response| handlePtyHbResponse(model, fx, response),
         .toggle_lsp => toggleLsp(model, fx),
         .lsp_broker_line => |line| handleLspBrokerLine(model, fx, line),
         .lsp_broker_exit => |exit| handleLspBrokerExit(model, fx, exit),
@@ -4782,6 +5205,21 @@ fn openBottomPanel(model: *Model, tab: BottomPanelTab) void {
 }
 
 fn stopTerminalTask(model: *Model, fx: ?*Effects) void {
+    // Interactive mode: Stop delivers Ctrl-C (ETX) to the PTY foreground
+    // job instead of cancelling a pipe effect.
+    if (!model.terminal_async) {
+        if (model.pty) |runtime| {
+            if (runtime.transport.canSend()) {
+                runtime.queueRaw("\x03") catch {
+                    model.toast = "Interactive shell input buffer is full";
+                    return;
+                };
+                if (fx) |effects| pumpPtyInput(model, effects, runtime);
+                model.toast = "Interrupt sent to interactive shell";
+                return;
+            }
+        }
+    }
     if (!model.terminal_async) {
         model.toast = "No terminal command or task is running";
         return;
@@ -4803,6 +5241,14 @@ fn stopTerminalTask(model: *Model, fx: ?*Effects) void {
 
 fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
     const cmd = model.terminal_command.text();
+    // Plain terminal submits go into the live interactive shell when the
+    // mode is active; structured runs (tasks/tests/launch profiles) stay
+    // on the pipe runner — their exit codes drive task/test status.
+    const structured = model.task_running or model.test_running or model.launch_running;
+    if (!structured and model.pty != null) {
+        sendPtyCommand(model, fx, cmd);
+        return;
+    }
     runGovernedCommand(model, fx, cmd);
 }
 
@@ -4848,7 +5294,7 @@ fn runGovernedCommand(model: *Model, fx: ?*Effects, cmd: []const u8) void {
         term.pushPrompt(cmd);
         term.running = true;
         term.status = "running";
-        model.term_lines = term.linesSlice();
+        syncTermLines(model);
         model.terminal_async = true;
         model.terminal_stopping = false;
 
@@ -4876,7 +5322,7 @@ fn runGovernedCommand(model: *Model, fx: ?*Effects, cmd: []const u8) void {
     // Sync fallback for unit tests (no effects channel).
     const first_new_line = term.line_count;
     term.runCommand(modelIo(model), cwd, cmd);
-    model.term_lines = term.linesSlice();
+    syncTermLines(model);
     for (term.linesSlice()[first_new_line..]) |line| mirrorTaskOutput(model, line);
     const was_test = model.test_running;
     clearActiveCommand(model, .exited, term.last_exit);

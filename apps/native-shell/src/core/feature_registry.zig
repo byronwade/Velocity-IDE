@@ -101,7 +101,7 @@ pub const catalog = [_]FeatureEntry{
     .{ .id = "feature.fuzzy-file-search", .name = "Fuzzy File Search", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .status = .working, .enabled = true },
     .{ .id = "feature.symbol-search", .name = "Symbol Search", .mode = .dev, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 16, .max_processes = 0, .status = .stub, .enabled = true },
     .{ .id = "feature.command-search", .name = "Command Search", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 4, .max_processes = 0, .status = .working, .enabled = true },
-    .{ .id = "feature.terminal", .name = "Terminal", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 32, .max_processes = 1, .status = .prototype, .enabled = true },
+    .{ .id = "feature.terminal", .name = "Terminal", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 32, .max_processes = 2, .status = .working, .enabled = true },
     .{ .id = "feature.terminal-profiles", .name = "Terminal Profiles", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 4, .max_processes = 0, .status = .working, .enabled = true },
     .{ .id = "feature.terminal-tabs", .name = "Terminal Tabs", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 4, .max_processes = 0, .status = .stub, .enabled = true },
     .{ .id = "feature.terminal-splits", .name = "Terminal Splits", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 4, .max_processes = 0, .status = .stub, .enabled = true },
