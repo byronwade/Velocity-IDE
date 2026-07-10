@@ -12,6 +12,9 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-24.04
+    env:
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      GALLIUM_DRIVER: llvmpipe
     strategy:
       fail-fast: false
       matrix:
@@ -32,8 +35,32 @@ jobs:
       - name: Install Linux native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev ripgrep xvfb
+          sudo apt-get install -y \
+            dbus-x11 \
+            libegl-mesa0 \
+            libgl1-mesa-dri \
+            libgtk-4-dev \
+            libwebkitgtk-6.0-dev \
+            mesa-vulkan-drivers \
+            ripgrep \
+            xvfb
       - name: Install project dependencies
         run: npm ci
       - name: Run smoke suite
-        run: xvfb-run -a npm run smoke:${{ matrix.suite }}
+        run: dbus-run-session -- xvfb-run -a npm run smoke:${{ matrix.suite }}
+      - name: Print app logs after failure
+        if: failure()
+        run: |
+          for log in /tmp/velocity-*.out; do
+            test -f "$log" || continue
+            echo "::group::$log"
+            awk '{ print }' "$log"
+            echo "::endgroup::"
+          done
+      - name: Upload app logs after failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-${{ matrix.suite }}-logs
+          path: /tmp/velocity-*.out
+          if-no-files-found: ignore
