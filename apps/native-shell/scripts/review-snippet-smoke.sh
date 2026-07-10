@@ -23,9 +23,17 @@ smoke_wait_for_app "$APP_PID" "$LOG_FILE"
 OPEN_ID="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=listitem name="acme-dashboard".*/\1/p' | head -1)"
 test -n "$OPEN_ID"
 native automate widget-click main-canvas "$OPEN_ID"
-native automate assert --timeout-ms 5000 'Append a literal snippet at the end of the document'
+native automate wait
 
-APPEND_ID="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=button name="Append a literal snippet at the end of the document".*/\1/p' | head -1)"
+# The snippet picker now opens from the command palette (the editor toolbar no
+# longer carries a persistent Snippet button — nonessential commands live in
+# the palette). Same append/undo flow, canonical entry point.
+native automate shortcut command_palette
+SNIPPET_PALETTE_ID="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=textbox name="Command search".*/\1/p' | head -1)"
+test -n "$SNIPPET_PALETTE_ID"
+native automate widget-action main-canvas "$SNIPPET_PALETTE_ID" set_text "Append Snippet"
+native automate assert --timeout-ms 5000 'Append Snippet'
+APPEND_ID="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=listitem name="Append Snippet".*/\1/p' | head -1)"
 test -n "$APPEND_ID"
 native automate widget-click main-canvas "$APPEND_ID"
 native automate assert --timeout-ms 5000 'Append Snippet picker' 'Append a fixture component'

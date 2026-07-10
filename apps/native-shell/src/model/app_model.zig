@@ -341,6 +341,12 @@ pub const Msg = union(enum) {
     set_appearance: native_sdk.Appearance,
 
     pub const view_unbound = .{
+        // Commands relocated out of the editor toolbar — now reached via the
+        // command palette and keyboard shortcuts, not a markup on-press.
+        "save_file",
+        "run_quick_open",
+        "go_to_symbol",
+        "open_snippet_picker",
         "chrome_changed",
         "perf_frame",
         "set_appearance",
