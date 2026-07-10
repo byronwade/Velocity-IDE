@@ -29,13 +29,14 @@ Node.js 22 and Linux GTK 4/WebKitGTK 6 development packages are required.
 ```bash
 npm install
 npm run check
-npm test
 npm run build
 npm run dev
 ```
 
 `npm install` reproducibly installs Native SDK CLI 0.4.0 from `.tools`' tracked
-lockfile. Run `npm run doctor`, `npm run smoke`, or an individual
+lockfile. `npm run check` runs all native tests before the strict markup check;
+`npm test` remains available as a test-only command. Run `npm run doctor`,
+`npm run smoke`, or an individual
 `npm run smoke:<name>` for diagnostics and end-to-end coverage.
 
 ## Screenshots

@@ -23,5 +23,4 @@ jobs:
       - name: Install pinned Native SDK CLI
         run: npm ci --prefix .tools
       - run: npm run check
-      - run: npm test
       - run: npm run build

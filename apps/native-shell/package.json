@@ -5,7 +5,7 @@
   "description": "Velocity IDE native shell (Native SDK). Codename is rename-ready.",
   "scripts": {
     "dev": "native dev",
-    "check": "native check",
+    "check": "native test && native check --strict",
     "build": "native build",
     "test": "native test",
     "clean": "rm -rf .native zig-out zig-cache .zig-cache",
