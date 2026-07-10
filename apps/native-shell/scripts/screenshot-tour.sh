@@ -47,6 +47,16 @@ native automate widget-click main-canvas "$OPEN_ID"
 native automate wait
 capture 02-shell-explorer-dark
 
+# High-contrast shell. Deterministic from the boot dark theme: the cycle is
+# dark -> light -> high_contrast, so two switches land on high contrast; a
+# third returns to dark for the rest of the tour.
+native automate native-command switch_theme main-canvas || true
+native automate native-command switch_theme main-canvas || true
+native automate wait || true
+capture 17-shell-high-contrast
+native automate native-command switch_theme main-canvas || true
+native automate wait || true
+
 # 3. Integrated terminal panel.
 native automate shortcut toggle_terminal
 native automate assert --timeout-ms 5000 'Terminal command'
@@ -149,15 +159,6 @@ native automate native-command toggle_shortcuts_help main-canvas || true
 native automate wait || true
 capture 16-shortcuts-dark
 native automate shortcut escape || true
-native automate wait || true
-
-# 17. High-contrast theme (dark -> light -> high_contrast via the cycle).
-native automate native-command switch_theme main-canvas || true
-native automate native-command switch_theme main-canvas || true
-native automate wait || true
-capture 17-shell-high-contrast
-# back to dark
-native automate native-command switch_theme main-canvas || true
 native automate wait || true
 
 # ---- Overflow contract: declared minimum window 960x640 ----
