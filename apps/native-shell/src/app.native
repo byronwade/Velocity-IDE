@@ -26,7 +26,8 @@
         <column gap="8" width="480" padding="16" background="surface_subtle">
           <text size="sm" foreground="text_muted">RECENT PROJECTS</text>
           <for each="recent" as="p">
-            <list-item icon="folder" on-press="open_project:{p.path}" padding="10" gap="10" cross="center" label="{p.name}">
+            <list-item on-press="open_project:{p.path}" padding="10" gap="10" cross="center" label="{p.name}">
+              <icon name="folder" width="16" height="16" foreground="text_muted" />
               <column gap="3" grow="1">
                 <text wrap="false">{p.name}</text>
                 <text size="sm" foreground="text_muted" wrap="false">{p.path}</text>

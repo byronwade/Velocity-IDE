@@ -31,6 +31,12 @@ capture() {
   echo "screenshot-tour: captured $name"
 }
 
+# Resolve a widget id on main-canvas by its accessible name.
+find_widget() {
+  local name="$1"
+  native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=[a-z]* name="'"$name"'".*/\1/p' | sed -n '1p'
+}
+
 # 1. Launch screen (dark).
 capture 01-launch-dark
 
@@ -58,9 +64,24 @@ native automate assert --timeout-ms 5000 'Command search'
 capture 05-command-palette-dark
 native automate shortcut escape
 
-# 6. Light theme shell.
-native automate native-command switch_theme main-canvas
+# 6. Settings page, then flip to the light theme through the real toggle.
+SETTINGS_ID="$(find_widget "Application settings")"
+test -n "$SETTINGS_ID"
+native automate widget-click main-canvas "$SETTINGS_ID"
+native automate assert --timeout-ms 5000 'Settings search'
+capture 06-settings-dark
+
+THEME_ID="$(find_widget "Change color theme")"
+test -n "$THEME_ID"
+native automate widget-click main-canvas "$THEME_ID"
 native automate wait
-capture 06-shell-light
+capture 07-settings-light
+
+# 7. Shell in the light theme.
+EXPLORER_ID="$(find_widget "Explorer: workspace files")"
+test -n "$EXPLORER_ID"
+native automate widget-click main-canvas "$EXPLORER_ID"
+native automate wait
+capture 08-shell-light
 
 echo "screenshot-tour: ok ($OUT_DIR)"
