@@ -643,7 +643,7 @@
         <button size="sm" variant="ghost" icon="x" on-press="clear_toast" label="Dismiss toast" />
       </row>
     </if>
-    <status-bar>{project_branch}  |  {status_language}  |  {documentStats}  |  {dirtyLabel}</status-bar>
+    <status-bar>{project_branch} · {status_language} · {documentStats} · {dirtyLabel}</status-bar>
   </column>
 
   <if test="{notificationsOpen}">
