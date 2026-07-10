@@ -75,8 +75,21 @@ fi
 APP_PID=$!
 smoke_wait_for_app "$APP_PID" "$LOG_FILE"
 
+# Snapshot reads can race the app rewriting the file on slow runners
+# (torn read -> transient automate failure); retry instead of dying.
+snap() {
+  local attempt=0
+  while test "$attempt" -lt 10; do
+    if native automate snapshot 2>/dev/null; then return 0; fi
+    attempt=$((attempt + 1))
+    sleep 1
+  done
+  echo "lsp-smoke: snapshot unavailable after retries" >&2
+  return 1
+}
+
 widget_id_by() { # role name
-  native automate snapshot | sed -n "s/.*widget @w1\/main-canvas#\([0-9]*\) role=$1 name=\"$2\".*/\1/p" | head -1
+  snap | sed -n "s/.*widget @w1\/main-canvas#\([0-9]*\) role=$1 name=\"$2\".*/\1/p" | head -1
 }
 
 # Click widget (role, name), retrying until a marker text appears in the
@@ -89,13 +102,13 @@ click_until() { # role name marker
       native automate widget-click main-canvas "$id" >/dev/null 2>&1 || true
     fi
     sleep 1
-    if native automate snapshot | grep -qF "$marker"; then
+    if snap | grep -qF "$marker"; then
       return 0
     fi
     attempt=$((attempt + 1))
   done
   echo "lsp-smoke: never reached '$marker' after clicking $role \"$name\"" >&2
-  native automate snapshot | tail -40 >&2 || true
+  snap | tail -40 >&2 || true
   return 1
 }
 

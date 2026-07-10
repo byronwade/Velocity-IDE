@@ -200,6 +200,95 @@ crash path; orderly teardown uses `/shutdown` or `cancel`).
 - Payloads are treated as opaque bytes; the broker never parses message
   JSON (no parser attack surface beyond header/number parsing).
 
+## PTY broker
+
+The SDK has no PTY API (capability report §2.5), so the terminal gets
+the same sidecar treatment: `pty_broker` owns a REAL pseudo-terminal
+and the shell inside it. It is a **separate binary** from the LSP
+broker — the child-acquisition path is fundamentally different
+(openpty + fork + setsid + TIOCSCTTY + execve instead of
+`std.process.spawn` with pipes) and the proven LSP binary stays
+byte-stable — but all transport plumbing (HTTP parsing, token auth,
+liveness, escalation, backstop) is imported from `lsp_broker.zig`,
+not duplicated.
+
+### Startup
+
+```
+pty_broker [--liveness=stdin|http] [--hb-window-ms=N] [--grace-ms=N]
+           [--cwd=DIR] [--term=NAME] [--cols=N] [--rows=N]
+           [--] [shell-cmd args...]
+```
+
+- Liveness/heartbeat/grace flags are identical to the LSP broker
+  (`--liveness=http` + `POST /hb` under the SDK).
+- No shell argv -> login-style default: exec `$SHELL` (fallback
+  `/bin/sh`) with argv0 `-basename` so profiles load. Explicit argv is
+  exec'd verbatim (PATH-resolved when bare, never via a shell string).
+- Environment passes through unmodified except `TERM`, which is set
+  from `--term` (default `xterm-256color`). `--cwd` chdirs the shell.
+- `--cols`/`--rows` (default 80x24) set the initial winsize before the
+  shell starts.
+- First stdout line is the same `listening` event
+  (`{"event":"listening","port":N,"token":"hex32"}`).
+
+### Broker stdout: NDJSON events (PTY -> app)
+
+| Event | Shape | Meaning |
+|---|---|---|
+| `listening` | `{"event":"listening","port":N,"token":"hex32"}` | First line. Where to POST + auth token. |
+| `data` | `{"event":"data","b64":"..."}` | One bounded chunk of raw PTY output, base64 (terminal bytes are not newline-safe). <= 48 KiB raw per event (~64 KiB encoded line, far under the SDK 256 KiB cap). Chunking is read(2)-coalesced: one event per master read. |
+| `error` | `{"event":"error","code":"...","detail":"..."}` | Non-fatal broker fault. Codes: `openpty_failed`, `spawn_failed`, `pty_write_failed`, `emit_failed`, `heartbeat_lapsed`. |
+| `pty_exit` | `{"event":"pty_exit","reason":"exited"\|"signal"\|"unknown","code":N}` | The shell ended **on its own**. Last line; stragglers are reaped and the broker exits. |
+| `broker_exit` | `{"event":"broker_exit","reason":...}` | Broker-initiated teardown (same reasons as LSP). Last line. |
+
+Exactly one of `pty_exit` / `broker_exit` is the final line of every
+run (after `listening` was printed).
+
+### HTTP POST (app -> broker)
+
+Same rules as the LSP broker: `POST` only, `X-Broker-Token` echo on
+every request, `Connection: close`, bodies <= 64 KiB.
+
+- `POST /input` — body `{"b64":"..."}`; decoded bytes (<= 48 KiB) are
+  written to the PTY master. The app-side `InputPlan` chunks large
+  pastes at 32 KiB raw per POST; send parts serially (PTY bytes must
+  not reorder).
+- `POST /resize` — body `{"cols":N,"rows":M}`, both in [1, 1000] ->
+  `TIOCSWINSZ` on the master; the kernel delivers SIGWINCH to the
+  foreground job.
+- `POST /hb`, `POST /shutdown` — identical to the LSP broker.
+
+Status codes: `204` accepted · `400` malformed body / bad geometry ·
+`401` bad/missing token · `404`/`405`/`413`/`431` as in the LSP broker ·
+`502` PTY master write failed (shell is dying).
+
+### Lifecycle / kill semantics (PTY-specific)
+
+Same triggers as the LSP broker (stdin EOF / heartbeat lapse /
+`/shutdown` / child exit), but the escalation target differs:
+interactive shells enable **job control**, so each background pipeline
+(`sleep 300 &`) sits in its own process group inside the shell's
+session — killing the leader's group alone would leak those jobs
+(pty-spike proved it). PTY teardown therefore escalates over the whole
+**session**: TERM the leader's group + every `/proc` pid whose session
+id is the shell's -> bounded grace (25 ms polls, zombies excluded) ->
+KILL the stragglers. The natural-exit path (`pty_exit`) runs the same
+sweep for orphaned background jobs still holding the slave open.
+
+Crash backstop is shared with the LSP broker (PDEATHSIG + SIGTERM
+handler); note it SIGKILLs the shell's *group* only — the async-safe
+path does not walk `/proc`, so a crash (not orderly teardown) can leak
+a detached background job. Orderly paths never do.
+
+### Platform gates
+
+| Platform | Status |
+|---|---|
+| Linux | **Proven** (`./pty-spike.sh`: manual openpty via `/dev/ptmx` + `TIOCSPTLCK`/`TIOCGPTN`, no libc). |
+| macOS | **Expected-openpty-compatible, untested** — same ptmx concept but different ioctls (`TIOCPTYGRANT`/`TIOCPTYUNLK` via libSystem); the binary currently refuses to run off-Linux. |
+| Windows | **BLOCKED pending a ConPTY adapter** — no POSIX PTY exists; needs `CreatePseudoConsole` + Job Objects and a WinSock I/O layer. |
+
 ## app_model integration checklist (exact)
 
 The pure half already exists: `src/lsp/broker_transport.zig`
@@ -270,3 +359,21 @@ channel; timers drive heartbeats/timeouts):
    else; a saturated fetch queue could starve `/hb`. The 30 s default
    window vs 10 s beat leaves 3 misses of headroom; keep bulk sends
    chunk-serialized (they already must be) and the risk is theoretical.
+
+PTY-specific:
+
+5. Keystroke latency is one `fetch` POST per burst; the app should
+   coalesce keystrokes while a POST is in flight (budget ~4 of the 16
+   effect slots for the terminal, per the capability report §4.3).
+6. Output bursts (e.g. `yes`, `find /`) arrive as ~48 KiB-raw events;
+   the SDK completion queue is 64 entries. read(2) coalescing kept the
+   spike loss-free, but a sustained megabyte-per-second producer needs
+   the app to watch `dropped_before` and may need a broker-side flush
+   delay (~8 ms) if drops ever show up.
+7. Session-sweep teardown reads `/proc` and is Linux-only; the macOS
+   port needs a `proc_listpids`-based equivalent (or accepts
+   group-only teardown there).
+8. `pty_exit` after a lingering `exec`-style takeover of the terminal
+   reports the *direct child's* status only; grandchildren that
+   `setsid` away from the session escape both the sweep and the
+   backstop (same escape hatch a real terminal has).
