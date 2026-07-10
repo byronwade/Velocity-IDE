@@ -225,9 +225,7 @@
                   </if>
                   <badge variant="secondary">{dirtyLabel}</badge>
                   <button size="sm" variant="ghost" icon="circle-dot" on-press="go_to_symbol" label="Go to symbol" />
-                  <button size="sm" variant="ghost" on-press="run_quick_open">Go to</button>
-                  <button size="sm" variant="ghost" on-press="open_snippet_picker" label="Append a literal snippet at the end of the document">Append Snippet</button>
-                  <button size="sm" variant="ghost" icon="archive" on-press="restore_backup" label="Restore backup">Backup</button>
+                  <button size="sm" variant="ghost" icon="ellipsis" on-press="run_command:{editor_cmd_more_open}" label="More editor actions" />
                   <button size="sm" variant="primary" icon="save" on-press="save_file">Save</button>
                 </row>
                 <separator />
@@ -830,6 +828,24 @@
         <button size="sm" variant="ghost" icon="save" on-press="run_command:{layout_cmd_save_custom}" label="Save the current layout as the Custom perspective">Save Current as Custom</button>
         <button size="sm" variant="ghost" icon="repeat" on-press="run_command:{layout_cmd_restore_prev}" label="Restore the previous layout">Restore Previous Layout</button>
         <button size="sm" variant="ghost" icon="refresh-cw" on-press="run_command:{layout_cmd_reset}" label="Reset the layout to the Coding default">Reset Layout</button>
+      </column>
+    </column>
+  </if>
+
+  <!-- Editor toolbar overflow: low-frequency actions kept out of the compact
+       breadcrumb so it never collides at the minimum window size. -->
+  <if test="{editor_more_open}">
+    <column grow="1" main="start" cross="end" padding="12" background="scrim">
+      <column width="280" gap="6" padding="12" background="surface" label="More editor actions">
+        <row gap="6" cross="center">
+          <icon name="ellipsis" width="14" height="14" foreground="text_muted" />
+          <text grow="1">More Actions</text>
+          <button size="sm" variant="ghost" icon="x" on-press="run_command:{editor_cmd_more_close}" label="Close editor actions menu" />
+        </row>
+        <separator />
+        <button size="sm" variant="ghost" icon="search" on-press="run_quick_open" label="Quick Open a file by name">Go to File · Cmd+P</button>
+        <button size="sm" variant="ghost" icon="plus" on-press="open_snippet_picker" label="Append a literal snippet at the end of the document">Append Snippet</button>
+        <button size="sm" variant="ghost" icon="archive" on-press="restore_backup" label="Restore the active file from its backup">Restore Backup</button>
       </column>
     </column>
   </if>

@@ -171,12 +171,29 @@ capture 16-shortcuts-dark
 native automate shortcut escape || true
 native automate wait || true
 
-# Customize Layout menu (Precision Workbench).
-native automate native-command open_layout_menu main-canvas || true
-native automate wait || true
-capture 18-customize-layout-dark
-native automate shortcut escape || true
-native automate wait || true
+# Customize Layout menu (Precision Workbench) — click the ⋯ control by name.
+LAYOUT_ID="$(find_widget "Customize Layout")" || true
+if test -n "$LAYOUT_ID"; then
+  native automate widget-click main-canvas "$LAYOUT_ID" || true
+  native automate wait || true
+  capture 18-customize-layout-dark
+  native automate shortcut escape || true
+  native automate wait || true
+else
+  echo "screenshot-tour: 'Customize Layout' not found; skipped 18"
+fi
+
+# Editor toolbar overflow menu ("More editor actions").
+MORE_ID="$(find_widget "More editor actions")" || true
+if test -n "$MORE_ID"; then
+  native automate widget-click main-canvas "$MORE_ID" || true
+  native automate wait || true
+  capture 19-editor-more-dark
+  native automate shortcut escape || true
+  native automate wait || true
+else
+  echo "screenshot-tour: 'More editor actions' not found; skipped 19"
+fi
 
 # ---- Overflow contract: declared minimum window 960x640 ----
 native automate resize 960 640 || true

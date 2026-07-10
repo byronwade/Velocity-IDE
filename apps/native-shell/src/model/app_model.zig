@@ -782,6 +782,12 @@ pub const Model = struct {
     layout_cmd_restore_prev: []const u8 = "restore_previous_layout",
     layout_cmd_reset: []const u8 = "reset_layout",
 
+    // Editor toolbar overflow: low-frequency actions collapse into an ellipsis
+    // menu so the breadcrumb toolbar never collides at the minimum window size.
+    editor_more_open: bool = false,
+    editor_cmd_more_open: []const u8 = "open_editor_more",
+    editor_cmd_more_close: []const u8 = "close_editor_more",
+
     // Layout state (not directly markup-bound; projected via layoutPresetLabel).
     active_layout_preset: LayoutPreset = .custom,
     prev_layout: ?LayoutSnapshot = null,
@@ -1931,6 +1937,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 model.layout_menu_open = true;
             } else if (std.mem.eql(u8, id, "close_layout_menu")) {
                 model.layout_menu_open = false;
+            } else if (std.mem.eql(u8, id, "open_editor_more")) {
+                model.editor_more_open = true;
+            } else if (std.mem.eql(u8, id, "close_editor_more")) {
+                model.editor_more_open = false;
             } else if (std.mem.eql(u8, id, "layout_preset_coding")) {
                 applyLayoutPreset(model, .coding);
             } else if (std.mem.eql(u8, id, "layout_preset_focus")) {
@@ -3511,6 +3521,7 @@ fn revertActiveFile(model: *Model) void {
 }
 
 fn restoreActiveBackup(model: *Model) void {
+    model.editor_more_open = false;
     if (!model.workspace_from_disk) {
         model.backup_restore_status = "Open a workspace first";
         model.toast = model.backup_restore_status;
@@ -4974,6 +4985,11 @@ fn dismissOverlay(model: *Model) void {
         model.toast = "";
         return;
     }
+    if (model.editor_more_open) {
+        model.editor_more_open = false;
+        model.toast = "";
+        return;
+    }
     if (model.symbol_palette_open) {
         model.symbol_palette_open = false;
         model.symbol_query.clear();
@@ -5757,6 +5773,7 @@ fn findNavigate(model: *Model, forward: bool) void {
 }
 
 fn showQuickOpen(model: *Model) void {
+    model.editor_more_open = false;
     if (!model.workspace_from_disk) {
         model.toast = "Open a workspace first";
         return;
@@ -6424,6 +6441,7 @@ fn filterSnippets(model: *Model) void {
 }
 
 fn openSnippetPicker(model: *Model) void {
+    model.editor_more_open = false;
     if (!model.workspace_from_disk) {
         model.toast = "Open a workspace before appending a snippet";
         return;
