@@ -556,12 +556,12 @@
           </if>
 
           <if test="{show_perf_hud}">
-            <column gap="8" padding="10" background="surface_subtle" label="Performance metrics">
+            <column height="360" gap="8" padding="10" background="surface_subtle" label="Performance metrics">
               <row gap="8" cross="center">
                 <text size="sm" grow="1">Performance HUD</text>
                 <button size="sm" variant="secondary" on-press="run_perf">Refresh Performance Metrics</button>
               </row>
-              <scroll grow="1" label="Measured performance metrics">
+              <scroll height="300" label="Measured performance metrics">
                 <column gap="6">
                   <for each="perf_rows" as="metric">
                     <row gap="8" padding="6" background="surface" label="{metric.label}">
