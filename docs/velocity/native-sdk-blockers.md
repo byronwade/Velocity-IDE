@@ -52,6 +52,16 @@ and is obsolete. The current recorded native test count is 252.
 - The textarea has no stable gutter/decoration API or caret/scroll
   synchronization contract. Line numbers remain a separate bounded peek, not a
   real editor gutter.
+- 2026-07-10 gutter spike verdict: the raw canvas API does carry what a synced
+  gutter needs (model-owned scroll in `widget.value`, `canvas_widget_scroll`
+  events, `textGeometryForWidget`; see sdk-capability-report.md §2.4), but the
+  **markup engine does not expose it**: `on-scroll` is schema-restricted to
+  `<scroll>` elements (`ui_schema.zig` event code 6, `only_on_element =
+  "scroll"`), textarea has no scroll event or scroll-offset write binding, and
+  wrapping the textarea in an outer `<scroll>` would disable the runtime's
+  caret-follow while typing (core-editing regression). Exact unblock: markup
+  support for `on-scroll` + a scroll-offset binding on `textarea`, or a
+  supported raw-widget escape hatch. Until then Velocity ships no fake gutter.
 - Recurring disk polling is wired in `src/model/app_model.zig` as one keyed
   Effects timer. It is cancelled outside a disk-backed workspace, re-armed
   after each accepted tick, and marks polling unavailable without a re-arm
