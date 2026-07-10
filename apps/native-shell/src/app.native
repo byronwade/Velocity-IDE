@@ -277,21 +277,17 @@
                     </column>
                   </if>
                   <if test="{editorReadView}">
-                    <scroll grow="1" label="Editor syntax-highlighted read view">
+                    <scroll grow="1" label="Editor monospace read view">
                       <column gap="0" padding="6">
                         <for each="editor_view_lines" key="id" as="ln">
-                          <row gap="8" cross="start">
+                          <row gap="10" cross="start">
                             <text size="sm"><span mono="true" foreground="text_muted">{ln.gutter}</span></text>
-                            <row gap="0" grow="1" cross="start">
-                              <for each="ln.tokens" key="id" as="tk">
-                                <if test="{tk.kind == hl_kind_keyword}"><text size="sm"><span mono="true" foreground="accent">{tk.text}</span></text></if>
-                                <if test="{tk.kind == hl_kind_string}"><text size="sm"><span mono="true" foreground="success">{tk.text}</span></text></if>
-                                <if test="{tk.kind == hl_kind_comment}"><text size="sm"><span mono="true" foreground="text_muted">{tk.text}</span></text></if>
-                                <if test="{tk.kind == hl_kind_number}"><text size="sm"><span mono="true" foreground="warning">{tk.text}</span></text></if>
-                                <if test="{tk.kind == hl_kind_type}"><text size="sm"><span mono="true" foreground="info">{tk.text}</span></text></if>
-                                <if test="{tk.kind == hl_kind_plain}"><text size="sm"><span mono="true" foreground="text">{tk.text}</span></text></if>
-                              </for>
-                            </row>
+                            <if test="{ln.kind == hl_kind_comment}">
+                              <text size="sm" grow="1"><span mono="true" foreground="text_muted">{ln.text}</span></text>
+                            </if>
+                            <if test="{ln.kind == hl_kind_plain}">
+                              <text size="sm" grow="1"><span mono="true" foreground="text">{ln.text}</span></text>
+                            </if>
                           </row>
                         </for>
                       </column>

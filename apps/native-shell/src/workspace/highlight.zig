@@ -35,12 +35,58 @@ pub const Token = struct {
     kind: Kind = .plain,
 };
 
-/// One projected source line: a gutter label (line number) plus its tokens.
+/// One projected source line for the read view: a gutter label (line number),
+/// the raw line text (a slice of the document), and a line-level color category.
+///
+/// Per-token coloring is not expressible in the Native SDK's declarative markup
+/// (a `for` cannot iterate a scoped item's slice field, spans cannot be
+/// `for`-generated, and colors are literal-only), so the read view colors whole
+/// lines: full-line comments are dimmed, everything else is default text. The
+/// per-token `Token`/`tokenizeLine` API below is retained for future use if the
+/// SDK gains data-driven spans.
 pub const Line = struct {
     id: u32 = 0,
     gutter: []const u8 = "",
-    tokens: []const Token = &.{},
+    text: []const u8 = "",
+    kind: Kind = .plain,
 };
+
+/// Classify a whole source line for read-view coloring. `in_block` carries
+/// `/* ... */` state across lines. Returns `.comment` when the line is entirely
+/// a comment (a `//`/`#` line comment, or any line inside a block comment),
+/// otherwise `.plain`. Mixed code+trailing-comment lines stay `.plain`.
+pub fn classifyLine(line: []const u8, in_block: *bool) Kind {
+    if (in_block.*) {
+        // Still inside a block comment; look for the closing */.
+        var j: usize = 0;
+        while (j + 1 < line.len) : (j += 1) {
+            if (line[j] == '*' and line[j + 1] == '/') {
+                in_block.* = false;
+                break;
+            }
+        }
+        return .comment;
+    }
+    var i: usize = 0;
+    while (i < line.len and (line[i] == ' ' or line[i] == '\t' or line[i] == '\r')) i += 1;
+    if (i >= line.len) return .plain;
+    if (line[i] == '#') return .comment;
+    if (i + 1 < line.len and line[i] == '/' and line[i + 1] == '/') return .comment;
+    if (i + 1 < line.len and line[i] == '/' and line[i + 1] == '*') {
+        // Opens a block comment; consume this line and set carry unless it
+        // also closes on this same line.
+        in_block.* = true;
+        var j: usize = i + 2;
+        while (j + 1 < line.len) : (j += 1) {
+            if (line[j] == '*' and line[j + 1] == '/') {
+                in_block.* = false;
+                break;
+            }
+        }
+        return .comment;
+    }
+    return .plain;
+}
 
 /// A blank placeholder so empty lines still occupy a row of height.
 pub const blank_run: []const u8 = " ";

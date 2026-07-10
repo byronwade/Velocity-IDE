@@ -91,15 +91,12 @@ pub const OutputChannel = output_registry.Channel;
 pub const NotificationItem = notification_store.Item;
 pub const Snippet = snippets_mod.Snippet;
 pub const DiffLine = unified_diff.ReviewLine;
-pub const EditorTok = highlight.Token;
 pub const EditorLine = highlight.Line;
 pub const HighlightKind = highlight.Kind;
 
-/// Bounds for the highlighted read view. The document is capped at 16 KB, which
-/// naturally bounds the work; these caps keep the widget count bounded even for
-/// pathological all-newline inputs.
-pub const max_hl_lines = 500;
-pub const max_hl_tokens = 2400;
+/// Bounds for the read view. The document is capped at 16 KB; this caps the row
+/// count even for pathological all-newline inputs.
+pub const max_hl_lines = 600;
 pub const max_hl_gutter = 6;
 
 pub const ClosedTab = struct {
@@ -800,20 +797,15 @@ pub const Model = struct {
     editor_cmd_more_close: []const u8 = "close_editor_more",
     perf_cmd_close: []const u8 = "close_perf_hud",
 
-    // Syntax-highlighted read view. `editor_edit_mode` swaps the highlighted
-    // read view for the plain editable textarea. Kind constants let the markup
-    // pick each token's color via an `==` comparison (literal colors only).
+    // Monospace read view. `editor_edit_mode` swaps the read view for the plain
+    // editable textarea. Kind constants let the markup pick each line's color
+    // via an `==` comparison (colors are literal-only in markup).
     editor_edit_mode: bool = false,
     editor_cmd_toggle_edit: []const u8 = "toggle_editor_edit",
     editor_view_lines: []const EditorLine = &.{},
     hl_kind_plain: HighlightKind = .plain,
-    hl_kind_keyword: HighlightKind = .keyword,
-    hl_kind_string: HighlightKind = .string,
     hl_kind_comment: HighlightKind = .comment,
-    hl_kind_number: HighlightKind = .number,
-    hl_kind_type: HighlightKind = .type_name,
     hl_line_pool: [max_hl_lines]EditorLine = [_]EditorLine{.{}} ** max_hl_lines,
-    hl_tok_pool: [max_hl_tokens]EditorTok = [_]EditorTok{.{}} ** max_hl_tokens,
     hl_gutter_pool: [max_hl_lines][max_hl_gutter]u8 = undefined,
     hl_truncated: bool = false,
 
@@ -1037,7 +1029,6 @@ pub const Model = struct {
         "prev_layout",
         "custom_layout",
         "hl_line_pool",
-        "hl_tok_pool",
         "hl_gutter_pool",
         "hl_truncated",
     };
@@ -3178,14 +3169,13 @@ pub fn refreshDocStats(model: *Model) void {
 }
 
 /// Re-tokenize the active document into `editor_view_lines` for the highlighted
-/// read view. Bounded: at most `max_hl_lines` rows and `max_hl_tokens` tokens;
-/// beyond that `hl_truncated` is set and the remainder is dropped. Token text
-/// slices point into the stable document buffer (no copies), mirroring how the
-/// view already reads `documentText()` directly.
+/// read view. Bounded: at most `max_hl_lines` rows; beyond that `hl_truncated`
+/// is set and the remainder is dropped. Line text slices point into the stable
+/// document buffer (no copies), mirroring how the view already reads
+/// `documentText()` directly.
 pub fn rebuildHighlight(model: *Model) void {
     const text = model.document.text();
     var line_count: usize = 0;
-    var tok_count: usize = 0;
     var in_block = false;
     var line_start: usize = 0;
     var truncated = false;
@@ -3206,26 +3196,12 @@ pub fn rebuildHighlight(model: *Model) void {
             .{line_count + 1},
         ) catch "";
 
-        var toks: []const EditorTok = &.{};
-        if (tok_count < model.hl_tok_pool.len) {
-            const base: u32 = @intCast(tok_count);
-            const n = highlight.tokenizeLine(line, &in_block, model.hl_tok_pool[tok_count..], base);
-            if (n == 0) {
-                model.hl_tok_pool[tok_count] = .{ .id = base, .text = highlight.blank_run, .kind = .plain };
-                toks = model.hl_tok_pool[tok_count .. tok_count + 1];
-                tok_count += 1;
-            } else {
-                toks = model.hl_tok_pool[tok_count .. tok_count + n];
-                tok_count += n;
-            }
-        } else {
-            truncated = true;
-        }
-
+        const kind = highlight.classifyLine(line, &in_block);
         model.hl_line_pool[line_count] = .{
             .id = @as(u32, @intCast(line_count + 1)),
             .gutter = gutter,
-            .tokens = toks,
+            .text = if (line.len == 0) highlight.blank_run else line,
+            .kind = kind,
         };
         line_count += 1;
         line_start = i + 1;
