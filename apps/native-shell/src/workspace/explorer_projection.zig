@@ -151,7 +151,7 @@ pub const Projection = struct {
         if (self.count >= self.nodes.len) return;
         const index = self.count;
         var node = workspace_store.decorateFileNode(source);
-        node.chevron = if (!node.is_dir) "" else if (collapsed.contains(node.path)) "›" else "⌄";
+        node.chevron = if (!node.is_dir) "" else if (collapsed.contains(node.path)) "+" else "-";
         if (node.is_dir) {
             const action = if (collapsed.contains(node.path)) "Expand" else "Collapse";
             const label = std.fmt.bufPrint(&self.chevron_labels[index], "{s} {s}", .{ action, node.name }) catch action;
