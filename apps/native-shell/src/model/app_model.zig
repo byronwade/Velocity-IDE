@@ -980,6 +980,12 @@ pub const Model = struct {
         return model.current_view == .perf;
     }
 
+    /// The HUD band renders only on the perf view so it never stacks under
+    /// full-page views like Settings.
+    pub fn showPerfHudPanel(model: *const Model) bool {
+        return model.show_perf_hud and model.current_view == .perf;
+    }
+
     pub fn explorerSelected(model: *const Model) bool {
         return model.selected_activity == .explorer;
     }

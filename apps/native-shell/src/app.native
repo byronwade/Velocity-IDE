@@ -315,7 +315,6 @@
                   <spacer grow="1" />
                   <badge variant="secondary">Tests: {test_status_label}</badge>
                   <if test="{showBottomTerminal}">
-                    <badge variant="secondary">{terminalStatus}</badge>
                     <button size="sm" variant="ghost" icon="x-circle" on-press="stop_terminal_task" label="Stop Terminal/Task">Stop</button>
                     <button size="sm" variant="ghost" icon="trash" on-press="clear_terminal" label="Clear terminal output" />
                   </if>
@@ -342,13 +341,13 @@
                     <text size="sm" foreground="text_muted">WORKSPACE TASKS</text>
                     <badge variant="secondary">{taskStatus}</badge>
                     <spacer grow="1" />
-                    <button size="sm" variant="primary" icon="play" on-press="run_workspace_tests" label="Run workspace tests using the test or first test colon task">Run Workspace Tests</button>
+                    <button size="sm" variant="secondary" icon="play" on-press="run_workspace_tests" label="Run workspace tests using the test or first test colon task">Run Workspace Tests</button>
                     <button size="sm" variant="ghost" icon="repeat" on-press="rerun_workspace_tests" label="Rerun the last workspace test task">Rerun Tests</button>
                     <button size="sm" variant="ghost" icon="refresh-cw" on-press="refresh_tasks">Refresh Tasks</button>
                     <button size="sm" variant="primary" icon="play" on-press="run_selected_task">Run Selected Task</button>
                   </row>
                   <scroll height="92" label="Detected workspace tasks">
-                    <column gap="2">
+                    <column gap="2" cross="start">
                       <for each="workspace_tasks" key="id" as="task">
                         <button size="sm" variant="ghost" selected="{task.id == selected_task_id}" on-press="select_task:{task.id}" label="{task.command}">{task.display_label}</button>
                       </for>
@@ -516,10 +515,10 @@
                 <text size="lg" grow="1">Settings</text>
                 <text size="sm" foreground="text_muted">{app_version_label}</text>
               </row>
-              <text-field text="{settingsQueryText}" placeholder="Search settings..." on-input="update_settings_query" label="Settings search" />
               <scroll grow="1" label="Settings sections">
                 <column cross="center">
                   <column gap="14" width="680">
+                  <text-field text="{settingsQueryText}" placeholder="Search settings..." on-input="update_settings_query" label="Settings search" />
                   <if test="{showSettingsAppearance}">
                     <column gap="6" padding="10" background="surface_subtle">
                       <row gap="6" cross="center">
@@ -609,7 +608,7 @@
             </column>
           </if>
 
-          <if test="{show_perf_hud}">
+          <if test="{showPerfHudPanel}">
             <column height="360" gap="10" padding="12" background="surface_subtle" label="Performance metrics">
               <row gap="8" cross="center">
                 <icon name="clock" width="15" height="15" foreground="text_muted" />
@@ -766,15 +765,17 @@
     <column grow="1" main="start" cross="center" padding="24" background="scrim">
       <column width="560" gap="8" padding="12" background="surface">
         <search-field text="{commandQuery}" placeholder="Type a command..." on-input="update_command_query" label="Command search" />
-        <column gap="2">
-          <for each="command_items" as="cmd">
-            <list-item on-press="run_command:{cmd.id}" padding="8" gap="8" cross="center" label="{cmd.title}">
-              <text grow="1" wrap="false">{cmd.title}</text>
-              <text size="sm" foreground="text_muted">{cmd.availability_label}</text>
-              <text size="sm" foreground="text_muted">{cmd.hint}</text>
-            </list-item>
-          </for>
-        </column>
+        <scroll height="320" label="Command results">
+          <column gap="2">
+            <for each="command_items" as="cmd">
+              <list-item on-press="run_command:{cmd.id}" padding="8" gap="8" cross="center" label="{cmd.title}">
+                <text grow="1" wrap="false">{cmd.title}</text>
+                <text size="sm" foreground="text_muted">{cmd.availability_label}</text>
+                <text size="sm" foreground="text_muted">{cmd.hint}</text>
+              </list-item>
+            </for>
+          </column>
+        </scroll>
       </column>
     </column>
   </if>
