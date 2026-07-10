@@ -23,6 +23,12 @@ smoke_wait_for_app "$APP_PID" "$LOG_FILE"
 OPEN_ID="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=listitem name="acme-dashboard".*/\1/p' | head -1)"
 test -n "$OPEN_ID"
 native automate widget-click main-canvas "$OPEN_ID"
+
+# Append Snippet is a low-frequency action, so it lives in the editor toolbar
+# overflow ("More editor actions"). Open the overflow before reaching it.
+MORE_ID="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=button name="More editor actions".*/\1/p' | head -1)"
+test -n "$MORE_ID"
+native automate widget-click main-canvas "$MORE_ID"
 native automate assert --timeout-ms 5000 'Append a literal snippet at the end of the document'
 
 APPEND_ID="$(native automate snapshot | sed -n 's/.*widget @w1\/main-canvas#\([0-9]*\) role=button name="Append a literal snippet at the end of the document".*/\1/p' | head -1)"
