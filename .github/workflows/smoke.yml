@@ -47,7 +47,8 @@ jobs:
       - name: Install project dependencies
         run: npm ci
       - name: Run smoke suite
-        run: dbus-run-session -- xvfb-run -a npm run smoke:${{ matrix.suite }}
+        # Start Xvfb first so D-Bus-activated GTK portals inherit DISPLAY.
+        run: xvfb-run -a dbus-run-session -- npm run smoke:${{ matrix.suite }}
       - name: Print app logs after failure
         if: failure()
         run: |
