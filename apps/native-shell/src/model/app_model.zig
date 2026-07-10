@@ -77,6 +77,8 @@ pub const PerfRow = struct {
     value: []const u8 = "",
     semantics: []const u8 = "",
     available: bool = false,
+    /// Honest measurement state shown as a badge next to the value.
+    status_label: []const u8 = "",
 };
 
 pub const BreadcrumbSeg = struct {
@@ -6902,21 +6904,48 @@ const PerfUnit = enum { nanoseconds, bytes, count };
 fn addPerfRow(model: *Model, label: []const u8, metric: perf_model.Metric, unit: PerfUnit, semantics: []const u8) void {
     const index = model.perf_row_count;
     if (index >= model.perf_row_storage.len) return;
-    const value = if (!metric.available)
-        "n/a (unavailable)"
-    else switch (unit) {
-        .nanoseconds => std.fmt.bufPrint(&model.perf_value_storage[index], "{d} ns (measured)", .{metric.value}) catch "n/a (unavailable)",
-        .bytes => std.fmt.bufPrint(&model.perf_value_storage[index], "{d} bytes (measured)", .{metric.value}) catch "n/a (unavailable)",
-        .count => std.fmt.bufPrint(&model.perf_value_storage[index], "{d} (measured)", .{metric.value}) catch "n/a (unavailable)",
-    };
+    const value = formatPerfValue(&model.perf_value_storage[index], metric, unit);
     model.perf_value_lens[index] = value.len;
     model.perf_row_storage[index] = .{
         .label = label,
         .value = value,
         .semantics = semantics,
         .available = metric.available,
+        .status_label = if (metric.available) "measured" else "unavailable",
     };
     model.perf_row_count += 1;
+}
+
+/// Human-readable metric values; measurement honesty lives in `status_label`.
+fn formatPerfValue(buf: []u8, metric: perf_model.Metric, unit: PerfUnit) []const u8 {
+    if (!metric.available) return "n/a";
+    return switch (unit) {
+        .nanoseconds => blk: {
+            const ns = metric.value;
+            if (ns >= std.time.ns_per_s) {
+                const secs = @as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(std.time.ns_per_s));
+                break :blk std.fmt.bufPrint(buf, "{d:.2} s", .{secs}) catch "n/a";
+            }
+            if (ns >= std.time.ns_per_ms) {
+                const ms = @as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(std.time.ns_per_ms));
+                break :blk std.fmt.bufPrint(buf, "{d:.1} ms", .{ms}) catch "n/a";
+            }
+            break :blk std.fmt.bufPrint(buf, "{d} ns", .{ns}) catch "n/a";
+        },
+        .bytes => blk: {
+            const bytes = metric.value;
+            if (bytes >= 1024 * 1024) {
+                const mb = @as(f64, @floatFromInt(bytes)) / (1024.0 * 1024.0);
+                break :blk std.fmt.bufPrint(buf, "{d:.1} MB", .{mb}) catch "n/a";
+            }
+            if (bytes >= 1024) {
+                const kb = @as(f64, @floatFromInt(bytes)) / 1024.0;
+                break :blk std.fmt.bufPrint(buf, "{d:.1} KB", .{kb}) catch "n/a";
+            }
+            break :blk std.fmt.bufPrint(buf, "{d} bytes", .{bytes}) catch "n/a";
+        },
+        .count => std.fmt.bufPrint(buf, "{d}", .{metric.value}) catch "n/a",
+    };
 }
 
 pub fn statusFor(task: AgentTask) []const u8 {

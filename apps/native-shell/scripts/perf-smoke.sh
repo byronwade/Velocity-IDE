@@ -61,12 +61,14 @@ if printf '%s\n' "$SNAPSHOT" | rg -i 'MOCK|fabricated|48 MB'; then
 fi
 printf '%s\n' "$SNAPSHOT" | rg -q 'Command palette request to present'
 printf '%s\n' "$SNAPSHOT" | rg -q 'Terminal panel request to present'
-printf '%s\n' "$SNAPSHOT" | rg -q 'ns \(measured\)|n/a \(unavailable\)'
+# Values are human-readable (ns/ms/s, bytes/KB/MB, plain counts) or an honest n/a.
+printf '%s\n' "$SNAPSHOT" | rg -q 'name="([0-9]+ ns|[0-9.]+ ms|[0-9.]+ s)"|name="n/a"'
 printf '%s\n' "$SNAPSHOT" | rg -q 'Resident memory'
-printf '%s\n' "$SNAPSHOT" | rg -q 'n/a \(unavailable\)'
+printf '%s\n' "$SNAPSHOT" | rg -q 'name="n/a"'
 printf '%s\n' "$SNAPSHOT" | rg -q 'Plugins loaded'
-printf '%s\n' "$SNAPSHOT" | rg -q '0 \(measured\)'
-LABELED_VALUES="$(printf '%s\n' "$SNAPSHOT" | rg -c 'role=text name="([0-9]+ (ns|bytes) \(measured\)|[0-9]+ \(measured\)|n/a \(unavailable\))"')"
+printf '%s\n' "$SNAPSHOT" | rg -q 'name="0"'
+# Every HUD row exposes its measurement state as a measured/unavailable badge.
+LABELED_VALUES="$(printf '%s\n' "$SNAPSHOT" | rg -c 'name="(measured|unavailable)"')"
 if test "$LABELED_VALUES" -lt 18; then
   echo "perf-smoke: expected every HUD row to expose measured or unavailable state" >&2
   exit 1

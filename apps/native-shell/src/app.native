@@ -428,40 +428,70 @@
 
           <!-- Full-page secondary views (settings / plugins / placeholders) -->
           <if test="{isDebug}">
-            <column grow="1" gap="10" padding="16">
-              <text>Debug</text>
-              <text foreground="text_muted">DAP adapters start only on demand via Process Governor.</text>
+            <column grow="1" gap="12" padding="20">
+              <row gap="8" cross="center">
+                <icon name="play" width="15" height="15" foreground="text_muted" />
+                <text size="lg">Debug</text>
+              </row>
+              <column gap="4" padding="12" background="surface_subtle">
+                <text foreground="text_muted" wrap="true">DAP adapters start only on demand via Process Governor.</text>
+              </column>
             </column>
           </if>
           <if test="{isTesting}">
-            <column grow="1" gap="10" padding="16">
-              <text>Testing</text>
-              <text foreground="text_muted">Test discovery is lazy. No scanner before this panel.</text>
+            <column grow="1" gap="12" padding="20">
+              <row gap="8" cross="center">
+                <icon name="check-circle" width="15" height="15" foreground="text_muted" />
+                <text size="lg">Testing</text>
+              </row>
+              <column gap="4" padding="12" background="surface_subtle">
+                <text foreground="text_muted" wrap="true">Test discovery is lazy. No scanner before this panel.</text>
+              </column>
             </column>
           </if>
           <if test="{isFeatures}">
-            <column grow="1" gap="10" padding="16">
-              <text>Feature Toggle Matrix</text>
-              <text foreground="text_muted">{featureMatrixSummary}</text>
-              <button variant="secondary" on-press="instant_safe_mode">Instant Safe Mode</button>
+            <column grow="1" gap="12" padding="20">
+              <row gap="8" cross="center">
+                <icon name="wrench" width="15" height="15" foreground="text_muted" />
+                <text size="lg">Feature Toggle Matrix</text>
+              </row>
+              <column gap="8" padding="12" background="surface_subtle">
+                <text foreground="text_muted" wrap="true">{featureMatrixSummary}</text>
+                <row>
+                  <button variant="secondary" icon="alert" on-press="instant_safe_mode">Instant Safe Mode</button>
+                </row>
+              </column>
             </column>
           </if>
           <if test="{isProcesses}">
-            <column grow="1" gap="10" padding="16">
-              <text>Process Governor</text>
-              <text foreground="text_muted">{processGovernorSummary}</text>
-              <text size="sm" foreground="text_muted">alive={process_count} terminal={terminal_process_count}</text>
-              <button variant="secondary" on-press="kill_all_workspace_processes">Kill All Workspace Processes</button>
+            <column grow="1" gap="12" padding="20">
+              <row gap="8" cross="center">
+                <icon name="circle-dot" width="15" height="15" foreground="text_muted" />
+                <text size="lg">Process Governor</text>
+              </row>
+              <column gap="8" padding="12" background="surface_subtle">
+                <text foreground="text_muted" wrap="true">{processGovernorSummary}</text>
+                <row gap="6" cross="center">
+                  <badge variant="secondary">alive {process_count}</badge>
+                  <badge variant="secondary">terminal {terminal_process_count}</badge>
+                </row>
+                <row>
+                  <button variant="secondary" icon="x-circle" on-press="kill_all_workspace_processes">Kill All Workspace Processes</button>
+                </row>
+              </column>
             </column>
           </if>
           <if test="{isPlugins}">
-            <column grow="1" gap="10" padding="16">
-              <text>Plugin Registry</text>
-              <text foreground="text_muted">Curated, permissioned, signed. Locked until trusted.</text>
+            <column grow="1" gap="12" padding="20">
+              <row gap="8" cross="center">
+                <icon name="archive" width="15" height="15" foreground="text_muted" />
+                <text size="lg">Plugin Registry</text>
+              </row>
+              <text size="sm" foreground="text_muted">Curated, permissioned, signed. Locked until trusted.</text>
               <scroll grow="1">
                 <column gap="8">
                   <for each="plugins" as="plug">
-                    <column gap="4" padding="10" background="surface_subtle">
+                    <column gap="4" padding="12" background="surface_subtle">
                       <row gap="8" cross="center">
                         <text grow="1">{plug.name}</text>
                         <badge variant="secondary">{plug.trust}</badge>
@@ -475,9 +505,10 @@
           </if>
 
           <if test="{isSettings}">
-            <column grow="1" gap="12" padding="16">
+            <column grow="1" gap="12" padding="20">
               <row gap="8" cross="center">
-                <text grow="1">Settings</text>
+                <icon name="settings" width="15" height="15" foreground="text_muted" />
+                <text size="lg" grow="1">Settings</text>
                 <text size="sm" foreground="text_muted">{app_version_label}</text>
               </row>
               <text-field text="{settingsQueryText}" placeholder="Search settings..." on-input="update_settings_query" label="Settings search" />
@@ -572,20 +603,22 @@
           </if>
 
           <if test="{show_perf_hud}">
-            <column height="360" gap="8" padding="10" background="surface_subtle" label="Performance metrics">
+            <column height="360" gap="10" padding="12" background="surface_subtle" label="Performance metrics">
               <row gap="8" cross="center">
-                <text size="sm" grow="1">Performance HUD</text>
-                <button size="sm" variant="secondary" on-press="run_perf">Refresh Performance Metrics</button>
+                <icon name="clock" width="15" height="15" foreground="text_muted" />
+                <text grow="1">Performance HUD</text>
+                <button size="sm" variant="secondary" icon="refresh-cw" on-press="run_perf">Refresh Performance Metrics</button>
               </row>
-              <scroll height="300" label="Measured performance metrics">
-                <column gap="6">
+              <scroll grow="1" label="Measured performance metrics">
+                <column gap="4">
                   <for each="perf_rows" as="metric">
-                    <row gap="8" padding="6" background="surface" label="{metric.label}">
+                    <row gap="12" padding="8" background="surface" cross="center" label="{metric.label}">
                       <column grow="1" gap="2">
                         <text size="sm">{metric.label}</text>
                         <text size="sm" foreground="text_muted" wrap="true">{metric.semantics}</text>
                       </column>
-                      <text size="sm" foreground="text_muted" wrap="false">{metric.value}</text>
+                      <text wrap="false">{metric.value}</text>
+                      <badge variant="secondary">{metric.status_label}</badge>
                     </row>
                   </for>
                 </column>
