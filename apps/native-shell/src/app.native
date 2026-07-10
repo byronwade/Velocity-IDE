@@ -518,7 +518,7 @@
                   <text-field text="{settingsQueryText}" placeholder="Search settings..." on-input="update_settings_query" label="Settings search" />
                   <if test="{showSettingsAppearance}">
                     <column gap="8">
-                      <text size="sm" foreground="text_muted">APPEARANCE</text>
+                      <text size="sm" foreground="text_muted">Appearance</text>
                       <button variant="secondary" on-press="switch_theme" label="Change color theme">Color theme: {themeLabel}</button>
                       <text size="sm" foreground="text_muted">Window: {windowStatusLabel}</text>
                     </column>
@@ -526,7 +526,7 @@
                   </if>
                   <if test="{showSettingsEditor}">
                     <column gap="8">
-                      <text size="sm" foreground="text_muted">EDITOR</text>
+                      <text size="sm" foreground="text_muted">Editor</text>
                       <button variant="ghost" on-press="toggle_find_case" label="Toggle case-sensitive find">{findCaseLabel}</button>
                       <button variant="ghost" on-press="toggle_trim_trailing" label="Toggle trimming trailing whitespace">{trimTrailingLabel}</button>
                       <button variant="ghost" on-press="toggle_final_newline" label="Toggle final newline insertion">{finalNewlineLabel}</button>
@@ -537,7 +537,7 @@
                   </if>
                   <if test="{showSettingsWorkspace}">
                     <column gap="8">
-                      <text size="sm" foreground="text_muted">WORKSPACE</text>
+                      <text size="sm" foreground="text_muted">Workspace</text>
                       <button variant="ghost" on-press="toggle_terminal" label="Toggle integrated terminal panel">{terminalPanelLabel}</button>
                       <button variant="ghost" on-press="toggle_agent_panel" label="Toggle AI agent panel">{agentPanelLabel}</button>
                       <button variant="ghost" on-press="toggle_auto_save" label="Toggle automatic file saving">{autoSaveLabel}</button>
@@ -550,7 +550,7 @@
                   </if>
                   <if test="{showSettingsAccessibility}">
                     <column gap="8">
-                      <text size="sm" foreground="text_muted">ACCESSIBILITY</text>
+                      <text size="sm" foreground="text_muted">Accessibility</text>
                       <text size="sm" foreground="text_muted">{systemHighContrastLabel}</text>
                       <text size="sm" foreground="text_muted">{systemReduceMotionLabel}</text>
                       <button variant="ghost" on-press="toggle_shortcuts_help" label="Open keyboard shortcuts help">Keyboard Shortcuts</button>
@@ -560,7 +560,7 @@
                   </if>
                   <if test="{showSettingsFeatures}">
                     <column gap="8">
-                      <text size="sm" foreground="text_muted">DEVELOPER</text>
+                      <text size="sm" foreground="text_muted">Developer</text>
                       <text size="sm" foreground="text_muted" wrap="true">Advanced diagnostics and internal surfaces. Not needed for everyday editing.</text>
                       <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
                       <button variant="ghost" on-press="open_process_governor">Process Governor</button>
@@ -571,7 +571,7 @@
                   </if>
                   <if test="{showSettingsAbout}">
                     <column gap="8">
-                      <text size="sm" foreground="text_muted">ABOUT</text>
+                      <text size="sm" foreground="text_muted">About</text>
                       <text size="sm" foreground="text_muted">{app_version_label}</text>
                       <text size="sm" foreground="text_muted">Telemetry off · Surveys off · Plugins locked</text>
                       <button variant="secondary" on-press="check_for_updates">Check for Updates</button>

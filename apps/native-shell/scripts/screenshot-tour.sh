@@ -151,4 +151,57 @@ capture 16-shortcuts-dark
 native automate shortcut escape || true
 native automate wait || true
 
+# 17. High-contrast theme (dark -> light -> high_contrast via the cycle).
+native automate native-command switch_theme main-canvas || true
+native automate native-command switch_theme main-canvas || true
+native automate wait || true
+capture 17-shell-high-contrast
+# back to dark
+native automate native-command switch_theme main-canvas || true
+native automate wait || true
+
+# ---- Overflow contract: declared minimum window 960x640 ----
+native automate resize 960 640 || true
+native automate wait || true
+capture 20-min-shell-960x640
+
+# Bottom panel open at min size (dense stress).
+native automate shortcut toggle_terminal || true
+native automate wait || true
+capture 21-min-terminal-960x640
+native automate shortcut toggle_terminal || true
+native automate wait || true
+
+# Settings at min size (full-page + Back header).
+SET_MIN="$(find_widget "Application settings")" || true
+test -n "$SET_MIN" && native automate widget-click main-canvas "$SET_MIN" || true
+native automate wait || true
+capture 22-min-settings-960x640
+EXP_MIN="$(find_widget "Explorer: workspace files")" || true
+test -n "$EXP_MIN" && native automate widget-click main-canvas "$EXP_MIN" || true
+native automate wait || true
+
+# Command palette at min size (must fit, top-anchored).
+native automate shortcut command_palette || true
+native automate wait || true
+capture 23-min-palette-960x640
+native automate shortcut escape || true
+native automate wait || true
+
+# Diff review at min size (the modal that used to overflow).
+native automate native-command open_scm_diff main-canvas || true
+native automate wait || true
+capture 24-min-diff-960x640
+native automate shortcut escape || true
+native automate wait || true
+
+# Wide desktop window.
+native automate resize 1680 1050 || true
+native automate wait || true
+capture 25-wide-1680x1050
+
+# Restore default size.
+native automate resize 1280 800 || true
+native automate wait || true
+
 echo "screenshot-tour: ok ($OUT_DIR)"
