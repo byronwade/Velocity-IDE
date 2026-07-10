@@ -955,7 +955,9 @@ pub const Model = struct {
     }
 
     pub fn showShell(model: *const Model) bool {
-        return model.current_view != .launch;
+        return model.current_view != .launch and
+            !model.diff_review_open and
+            !model.snippet_picker_open;
     }
 
     pub fn isIde(model: *const Model) bool {

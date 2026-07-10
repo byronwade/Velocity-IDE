@@ -644,7 +644,7 @@
   </if>
 
   <if test="{diff_review_open}">
-    <column grow="1" main="start" cross="center" padding="24" background="background">
+    <column grow="1" main="start" cross="center" padding="56" background="background">
       <column width="880" height="640" gap="8" padding="12" background="background" label="Read-only Diff Review">
         <row gap="8" cross="center">
           <text grow="1">{diff_review_title}</text>
@@ -679,7 +679,7 @@
   </if>
 
   <if test="{snippet_picker_open}">
-    <column grow="1" main="start" cross="center" padding="24" background="background">
+    <column grow="1" main="start" cross="center" padding="56" background="background">
       <column width="620" height="440" gap="8" padding="12" background="background" label="Append Snippet picker">
         <row gap="8" cross="center">
           <text grow="1">Append Snippet</text>
