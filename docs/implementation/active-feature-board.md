@@ -35,6 +35,9 @@ today; LSP + PTY feasible via governed sidecar broker; no SDK upgrade needed).
 | W8 PTY spike: real openpty broker, interactive echo, resize, session-sweep reaping | terminal lane | 41 unit tests + pty-spike PASS | proven |
 | W8 **interactive terminal vertical**: explicit switch → governed PTY broker → persistent shell state, ANSI-stripped bounded ring, exit codes, Stop/Restart, clean teardown; pipe runner stays default/fallback | terminal lane + orchestrator | 400/400 tests; pty-terminal-smoke PASS (state persistence proven); terminal-smoke green | green |
 | CI: smoke (lsp) suite green after build-order, version-pin, torn-read fixes | orchestrator | CI run on latest completed head | green |
+| W9c hunk-level stage/unstage/discard (bounded patch engine, real-repo proof, double-press discard + dirty gate) | git lane + orchestrator | 412/412; hunk_patch 11 tests + applyHunk repo test | green |
+| W5 directory watcher: per-dir mtime baseline + budgeted round-robin poll → auto explorer refresh; app-write masquerade prevented via rescan re-baseline | orchestrator | 414/414; module tests at nested depth | green |
+| Branch fully green in CI at 513e1c7 (CI + Smoke incl. lsp + Screenshots on three consecutive heads) | — | GitHub Actions | green |
 
 ## Implementing
 
