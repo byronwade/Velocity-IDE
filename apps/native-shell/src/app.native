@@ -654,8 +654,8 @@
   </column>
 
   <if test="{notificationsOpen}">
-    <column grow="1" main="start" cross="end" padding="20" background="scrim">
-      <column width="760" gap="8" padding="12" background="surface">
+    <dialog on-dismiss="toggle_notifications_panel" label="Notification history">
+      <column width="760" gap="8" padding="4">
         <row gap="8" cross="center">
           <icon name="info" width="14" height="14" foreground="text_muted" />
           <text grow="1">Notifications</text>
@@ -698,12 +698,12 @@
           </column>
         </scroll>
       </column>
-    </column>
+    </dialog>
   </if>
 
   <if test="{diff_review_open}">
-    <column grow="1" main="start" cross="center" padding="56" background="background">
-      <column width="880" height="640" gap="8" padding="12" background="background" label="Read-only Diff Review">
+    <dialog on-dismiss="close_diff_review" label="Read-only Diff Review">
+      <column width="880" gap="8" padding="4">
         <row gap="8" cross="center">
           <text grow="1">{diff_review_title}</text>
           <badge variant="secondary">Read-only</badge>
@@ -733,12 +733,12 @@
           </column>
         </scroll>
       </column>
-    </column>
+    </dialog>
   </if>
 
   <if test="{snippet_picker_open}">
-    <column grow="1" main="start" cross="center" padding="56" background="background">
-      <column width="620" height="440" gap="8" padding="12" background="background" label="Append Snippet picker">
+    <dialog on-dismiss="close_snippet_picker" label="Append Snippet picker">
+      <column width="620" gap="8" padding="4">
         <row gap="8" cross="center">
           <text grow="1">Append Snippet</text>
           <button size="sm" variant="ghost" icon="refresh-cw" on-press="reload_snippets" label="Reload workspace and user snippets" />
@@ -758,12 +758,12 @@
         </scroll>
         <text size="sm" foreground="text_muted">{snippet_status}</text>
       </column>
-    </column>
+    </dialog>
   </if>
 
   <if test="{command_palette_open}">
-    <column grow="1" main="start" cross="center" padding="24" background="scrim">
-      <column width="560" gap="8" padding="12" background="surface">
+    <dialog on-dismiss="close_command_palette" label="Command palette">
+      <column width="560" gap="8" padding="4">
         <search-field text="{commandQuery}" placeholder="Type a command..." on-input="update_command_query" label="Command search" />
         <scroll height="320" label="Command results">
           <column gap="2">
@@ -777,12 +777,12 @@
           </column>
         </scroll>
       </column>
-    </column>
+    </dialog>
   </if>
 
   <if test="{quick_open_visible}">
-    <column grow="1" main="start" cross="center" padding="24" background="scrim">
-      <column width="560" gap="8" padding="12" background="surface">
+    <dialog on-dismiss="close_quick_open" label="Quick open">
+      <column width="560" gap="8" padding="4">
         <search-field text="{quickQueryText}" placeholder="Go to file..." on-input="update_quick_query" label="Quick open" />
         <scroll height="280" label="Quick open results">
           <column gap="2">
@@ -794,12 +794,12 @@
           </column>
         </scroll>
       </column>
-    </column>
+    </dialog>
   </if>
 
   <if test="{symbol_palette_open}">
-    <column grow="1" main="start" cross="center" padding="24" background="scrim">
-      <column width="560" gap="8" padding="12" background="surface">
+    <dialog on-dismiss="close_symbol_palette" label="Go to Symbol">
+      <column width="560" gap="8" padding="4">
         <row gap="6" cross="center">
           <text grow="1">Go to Symbol</text>
           <badge variant="secondary">{outlineStatus}</badge>
@@ -818,12 +818,12 @@
           </column>
         </scroll>
       </column>
-    </column>
+    </dialog>
   </if>
 
   <if test="{shortcuts_help_visible}">
-    <column grow="1" main="start" cross="center" padding="24" background="scrim">
-      <column width="480" gap="8" padding="12" background="surface">
+    <dialog on-dismiss="toggle_shortcuts_help" label="Keyboard Shortcuts">
+      <column width="480" gap="8" padding="4">
         <text>Keyboard Shortcuts</text>
         <scroll height="320" label="Registered keyboard shortcuts">
           <column gap="4">
@@ -837,6 +837,6 @@
         </scroll>
         <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>
       </column>
-    </column>
+    </dialog>
   </if>
 </stack>
