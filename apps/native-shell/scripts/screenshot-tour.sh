@@ -84,4 +84,71 @@ native automate widget-click main-canvas "$EXPLORER_ID"
 native automate wait
 capture 08-shell-light
 
+# Back to dark for the remaining panel captures.
+native automate native-command switch_theme main-canvas || true
+native automate wait
+native automate native-command switch_theme main-canvas || true
+native automate wait
+
+# Best-effort: click an activity-rail button by its accessible label, then
+# capture. Failures never abort the tour (the earlier captures are the
+# guaranteed set; these are bonus coverage).
+capture_activity() {
+  local label="$1" name="$2"
+  local id
+  id="$(find_widget "$label")" || true
+  if test -n "$id"; then
+    native automate widget-click main-canvas "$id" || true
+    native automate wait || true
+    capture "$name"
+  else
+    echo "screenshot-tour: activity '$label' not found; skipped $name"
+  fi
+}
+
+# 9. Search & replace panel.
+capture_activity "Search and replace across workspace" 09-search-dark
+
+# 10. Source Control panel.
+capture_activity "Source Control: Git changes" 10-scm-dark
+
+# 11. Document outline panel.
+capture_activity "Document outline" 11-outline-dark
+
+# 12. Problems panel.
+capture_activity "Problems and diagnostics" 12-problems-dark
+
+# Reopen the explorer/editor before the overlays.
+EXP2="$(find_widget "Explorer: workspace files")" || true
+test -n "$EXP2" && native automate widget-click main-canvas "$EXP2" || true
+native automate wait || true
+
+# 13. Agent panel.
+native automate shortcut toggle_agent || true
+native automate wait || true
+capture 13-agent-dark
+native automate shortcut toggle_agent || true
+native automate wait || true
+
+# 14. Quick Open overlay.
+native automate shortcut quick_open || true
+native automate wait || true
+capture 14-quick-open-dark
+native automate shortcut escape || true
+native automate wait || true
+
+# 15. Notifications overlay.
+native automate native-command toggle_notifications_panel main-canvas || true
+native automate wait || true
+capture 15-notifications-dark
+native automate native-command toggle_notifications_panel main-canvas || true
+native automate wait || true
+
+# 16. Keyboard shortcuts overlay.
+native automate native-command toggle_shortcuts_help main-canvas || true
+native automate wait || true
+capture 16-shortcuts-dark
+native automate shortcut escape || true
+native automate wait || true
+
 echo "screenshot-tour: ok ($OUT_DIR)"
