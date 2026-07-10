@@ -9,6 +9,7 @@
 - **maxProcesses:** `0`
 - **activation:** `onTaskRun`, `onCommand:output-panel.run`
 
-Provides a bounded 48-line channel. Task/test terminal output is mirrored with
-channel (`task` or `test`) and source (`npm`, `tasks.json`, or `Makefile`)
-labels; system status lines remain separately labeled.
+Provides one bounded 48-line registry with All, Task, Test, Launch, Git, and
+System projections. Each channel has deterministic counts, filtering, and
+clear-selected behavior. Source labels (`npm`, `tasks.json`, `Makefile`,
+profile name, `git`, or `velocity`) survive filtering; no projection allocates.

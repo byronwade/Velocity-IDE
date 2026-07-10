@@ -2,16 +2,14 @@
 
 - **id:** `feature.settings`
 - **mode:** `core`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `native`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `8`
 - **maxProcesses:** `0`
 - **activation:** `onFirstPaintDone`, `onCommand:settings.toggle`
 
-## Rules
-
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+Settings search exposes the actual preferences persisted by `core/prefs.zig`,
+including workspace-search case/whole-word choices and a bounded disk polling
+interval cycle (500, 1000, 2000, or 5000 ms). `core/settings_store.zig` is a
+metadata index whose keys are compile-time checked against `Prefs`.

@@ -293,7 +293,7 @@
 
             <if test="{showBottomPanel}">
               <separator />
-              <column height="230" gap="5" padding="8" background="surface">
+              <column height="280" gap="5" padding="8" background="surface">
                 <row gap="4" cross="center">
                   <button size="sm" variant="ghost" selected="{showBottomTerminal}" on-press="select_bottom_tab:{bottom_tab_terminal}">Terminal · {terminalStatus}</button>
                   <button size="sm" variant="ghost" selected="{showBottomOutput}" on-press="select_bottom_tab:{bottom_tab_output}">Output · {output_count}</button>
@@ -302,7 +302,7 @@
                   <badge variant="secondary">Tests: {test_status_label}</badge>
                   <if test="{showBottomTerminal}">
                     <badge variant="secondary">{terminalStatus}</badge>
-                    <button size="sm" variant="ghost" on-press="stop_terminal_task">Stop Terminal/Task</button>
+                    <button size="sm" variant="ghost" on-press="stop_terminal_task" label="Stop Terminal/Task">Stop Terminal/Task/Launch</button>
                     <button size="sm" variant="ghost" on-press="clear_terminal">Clear</button>
                   </if>
                   <if test="{showBottomOutput}">
@@ -314,6 +314,16 @@
                   <button size="sm" variant="ghost" on-press="toggle_bottom_panel">Close</button>
                 </row>
                 <if test="{showBottomTerminal}">
+                  <row gap="4" cross="center" label="Terminal and run profiles">
+                    <text>Terminal / Run Profiles</text>
+                    <badge variant="secondary">{launchStatus}</badge>
+                    <for each="launch_profiles" key="id" as="profile">
+                      <button size="sm" variant="ghost" selected="{profile.id == selected_launch_profile_id}" on-press="select_launch_profile:{profile.id}" label="{profile.command}">{profile.name}</button>
+                    </for>
+                    <spacer grow="1" />
+                    <button size="sm" variant="ghost" on-press="refresh_launch_profiles" label="Refresh command run profiles from .velocity/launch.json">Refresh Profiles</button>
+                    <button size="sm" variant="primary" on-press="run_launch_profile" label="Run selected command profile">Run Profile</button>
+                  </row>
                   <row gap="4" cross="center">
                     <text>Workspace Tasks</text>
                     <badge variant="secondary">{taskStatus}</badge>
@@ -345,6 +355,16 @@
                   </scroll>
                 </if>
                 <if test="{showBottomOutput}">
+                  <row gap="3" cross="center" label="Output channel selector">
+                    <text size="sm">Channel</text>
+                    <button size="sm" variant="ghost" selected="{output_channel == output_channel_all}" on-press="select_output_channel:{output_channel_all}" label="Show all output channels">All · {output_count}</button>
+                    <button size="sm" variant="ghost" selected="{output_channel == output_channel_task}" on-press="select_output_channel:{output_channel_task}" label="Show task output">Task · {output_task_count}</button>
+                    <button size="sm" variant="ghost" selected="{output_channel == output_channel_test}" on-press="select_output_channel:{output_channel_test}" label="Show test output">Test · {output_test_count}</button>
+                    <button size="sm" variant="ghost" selected="{output_channel == output_channel_launch}" on-press="select_output_channel:{output_channel_launch}" label="Show launch profile output">Launch · {output_launch_count}</button>
+                    <button size="sm" variant="ghost" selected="{output_channel == output_channel_git}" on-press="select_output_channel:{output_channel_git}" label="Show Git output">Git · {output_git_count}</button>
+                    <button size="sm" variant="ghost" selected="{output_channel == output_channel_system}" on-press="select_output_channel:{output_channel_system}" label="Show system output">System · {output_system_count}</button>
+                    <badge variant="secondary">Showing {output_filtered_count}</badge>
+                  </row>
                   <scroll grow="1" label="Output">
                     <column gap="1">
                       <for each="output_lines" key="id" as="oline">
@@ -477,6 +497,9 @@
                       <button variant="ghost" on-press="toggle_terminal" label="Toggle integrated terminal panel">{terminalPanelLabel}</button>
                       <button variant="ghost" on-press="toggle_agent_panel" label="Toggle AI agent panel">{agentPanelLabel}</button>
                       <button variant="ghost" on-press="toggle_auto_save" label="Toggle automatic file saving">{autoSaveLabel}</button>
+                      <button variant="ghost" on-press="toggle_search_case" label="Workspace Search: Match Case">{searchCaseLabel}</button>
+                      <button variant="ghost" on-press="toggle_search_whole_word" label="Workspace Search: Match Whole Word">{searchWholeWordLabel}</button>
+                      <button variant="ghost" on-press="cycle_disk_poll_interval" label="Files: Cycle Disk Poll Interval">{diskPollIntervalLabel}</button>
                       <button variant="ghost" on-press="toggle_sidebar" label="Toggle workspace sidebar">{sidebarLabel}</button>
                       <button variant="ghost" on-press="toggle_focus_mode" label="Toggle focus mode">{focusModeLabel}</button>
                       <button variant="ghost" on-press="save_prefs">Save Preferences</button>
@@ -564,16 +587,43 @@
 
   <if test="{notificationsOpen}">
     <column grow="1" main="start" cross="end" padding="20" background="scrim">
-      <column width="340" gap="8" padding="12" background="surface">
+      <column width="760" gap="8" padding="12" background="surface">
         <row gap="8" cross="center">
           <text grow="1">Notifications</text>
+          <badge variant="secondary">{notification_count}</badge>
+          <button size="sm" variant="ghost" on-press="clear_notifications" label="Clear all notifications">Clear</button>
           <button size="sm" variant="ghost" on-press="toggle_notifications_panel">Close</button>
+        </row>
+        <row gap="3" cross="center" label="Notification severity filters">
+          <text size="sm">Severity</text>
+          <button size="sm" variant="ghost" selected="{notification_severity_filter == notification_severity_all}" on-press="set_notification_severity_filter:{notification_severity_all}" label="Show all notification severities">All</button>
+          <button size="sm" variant="ghost" selected="{notification_severity_filter == notification_severity_info}" on-press="set_notification_severity_filter:{notification_severity_info}" label="Show informational notifications">Info</button>
+          <button size="sm" variant="ghost" selected="{notification_severity_filter == notification_severity_warning}" on-press="set_notification_severity_filter:{notification_severity_warning}" label="Show warning notifications">Warnings</button>
+          <button size="sm" variant="ghost" selected="{notification_severity_filter == notification_severity_error}" on-press="set_notification_severity_filter:{notification_severity_error}" label="Show error notifications">Errors</button>
+        </row>
+        <row gap="3" cross="center" label="Notification source filters">
+          <text size="sm">Source</text>
+          <button size="sm" variant="ghost" selected="{notification_source_filter == notification_source_all}" on-press="set_notification_source_filter:{notification_source_all}" label="Show all notification sources">All</button>
+          <button size="sm" variant="ghost" selected="{notification_source_filter == notification_source_system}" on-press="set_notification_source_filter:{notification_source_system}">System</button>
+          <button size="sm" variant="ghost" selected="{notification_source_filter == notification_source_workspace}" on-press="set_notification_source_filter:{notification_source_workspace}">Workspace</button>
+          <button size="sm" variant="ghost" selected="{notification_source_filter == notification_source_task}" on-press="set_notification_source_filter:{notification_source_task}">Task</button>
+          <button size="sm" variant="ghost" selected="{notification_source_filter == notification_source_test}" on-press="set_notification_source_filter:{notification_source_test}">Test</button>
+          <button size="sm" variant="ghost" selected="{notification_source_filter == notification_source_launch}" on-press="set_notification_source_filter:{notification_source_launch}">Launch</button>
+          <button size="sm" variant="ghost" selected="{notification_source_filter == notification_source_git}" on-press="set_notification_source_filter:{notification_source_git}">Git</button>
         </row>
         <scroll height="260" label="Notification history">
           <column gap="4">
             <for each="notifications" key="id" as="n">
               <column gap="2" padding="8" background="surface_subtle">
+                <row gap="5" cross="center">
+                  <badge variant="secondary">{n.severity_label}</badge>
+                  <text size="sm" foreground="text_muted">{n.source_label}</text>
+                  <badge variant="secondary">×{n.count}</badge>
+                </row>
                 <text size="sm" wrap="true">{n.text}</text>
+                <if test="{n.has_action}">
+                  <button size="sm" variant="secondary" on-press="run_notification_action:{n.id}" label="{n.action_id}">{n.action_label}</button>
+                </if>
               </column>
             </for>
           </column>

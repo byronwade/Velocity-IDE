@@ -28,12 +28,15 @@ const tab_history = @import("../workspace/tab_history.zig");
 const disk_sync = @import("../workspace/disk_sync.zig");
 const hot_exit_store = @import("../workspace/hot_exit_store.zig");
 const task_detector = @import("../workspace/task_detector.zig");
+const launch_profiles = @import("../workspace/launch_profiles.zig");
 const workspace_replace = @import("../workspace/workspace_replace.zig");
 const command_registry = @import("../core/command_registry.zig");
 const keybinding_registry = @import("../core/keybinding_registry.zig");
 const feature_registry = @import("../core/feature_registry.zig");
 const perf_model = @import("../perf/perf_model.zig");
 const startup_timer = @import("../perf/startup_timer.zig");
+const output_registry = @import("../core/output_registry.zig");
+const notification_store = @import("../core/notification_store.zig");
 
 pub const header_natural_height: f32 = 36;
 pub const max_command_query = 64;
@@ -57,6 +60,7 @@ pub const OutlineSymbol = outline_mod.Symbol;
 pub const DefHit = go_to_def_mod.DefHit;
 pub const PeekLine = editor_view.PeekLine;
 pub const WorkspaceTask = task_detector.Task;
+pub const LaunchProfile = launch_profiles.Profile;
 pub const ReplacePreview = workspace_replace.FilePreview;
 
 pub const PerfFrame = struct {
@@ -78,12 +82,9 @@ pub const BreadcrumbSeg = struct {
     path: []const u8 = "",
 };
 
-pub const OutputLine = struct {
-    id: u32 = 0,
-    channel_label: []const u8 = "system",
-    source_label: []const u8 = "velocity",
-    text: []const u8 = "",
-};
+pub const OutputLine = output_registry.Line;
+pub const OutputChannel = output_registry.Channel;
+pub const NotificationItem = notification_store.Item;
 
 pub const ClosedTab = struct {
     path: []const u8 = "",
@@ -249,6 +250,9 @@ pub const Msg = union(enum) {
     refresh_tasks,
     select_task: u32,
     run_selected_task,
+    refresh_launch_profiles,
+    select_launch_profile: u32,
+    run_launch_profile,
     run_workspace_tests,
     rerun_workspace_tests,
     toggle_line_comment,
@@ -269,6 +273,7 @@ pub const Msg = union(enum) {
     trim_blank_lines,
     refresh_explorer,
     refresh_disk_sync,
+    cycle_disk_poll_interval,
     disk_poll_timer: native_sdk.EffectTimer,
     close_saved_tabs,
     compare_with_saved,
@@ -289,6 +294,10 @@ pub const Msg = union(enum) {
     minimize_window,
     close_window,
     toggle_notifications_panel,
+    set_notification_severity_filter: notification_store.SeverityFilter,
+    set_notification_source_filter: notification_store.SourceFilter,
+    run_notification_action: u32,
+    clear_notifications,
     update_settings_query: canvas.TextInputEvent,
     open_outline,
     select_outline_symbol: u32,
@@ -298,6 +307,7 @@ pub const Msg = union(enum) {
     select_bottom_tab: BottomPanelTab,
     toggle_bottom_panel,
     clear_output,
+    select_output_channel: OutputChannel,
     open_symbol_palette,
     close_symbol_palette,
     update_symbol_query: canvas.TextInputEvent,
@@ -397,15 +407,8 @@ pub const search_debounce_timer_key: u64 = 0x73656172_63686462;
 pub const terminal_process_effect_key: u64 = 0x7465726d_696e616c;
 pub const toast_auto_clear_ms: u64 = 3200;
 pub const search_debounce_ms: u64 = 220;
-pub const max_notification_history: usize = 8;
-pub const max_notification_text: usize = 96;
 pub const max_toast_text: usize = 520;
 pub const max_settings_query = 48;
-
-pub const NotificationItem = struct {
-    id: u32 = 0,
-    text: []const u8 = "",
-};
 
 pub const Effects = native_sdk.Effects(Msg);
 
@@ -442,11 +445,15 @@ pub const Model = struct {
     bottom_panel_open: bool = false,
     bottom_panel_tab: BottomPanelTab = .terminal,
     output_lines: []const OutputLine = &.{},
-    output_storage: [48]OutputLine = [_]OutputLine{.{}} ** 48,
-    output_pool: [48][120]u8 = undefined,
-    output_lens: [48]usize = [_]usize{0} ** 48,
+    output_registry: output_registry.Registry = .{},
     output_count: u32 = 0,
-    output_next_id: u32 = 1,
+    output_filtered_count: u32 = 0,
+    output_channel: OutputChannel = .all,
+    output_task_count: u32 = 0,
+    output_test_count: u32 = 0,
+    output_launch_count: u32 = 0,
+    output_git_count: u32 = 0,
+    output_system_count: u32 = 0,
     recent_files: [8][240]u8 = undefined,
     recent_file_lens: [8]usize = [_]usize{0} ** 8,
     recent_file_count: u32 = 0,
@@ -486,6 +493,7 @@ pub const Model = struct {
     search_bufs: ?*workspace_search.SearchBuffers = null,
     git_bufs: ?*git_status.GitBuffers = null,
     task_bufs: ?*task_detector.TaskDetector = null,
+    launch_bufs: ?*launch_profiles.Registry = null,
     workspace_replace_bufs: ?*workspace_replace.WorkspaceReplace = null,
     search_query: canvas.TextBuffer(max_search_query) = .{},
     search_include: canvas.TextBuffer(workspace_search.max_path_pattern) = .{},
@@ -493,8 +501,10 @@ pub const Model = struct {
     search_hits: []const SearchHit = &.{},
     search_debounce_armed: bool = false,
     workspace_tasks: []const WorkspaceTask = &.{},
+    launch_profiles: []const LaunchProfile = &.{},
     replace_previews: []const ReplacePreview = &.{},
     selected_task_id: u32 = 0,
+    selected_launch_profile_id: u32 = 0,
     selected_git_entry_id: u32 = 0,
     task_running: bool = false,
     task_status: []const u8 = "No tasks detected",
@@ -510,6 +520,10 @@ pub const Model = struct {
     close_other_confirm_pending: bool = false,
     close_all_confirm_pending: bool = false,
     task_status_buf: [96]u8 = undefined,
+    launch_running: bool = false,
+    launch_status: []const u8 = "No run profiles detected",
+    launch_status_buf: [120]u8 = undefined,
+    active_launch_name: []const u8 = "",
     replace_status_buf: [128]u8 = undefined,
     git_entries: []const GitEntry = &.{},
     git_summary: []const u8 = "not loaded",
@@ -599,13 +613,12 @@ pub const Model = struct {
     toast_visible: bool = false,
     toast_sticky: bool = false,
     toast_seq: u32 = 0,
-    notification_history: [max_notification_history]NotificationItem = [_]NotificationItem{.{}} ** max_notification_history,
-    notification_text_pool: [max_notification_history][max_notification_text]u8 = undefined,
-    notification_text_lens: [max_notification_history]usize = [_]usize{0} ** max_notification_history,
+    notification_store: notification_store.Store = .{},
     notification_count: u32 = 0,
-    notification_next_id: u32 = 1,
     notifications: []const NotificationItem = &.{},
     notifications_panel_open: bool = false,
+    notification_severity_filter: notification_store.SeverityFilter = .all,
+    notification_source_filter: notification_store.SourceFilter = .all,
     update_banner: []const u8 = "",
     update_banner_buf: [120]u8 = undefined,
     update_banner_visible: bool = false,
@@ -647,6 +660,23 @@ pub const Model = struct {
     bottom_tab_terminal: BottomPanelTab = .terminal,
     bottom_tab_output: BottomPanelTab = .output,
     bottom_tab_problems: BottomPanelTab = .problems,
+    output_channel_all: OutputChannel = .all,
+    output_channel_task: OutputChannel = .task,
+    output_channel_test: OutputChannel = .@"test",
+    output_channel_launch: OutputChannel = .launch,
+    output_channel_git: OutputChannel = .git,
+    output_channel_system: OutputChannel = .system,
+    notification_severity_all: notification_store.SeverityFilter = .all,
+    notification_severity_info: notification_store.SeverityFilter = .info,
+    notification_severity_warning: notification_store.SeverityFilter = .warning,
+    notification_severity_error: notification_store.SeverityFilter = .@"error",
+    notification_source_all: notification_store.SourceFilter = .all,
+    notification_source_system: notification_store.SourceFilter = .system,
+    notification_source_workspace: notification_store.SourceFilter = .workspace,
+    notification_source_task: notification_store.SourceFilter = .task,
+    notification_source_test: notification_store.SourceFilter = .@"test",
+    notification_source_launch: notification_store.SourceFilter = .launch,
+    notification_source_git: notification_store.SourceFilter = .git,
     problem_severity_all: problems_mod.SeverityFilter = .all,
     problem_severity_errors: problems_mod.SeverityFilter = .errors,
     problem_severity_warnings: problems_mod.SeverityFilter = .warnings,
@@ -721,6 +751,7 @@ pub const Model = struct {
         "search_bufs",
         "git_bufs",
         "task_bufs",
+        "launch_bufs",
         "workspace_replace_bufs",
         "search_query",
         "search_include",
@@ -731,6 +762,10 @@ pub const Model = struct {
         "navigation_replaying",
         "task_running",
         "task_status",
+        "launch_running",
+        "launch_status",
+        "launch_status_buf",
+        "active_launch_name",
         "test_status",
         "test_running",
         "last_test_task_id",
@@ -799,11 +834,7 @@ pub const Model = struct {
         "toast_visible",
         "toast_sticky",
         "toast_seq",
-        "notification_history",
-        "notification_text_pool",
-        "notification_text_lens",
-        "notification_count",
-        "notification_next_id",
+        "notification_store",
         "notifications_panel_open",
         "update_banner",
         "update_banner_buf",
@@ -844,10 +875,7 @@ pub const Model = struct {
         "breadcrumb_seg_count",
         "bottom_panel_open",
         "bottom_panel_tab",
-        "output_storage",
-        "output_pool",
-        "output_lens",
-        "output_next_id",
+        "output_registry",
         "recent_files",
         "recent_file_lens",
         "recent_file_count",
@@ -1089,6 +1117,19 @@ pub const Model = struct {
         return model.task_status;
     }
 
+    pub fn launchStatus(model: *const Model) []const u8 {
+        return model.launch_status;
+    }
+
+    pub fn diskPollIntervalLabel(model: *const Model) []const u8 {
+        return switch (model.disk_poll_interval_ms) {
+            500 => "Files: disk poll interval 500 ms",
+            1000 => "Files: disk poll interval 1000 ms",
+            5000 => "Files: disk poll interval 5000 ms",
+            else => "Files: disk poll interval 2000 ms",
+        };
+    }
+
     pub fn replaceStatus(model: *const Model) []const u8 {
         return model.replace_status;
     }
@@ -1130,7 +1171,7 @@ pub const Model = struct {
     }
 
     pub fn showSettingsWorkspace(model: *const Model) bool {
-        return settingsSectionVisible(model, "workspace sidebar terminal agent panel auto save");
+        return settingsSectionVisible(model, "workspace sidebar terminal agent panel auto save search match case whole word disk poll interval files reload");
     }
 
     pub fn showSettingsAccessibility(model: *const Model) bool {
@@ -1428,6 +1469,21 @@ fn clearActiveCommand(model: *Model, status: process_governor.ProcessStatus, exi
         };
         model.test_status_label = @tagName(model.test_status);
     }
+    if (model.launch_running) {
+        model.launch_running = false;
+        model.launch_status = switch (status) {
+            .cancelled, .killed => "Launch cancelled",
+            .rejected => "Launch rejected",
+            .spawn_failed => "Launch spawn failed",
+            .signaled => "Launch terminated by signal",
+            .exited => std.fmt.bufPrint(
+                &model.launch_status_buf,
+                "Launch exited with code {d}",
+                .{exit_code},
+            ) catch "Launch exited",
+            .running => "Launch running",
+        };
+    }
 }
 
 fn cancelOwnedEffects(model: *Model, fx: *Effects) void {
@@ -1447,6 +1503,8 @@ fn cancelOwnedEffects(model: *Model, fx: *Effects) void {
     model.terminal_async = false;
     model.terminal_stopping = false;
     model.task_running = false;
+    model.test_running = false;
+    model.launch_running = false;
     if (model.terminal) |term| term.running = false;
 }
 
@@ -1539,30 +1597,45 @@ fn normalizeToastState(model: *Model) void {
 
 fn pushNotificationHistory(model: *Model, text: []const u8) void {
     if (text.len == 0) return;
-    // Shift older entries down; newest at index 0.
-    var i: usize = max_notification_history;
-    while (i > 1) : (i -= 1) {
-        const dst = i - 1;
-        const src = i - 2;
-        if (src >= model.notification_count) continue;
-        const len = model.notification_text_lens[src];
-        @memcpy(model.notification_text_pool[dst][0..len], model.notification_text_pool[src][0..len]);
-        model.notification_text_lens[dst] = len;
-        model.notification_history[dst] = .{
-            .id = model.notification_history[src].id,
-            .text = model.notification_text_pool[dst][0..len],
-        };
-    }
-    const n = @min(text.len, max_notification_text);
-    @memcpy(model.notification_text_pool[0][0..n], text[0..n]);
-    model.notification_text_lens[0] = n;
-    model.notification_history[0] = .{
-        .id = model.notification_next_id,
-        .text = model.notification_text_pool[0][0..n],
-    };
-    model.notification_next_id +%= 1;
-    if (model.notification_count < max_notification_history) model.notification_count += 1;
-    model.notifications = model.notification_history[0..model.notification_count];
+    const severity: notification_store.Severity =
+        if (std.ascii.indexOfIgnoreCase(text, "failed") != null or
+            std.ascii.indexOfIgnoreCase(text, "error") != null or
+            std.ascii.indexOfIgnoreCase(text, "could not") != null)
+            .@"error"
+        else if (std.ascii.indexOfIgnoreCase(text, "changed") != null or
+            std.ascii.indexOfIgnoreCase(text, "unavailable") != null or
+            std.ascii.indexOfIgnoreCase(text, "refused") != null or
+            std.ascii.indexOfIgnoreCase(text, "cancel") != null)
+            .warning
+        else
+            .info;
+    const source: notification_store.Source = if (model.launch_running or std.mem.startsWith(u8, text, "Launch"))
+        .launch
+    else if (model.test_running or std.mem.startsWith(u8, text, "Tests"))
+        .@"test"
+    else if (model.task_running or std.mem.startsWith(u8, text, "Task"))
+        .task
+    else if (std.mem.indexOf(u8, text, "Git") != null)
+        .git
+    else if (model.workspace_from_disk)
+        .workspace
+    else
+        .system;
+    const action: notification_store.Action =
+        if (model.problems.len > 0 or std.mem.indexOf(u8, text, "diagnostic") != null)
+            .open_problems
+        else if (std.mem.indexOf(u8, text, "changed externally") != null or
+            std.mem.indexOf(u8, text, "polling unavailable") != null)
+            .reload_workspace
+        else
+            .none;
+    model.notification_store.push(severity, source, text, action);
+    syncNotificationView(model);
+}
+
+fn syncNotificationView(model: *Model) void {
+    model.notifications = model.notification_store.slice();
+    model.notification_count = model.notification_store.item_count;
 }
 
 fn armToastClearTimer(model: *Model, fx: *Effects) void {
@@ -1796,6 +1869,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 runWorkspaceTests(model, fx, true);
             } else if (std.mem.eql(u8, id, "refresh_tasks")) {
                 refreshTasks(model);
+            } else if (std.mem.eql(u8, id, "refresh_launch_profiles")) {
+                refreshLaunchProfiles(model);
+            } else if (std.mem.eql(u8, id, "run_launch_profile")) {
+                runLaunchProfile(model, fx);
             } else if (std.mem.eql(u8, id, "run_search")) {
                 model.current_view = .ide;
                 model.selected_activity = .search;
@@ -1830,6 +1907,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 refreshExplorer(model);
             } else if (std.mem.eql(u8, id, "refresh_disk_sync")) {
                 refreshDiskSync(model, true);
+            } else if (std.mem.eql(u8, id, "cycle_disk_poll_interval")) {
+                cycleDiskPollInterval(model, fx);
             } else if (std.mem.eql(u8, id, "close_saved_tabs")) {
                 closeSavedTabs(model);
             } else if (std.mem.eql(u8, id, "compare_with_saved")) {
@@ -1863,9 +1942,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 model.show_terminal = model.bottom_panel_open and model.bottom_panel_tab == .terminal;
                 persistPrefs(model);
             } else if (std.mem.eql(u8, id, "clear_output")) {
-                model.output_count = 0;
-                model.output_lines = &.{};
-                model.toast = "Output cleared";
+                model.output_registry.clearSelected();
+                syncOutputView(model);
+                model.toast = "Selected output channel cleared";
             } else if (std.mem.eql(u8, id, "create_folder")) {
                 createFolder(model);
             } else if (std.mem.eql(u8, id, "show_file_size")) {
@@ -2222,6 +2301,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .commit_changes => commitChanges(model),
         .refresh_explorer => refreshExplorer(model),
         .refresh_disk_sync => refreshDiskSync(model, true),
+        .cycle_disk_poll_interval => cycleDiskPollInterval(model, fx),
         .disk_poll_timer => |timer| {
             if (timer.key != disk_poll_timer_key) return;
             switch (timer.outcome) {
@@ -2282,9 +2362,13 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             persistPrefs(model);
         },
         .clear_output => {
-            model.output_count = 0;
-            model.output_lines = &.{};
-            model.toast = "Output cleared";
+            model.output_registry.clearSelected();
+            syncOutputView(model);
+            model.toast = "Selected output channel cleared";
+        },
+        .select_output_channel => |channel| {
+            model.output_registry.select(channel);
+            syncOutputView(model);
         },
         .open_symbol_palette => {
             refreshOutline(model);
@@ -2357,6 +2441,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .refresh_tasks => refreshTasks(model),
         .select_task => |id| selectTask(model, id),
         .run_selected_task => runSelectedTask(model, fx),
+        .refresh_launch_profiles => refreshLaunchProfiles(model),
+        .select_launch_profile => |id| selectLaunchProfile(model, id),
+        .run_launch_profile => runLaunchProfile(model, fx),
         .run_workspace_tests => runWorkspaceTests(model, fx, false),
         .rerun_workspace_tests => runWorkspaceTests(model, fx, true),
         .update_quick_query => |edit| {
@@ -2458,6 +2545,21 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .close_window => _ = persistHotExit(model),
         .toggle_notifications_panel => {
             model.notifications_panel_open = !model.notifications_panel_open;
+        },
+        .set_notification_severity_filter => |filter| {
+            model.notification_store.setFilters(filter, model.notification_store.source_filter);
+            model.notification_severity_filter = filter;
+            syncNotificationView(model);
+        },
+        .set_notification_source_filter => |filter| {
+            model.notification_store.setFilters(model.notification_store.severity_filter, filter);
+            model.notification_source_filter = filter;
+            syncNotificationView(model);
+        },
+        .run_notification_action => |id| runNotificationAction(model, id),
+        .clear_notifications => {
+            model.notification_store.clear();
+            syncNotificationView(model);
         },
         .update_settings_query => |edit| model.settings_query.apply(edit),
     }
@@ -2562,6 +2664,43 @@ fn refreshDiskSync(model: *Model, manual: bool) void {
             "An open file changed externally; clean tabs reload when selected";
     } else if (manual) {
         model.toast = if (model.disk_changed) "Active file still differs from disk" else "Disk state up to date";
+    }
+}
+
+fn cycleDiskPollInterval(model: *Model, fx: ?*Effects) void {
+    var next = prefs_mod.disk_poll_intervals_ms[0];
+    for (prefs_mod.disk_poll_intervals_ms, 0..) |value, index| {
+        if (value != model.disk_poll_interval_ms) continue;
+        next = prefs_mod.disk_poll_intervals_ms[(index + 1) % prefs_mod.disk_poll_intervals_ms.len];
+        break;
+    }
+    model.disk_poll_interval_ms = next;
+    persistPrefs(model);
+    if (fx) |effects| {
+        if (model.disk_poll_armed) effects.cancelTimer(disk_poll_timer_key);
+        model.disk_poll_armed = false;
+        model.disk_poll_rejected = false;
+        reconcileDiskPoll(model, effects);
+    }
+    model.toast = Model.diskPollIntervalLabel(model);
+}
+
+fn runNotificationAction(model: *Model, id: u32) void {
+    const item = model.notification_store.find(id) orelse return;
+    switch (item.action) {
+        .none => {},
+        .open_problems => {
+            model.current_view = .ide;
+            model.selected_activity = .problems;
+            openBottomPanel(model, .problems);
+        },
+        .reload_workspace => {
+            if (!model.workspace_from_disk or model.project_path.len == 0) return;
+            var path_buf: [prefs_mod.max_path]u8 = undefined;
+            const len = @min(model.project_path.len, path_buf.len);
+            @memcpy(path_buf[0..len], model.project_path[0..len]);
+            openWorkspacePath(model, path_buf[0..len]);
+        },
     }
 }
 
@@ -2693,6 +2832,14 @@ fn ensureTaskBuffers(model: *Model) !*task_detector.TaskDetector {
     tasks.* = .{};
     model.task_bufs = tasks;
     return tasks;
+}
+
+fn ensureLaunchBuffers(model: *Model) !*launch_profiles.Registry {
+    if (model.launch_bufs) |profiles| return profiles;
+    const profiles = try std.heap.page_allocator.create(launch_profiles.Registry);
+    profiles.* = .{};
+    model.launch_bufs = profiles;
+    return profiles;
 }
 
 fn ensureWorkspaceReplaceBuffers(model: *Model) !*workspace_replace.WorkspaceReplace {
@@ -3270,6 +3417,7 @@ fn openWorkspacePath(model: *Model, path: []const u8) void {
     applyWorkspaceMeta(model, ws, meta);
     const restored = if (meta.scan_error.len == 0) restoreHotExit(model, ws) else null;
     refreshTasks(model);
+    refreshLaunchProfiles(model);
     if (meta.scan_error.len > 0) {
         model.toast = meta.scan_error;
     } else if (restored) |summary| {
@@ -3531,36 +3679,24 @@ fn refreshPeek(model: *Model) void {
 }
 
 fn appendOutput(model: *Model, text: []const u8) void {
-    appendOutputLabeled(model, "system", "velocity", text);
+    appendOutputLabeled(model, .system, "velocity", text);
 }
 
-fn appendOutputLabeled(model: *Model, channel: []const u8, source: []const u8, text: []const u8) void {
-    if (text.len == 0) return;
-    var i: usize = 47;
-    while (i > 0) : (i -= 1) {
-        if (i - 1 >= model.output_count) continue;
-        const len = model.output_lens[i - 1];
-        @memcpy(model.output_pool[i][0..len], model.output_pool[i - 1][0..len]);
-        model.output_lens[i] = len;
-        model.output_storage[i] = .{
-            .id = model.output_storage[i - 1].id,
-            .channel_label = model.output_storage[i - 1].channel_label,
-            .source_label = model.output_storage[i - 1].source_label,
-            .text = model.output_pool[i][0..len],
-        };
-    }
-    const n = @min(text.len, model.output_pool[0].len);
-    @memcpy(model.output_pool[0][0..n], text[0..n]);
-    model.output_lens[0] = n;
-    model.output_storage[0] = .{
-        .id = model.output_next_id,
-        .channel_label = channel,
-        .source_label = source,
-        .text = model.output_pool[0][0..n],
-    };
-    model.output_next_id +%= 1;
-    if (model.output_count < 48) model.output_count += 1;
-    model.output_lines = model.output_storage[0..model.output_count];
+fn appendOutputLabeled(model: *Model, channel: OutputChannel, source: []const u8, text: []const u8) void {
+    model.output_registry.append(channel, source, text);
+    syncOutputView(model);
+}
+
+fn syncOutputView(model: *Model) void {
+    model.output_lines = model.output_registry.lines();
+    model.output_count = model.output_registry.total_count;
+    model.output_filtered_count = model.output_registry.filtered_count;
+    model.output_channel = model.output_registry.selected;
+    model.output_task_count = model.output_registry.count(.task);
+    model.output_test_count = model.output_registry.count(.@"test");
+    model.output_launch_count = model.output_registry.count(.launch);
+    model.output_git_count = model.output_registry.count(.git);
+    model.output_system_count = model.output_registry.count(.system);
 }
 
 fn pushRecentFile(model: *Model, path: []const u8) void {
@@ -3817,6 +3953,10 @@ fn stopTerminalTask(model: *Model, fx: ?*Effects) void {
 
 fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
     const cmd = model.terminal_command.text();
+    runGovernedCommand(model, fx, cmd);
+}
+
+fn runGovernedCommand(model: *Model, fx: ?*Effects, cmd: []const u8) void {
     if (cmd.len == 0) {
         model.toast = "Enter a command";
         return;
@@ -3831,15 +3971,19 @@ fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
     };
     const cwd = if (model.workspace_from_disk) model.project_path else "";
     const process_id = model.governor.spawnEffect(
-        "feature.terminal",
+        if (model.launch_running) "feature.terminal-profiles" else "feature.terminal",
         cmd,
         model.terminal_effect_key,
-        .{ .terminal = true, .task = model.task_running },
+        .{ .terminal = true, .task = model.task_running or model.test_running or model.launch_running },
     ) catch {
         model.toast = "Terminal process budget is in use; stop the active command and retry";
         if (model.task_running) {
             model.task_running = false;
             model.task_status = "Task refused: process budget in use";
+        }
+        if (model.launch_running) {
+            model.launch_running = false;
+            model.launch_status = "Launch refused: process budget in use";
         }
         return;
     };
@@ -3858,14 +4002,14 @@ fn runTerminalFromModel(model: *Model, fx: ?*Effects) void {
         model.terminal_async = true;
         model.terminal_stopping = false;
 
-        var script_buf: [512]u8 = undefined;
+        var script_buf: [launch_profiles.max_script_len + 512]u8 = undefined;
         const script = if (cwd.len > 0) blk: {
             // Quote cwd lightly for sh -c; fixture paths are simple.
             break :blk std.fmt.bufPrint(&script_buf, "cd {s} && {s}", .{ cwd, cmd }) catch cmd;
         } else cmd;
 
         // Keep script alive for the spawn call (copied by effects).
-        var script_owned: [512]u8 = undefined;
+        var script_owned: [launch_profiles.max_script_len + 512]u8 = undefined;
         const slen = @min(script.len, script_owned.len);
         @memcpy(script_owned[0..slen], script[0..slen]);
 
@@ -3930,6 +4074,95 @@ fn refreshTasks(model: *Model) void {
         .{count},
     ) catch "Tasks detected";
     model.toast = model.task_status;
+}
+
+fn refreshLaunchProfiles(model: *Model) void {
+    model.launch_profiles = &.{};
+    model.selected_launch_profile_id = 0;
+    if (!model.workspace_from_disk) {
+        model.launch_status = "Open a workspace to detect run profiles";
+        return;
+    }
+    const registry = ensureLaunchBuffers(model) catch {
+        model.launch_status = "Run profile registry allocation failed";
+        model.toast = model.launch_status;
+        return;
+    };
+    const count = registry.load(modelIo(model), model.project_path) catch |err| {
+        registry.clear();
+        model.launch_status = switch (err) {
+            error.FileNotFound => "No .velocity/launch.json",
+            error.FileTooLarge => "Run profiles exceed the 16 KiB limit",
+            error.UnsupportedVersion => "Unsupported run profile schema version",
+            error.DebugConfigurationRejected => "Debug-shaped launch configuration rejected",
+            error.UnsafeCwd => "Run profile cwd must stay inside the workspace",
+            error.VariablePlaceholderRejected => "Run profile variable placeholders are not supported",
+            error.TooManyProfiles => "Too many run profiles (limit 12)",
+            error.TooManyEnvironmentVariables => "Too many run profile environment variables",
+            error.NameTooLong, error.CommandTooLong, error.CwdTooLong, error.EnvironmentTooLong => "A run profile field exceeds its bound",
+            error.InvalidJson, error.InvalidSchema => "Invalid .velocity/launch.json command profile schema",
+            else => "Unable to load run profiles",
+        };
+        if (err != error.FileNotFound) model.toast = model.launch_status;
+        return;
+    };
+    model.launch_profiles = registry.slice();
+    if (count > 0) model.selected_launch_profile_id = model.launch_profiles[0].id;
+    model.launch_status = std.fmt.bufPrint(
+        &model.launch_status_buf,
+        "{d} run profiles detected",
+        .{count},
+    ) catch "Run profiles detected";
+}
+
+fn selectLaunchProfile(model: *Model, profile_id: u32) void {
+    for (model.launch_profiles) |profile| {
+        if (profile.id != profile_id) continue;
+        model.selected_launch_profile_id = profile.id;
+        model.launch_status = std.fmt.bufPrint(
+            &model.launch_status_buf,
+            "Selected run profile: {s}",
+            .{profile.name},
+        ) catch "Run profile selected";
+        openBottomPanel(model, .terminal);
+        return;
+    }
+    model.toast = "Run profile not found";
+}
+
+fn runLaunchProfile(model: *Model, fx: ?*Effects) void {
+    if (model.terminal_async or (model.terminal != null and model.terminal.?.running)) {
+        model.toast = "A command is already running; use Stop Terminal/Task before starting a run profile";
+        openBottomPanel(model, .terminal);
+        return;
+    }
+    if (model.launch_profiles.len == 0) refreshLaunchProfiles(model);
+    var selected: ?LaunchProfile = null;
+    for (model.launch_profiles) |profile| {
+        if (profile.id == model.selected_launch_profile_id) {
+            selected = profile;
+            break;
+        }
+    }
+    const profile = selected orelse {
+        model.toast = "Select a run profile first";
+        openBottomPanel(model, .terminal);
+        return;
+    };
+    var script_buf: [launch_profiles.max_script_len]u8 = undefined;
+    const script = launch_profiles.buildScript(profile, ".", &script_buf) catch {
+        model.launch_status = "Run profile command exceeds the execution bound";
+        model.toast = model.launch_status;
+        return;
+    };
+    model.active_launch_name = profile.name;
+    model.launch_running = true;
+    model.launch_status = std.fmt.bufPrint(
+        &model.launch_status_buf,
+        "Running profile: {s}",
+        .{profile.name},
+    ) catch "Launch running";
+    runGovernedCommand(model, fx, script);
 }
 
 fn selectTask(model: *Model, task_id: u32) void {
@@ -4075,12 +4308,16 @@ fn runWorkspaceTests(model: *Model, fx: ?*Effects, rerun: bool) void {
 }
 
 fn mirrorTaskOutput(model: *Model, line: []const u8) void {
+    if (model.launch_running) {
+        appendOutputLabeled(model, .launch, model.active_launch_name, line);
+        return;
+    }
     if (!model.task_running and !model.test_running) return;
     for (model.workspace_tasks) |task| {
         if (task.id != model.selected_task_id) continue;
         appendOutputLabeled(
             model,
-            if (model.test_running) "test" else "task",
+            if (model.test_running) .@"test" else .task,
             task.source_label,
             line,
         );
@@ -6266,6 +6503,7 @@ fn refreshGitStatus(model: *Model) void {
     model.selected_git_entry_id = 0;
     model.governor.killFeature("feature.scm");
     model.process_count = model.governor.aliveCount();
+    appendOutputLabeled(model, .git, "git", bufs.summary);
     model.toast = bufs.summary;
 }
 

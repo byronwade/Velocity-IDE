@@ -18,6 +18,8 @@ npm run dev      # open native window (macOS primary; Linux/Windows supported by
 npm run build    # ReleaseFast binary
 npm run perf-smoke
 npm run task-smoke
+npm run test-smoke
+npm run launch-smoke
 ```
 
 Or with the CLI directly:
@@ -51,6 +53,21 @@ Select one in the Terminal bottom panel or press **Cmd+Shift+B** to run the
 current selection through the terminal and Process Governor. Task output is
 parsed into Problems when the process exits.
 
+Command run profiles are detected from `.velocity/launch.json` on workspace
+open and manual refresh. Version `1` has a bounded `profiles` array; each entry
+requires `name` and `command` and may include a workspace-relative `cwd` and
+bounded string `env` map. This format runs commands only—it is not VS Code DAP
+or debugging configuration. Debug-shaped keys, unknown fields, absolute or
+traversing `cwd`, and configuration variable placeholders are rejected.
+Terminal commands, tasks, tests, and run profiles share one governed pipe
+effect and the same **Stop Terminal/Task/Launch** control.
+
+Output retains at most 48 total lines and exposes All, Task, Test, Launch, Git,
+and System channels with source labels and per-channel clear/count controls.
+Toast behavior is unchanged, while the notification center stores at most 16
+structured, deduplicated notifications with severity/source filters and
+allowlisted Problems/reload actions.
+
 Workspace replacement lives in Search: enter search and replacement text,
 preview affected files, then confirm Apply twice. It refuses matching open tabs
 with unsaved or externally changed contents. Source Control provides per-file
@@ -63,6 +80,8 @@ whole-word, include, and exclude controls. Path patterns are comma-separated:
 suffix. Search and workspace replace use the same scope and match options.
 Editor Back/Forward keeps 32 workspace-relative path + line locations for
 explicit navigation jumps; Quick Open uses deterministic fuzzy/path ranking.
+Search case/whole-word choices and the disk poll interval are also searchable
+Settings. Polling cycles only through 500, 1000, 2000, and 5000 ms.
 
 Undo and redo histories are independently bounded per open tab and survive tab
 switches. Confirmed conflict overwrites create stable backups under

@@ -1,5 +1,5 @@
-//! Terminal Profiles feature model stub.
-//! Status: stub. Mode: core. Startup allowed: False.
+//! Terminal Profiles feature model.
+//! Status: working. Mode: core. Startup allowed: False.
 
 pub const feature_id = "feature.terminal-profiles";
 pub const mode = "core";

@@ -239,7 +239,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "workbench",
     "implementation": "native",
     "priority": "P0"
@@ -306,7 +306,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "workbench",
     "implementation": "native",
     "priority": "P1"
@@ -1712,7 +1712,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "terminal",
     "implementation": "native",
     "priority": "P1"
@@ -1916,7 +1916,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "terminal",
     "implementation": "native",
     "priority": "P1"

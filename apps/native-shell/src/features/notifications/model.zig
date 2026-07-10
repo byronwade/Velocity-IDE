@@ -1,5 +1,5 @@
-//! Notifications feature model stub.
-//! Status: stub. Mode: core. Startup allowed: False.
+//! Notifications feature model.
+//! Status: working. Mode: core. Startup allowed: False.
 
 pub const feature_id = "feature.notifications";
 pub const mode = "core";

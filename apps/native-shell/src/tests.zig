@@ -7,6 +7,7 @@ const hot_exit_store = @import("workspace/hot_exit_store.zig");
 const command_registry = @import("core/command_registry.zig");
 const keybinding_registry = @import("core/keybinding_registry.zig");
 const feature_registry = @import("core/feature_registry.zig");
+const settings_store = @import("core/settings_store.zig");
 
 const canvas = native_sdk.canvas;
 const testing = std.testing;
@@ -381,6 +382,73 @@ test "task and terminal share one governed effect budget" {
 
     model_mod.updateFx(&model, .run_selected_task, &fx);
     try testing.expectEqual(@as(usize, 1), fx.pendingSpawnCount());
+}
+
+test "workspace detects and runs bounded launch profile through shared effect" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    try testing.expectEqual(@as(usize, 1), model.launch_profiles.len);
+    try testing.expectEqualStrings("Launch Smoke", model.launch_profiles[0].name);
+
+    model_mod.updateFx(&model, .run_launch_profile, &fx);
+    try testing.expect(model.launch_running);
+    try testing.expect(std.mem.indexOf(u8, model.launch_status, "Running profile") != null);
+    try testing.expectEqual(@as(usize, 1), fx.pendingSpawnCount());
+    const record = model.governor.recordForEffect(model.terminal_effect_key).?;
+    try testing.expect(record.terminal_owned);
+    try testing.expect(record.task_owned);
+
+    model_mod.updateFx(&model, .stop_terminal_task, &fx);
+    model_mod.updateFx(&model, .{ .terminal_exit = .{
+        .key = model.terminal_effect_key,
+        .code = native_sdk.effect_error_exit_code,
+        .reason = .cancelled,
+    } }, &fx);
+    try testing.expectEqualStrings("Launch cancelled", model.launch_status);
+}
+
+test "output channel selection and clear preserve other sources" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    main.update(&model, .refresh_git);
+    try testing.expect(model.output_git_count > 0);
+    main.update(&model, .{ .select_output_channel = .git });
+    try testing.expectEqual(model.output_git_count, model.output_filtered_count);
+    for (model.output_lines) |line| {
+        try testing.expectEqual(model_mod.OutputChannel.git, line.channel);
+        try testing.expectEqualStrings("git", line.source_label);
+    }
+    main.update(&model, .clear_output);
+    try testing.expectEqual(@as(u32, 0), model.output_git_count);
+}
+
+test "toast history is structured deduplicated and safely actionable" {
+    var model = main.initialModel();
+    main.update(&model, .{ .open_project = "acme-dashboard" });
+    model.toast = "diagnostic failed";
+    model_mod.update(&model, .save_prefs);
+    model_mod.update(&model, .clear_toast);
+    model.toast = "diagnostic failed";
+    model_mod.update(&model, .save_prefs);
+    try testing.expect(model.notification_count > 0);
+    const item = model.notification_store.items[0];
+    try testing.expectEqual(@as(u32, 2), item.count);
+    try testing.expectEqualStrings("open_problems", item.action_id);
+    main.update(&model, .{ .run_notification_action = item.id });
+    try testing.expect(model.bottom_panel_tab == .problems);
+}
+
+test "settings metadata and bounded disk poll cycling reflect persisted prefs" {
+    try testing.expect(settings_store.entries.len >= 6);
+    var model = main.initialModel();
+    model.disk_poll_interval_ms = 500;
+    main.update(&model, .cycle_disk_poll_interval);
+    try testing.expectEqual(@as(u32, 1000), model.disk_poll_interval_ms);
+    try testing.expectEqual(@as(u32, 1000), model.prefs.disk_poll_interval_ms);
+    std.Io.Dir.cwd().deleteTree(std.testing.io, ".velocity") catch {};
 }
 
 test "workspace search finds auth helper" {
@@ -1842,13 +1910,13 @@ test "new prefs fields apply persist and restore recent files" {
 
     model.focus_mode = false;
     model.bottom_panel_tab = .problems;
-    model.disk_poll_interval_ms = 1250;
+    model.disk_poll_interval_ms = 1000;
     main.update(&model, .save_prefs);
     var loaded: @import("core/prefs.zig").Prefs = .{};
     loaded.load(std.testing.io);
     try testing.expect(!loaded.focus_mode);
     try testing.expectEqual(@import("core/prefs.zig").BottomPanelTab.problems, loaded.bottom_panel_tab);
-    try testing.expectEqual(@as(u32, 1250), loaded.disk_poll_interval_ms);
+    try testing.expectEqual(@as(u32, 1000), loaded.disk_poll_interval_ms);
     try testing.expectEqualStrings("src/main.zig", loaded.recentFile(0));
 }
 
@@ -2452,7 +2520,7 @@ test "workspace tests pass and mirror bounded labeled output" {
     for (model.output_lines) |line| {
         if (std.mem.indexOf(u8, line.text, "velocity-test-smoke-pass") != null) {
             mirrored = true;
-            try testing.expectEqualStrings("test", line.channel_label);
+            try testing.expectEqualStrings("Test", line.channel_label);
             try testing.expectEqualStrings("npm", line.source_label);
         }
     }

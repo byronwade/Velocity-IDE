@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "name": "Launch Smoke",
+      "command": "printf 'velocity-launch-smoke:%s\\n' \"$VELOCITY_LAUNCH_MODE\"",
+      "cwd": ".",
+      "env": {
+        "VELOCITY_LAUNCH_MODE": "profile"
+      }
+    }
+  ]
+}

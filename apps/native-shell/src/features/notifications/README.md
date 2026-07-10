@@ -2,16 +2,14 @@
 
 - **id:** `feature.notifications`
 - **mode:** `core`
-- **status:** `stub`
+- **status:** `working`
 - **implementation:** `native`
 - **startupAllowed:** `False`
 - **memoryBudgetMB:** `4`
 - **maxProcesses:** `0`
 - **activation:** `onFirstPaintDone`, `onCommand:notifications.toggle`
 
-## Rules
-
-- Lazy by default unless `startupAllowed`.
-- Child processes only via Process Governor.
-- Feature is killable via Feature Toggle Matrix.
-- See `docs/velocity/14-feature-parity-matrix.md`.
+Toast UX remains transient while every new toast is projected into a bounded
+structured store. Entries carry severity, source, dedupe count, and only
+allowlisted action IDs (`open_problems` or `reload_workspace`). The accessible
+notification center filters by severity and source without allocating.

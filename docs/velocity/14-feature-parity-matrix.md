@@ -20,10 +20,10 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Tabs | `feature.tabs` | core | P0 | native | True | 4 | 0 | low | stub | docs/11 + contrib | |
 | Breadcrumbs | `feature.breadcrumbs` | core | P1 | native | False | 2 | 0 | low | working | clickable path segments + 32-entry path/line Back/Forward history | |
 | Layout | `feature.layout` | core | P0 | native | True | 2 | 0 | low | stub | docs/11 + contrib | |
-| Settings | `feature.settings` | core | P0 | native | False | 8 | 0 | low | stub | docs/11 + contrib | |
+| Settings | `feature.settings` | core | P0 | native | False | 8 | 0 | low | working | searchable persisted prefs + bounded poll interval | |
 | Keybindings | `feature.keybindings` | core | P0 | native | True | 2 | 0 | low | stub | docs/11 + contrib | |
 | Themes | `feature.themes` | core | P0 | native | True | 2 | 0 | low | stub | docs/11 + contrib | |
-| Notifications | `feature.notifications` | core | P1 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
+| Notifications | `feature.notifications` | core | P1 | native | False | 4 | 0 | low | working | bounded structured/deduped center + safe actions | |
 | Context Menus | `feature.context-menus` | core | P1 | native | False | 2 | 0 | low | stub | docs/11 + contrib | |
 | Hover | `feature.hover` | core | P1 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
 | Dialogs | `feature.dialogs` | core | P1 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
@@ -85,7 +85,7 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Symbol Search | `feature.symbol-search` | dev | P1 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Command Search | `feature.command-search` | core | P0 | native | False | 4 | 0 | low | stub | docs/11 + contrib | |
 | Terminal | `feature.terminal` | core | P0 | process | False | 32 | 1 | high | scaffold / PTY blocked by SDK | pipe runner works; PTY protocol in-memory only | cross-platform PTY streams, resize, cancellation/process-tree lifecycle |
-| Terminal Profiles | `feature.terminal-profiles` | core | P1 | native | False | 4 | 0 | high | stub | docs/11 + contrib | |
+| Terminal Profiles | `feature.terminal-profiles` | core | P1 | native | False | 4 | 0 | high | working | bounded command-only `.velocity/launch.json`; shared governor effect | |
 | Terminal Tabs | `feature.terminal-tabs` | core | P1 | native | False | 4 | 0 | high | stub | docs/11 + contrib | |
 | Terminal Splits | `feature.terminal-splits` | core | P2 | native | False | 4 | 0 | high | stub | docs/11 + contrib | |
 | Terminal Links | `feature.terminal-links` | core | P1 | native | False | 4 | 0 | high | stub | docs/11 + contrib | |
@@ -94,7 +94,7 @@ VS Code feature → Velocity module → mode → priority → native/WebView/pro
 | Task Runner | `feature.task-runner` | dev | P1 | process | False | 16 | 1 | high | working | npm/tasks.json/Make via governed terminal + Stop + diagnostics | |
 | Task Detector | `feature.task-detector` | dev | P2 | native | False | 8 | 0 | high | working | bounded npm, tasks.json shell/process, simple Make targets; deterministic precedence | |
 | Problem Matchers | `feature.problem-matchers` | dev | P1 | native | False | 8 | 0 | high | working | bounded TS/Zig/GCC + Vitest/Jest assertion locations | |
-| Output Panel | `feature.output-panel` | dev | P1 | native | False | 16 | 0 | high | working | bounded labeled task/test terminal mirror + status lines | |
+| Output Panel | `feature.output-panel` | dev | P1 | native | False | 16 | 0 | high | working | bounded All/Task/Test/Launch/Git/System registry | |
 | SCM Core | `feature.scm-core` | dev | P0 | native | False | 16 | 0 | low | stub | docs/11 + contrib | |
 | Git Provider | `feature.git-provider` | dev | P0 | process | False | 24 | 1 | low | stub | docs/11 + contrib | |
 | Git Status | `feature.git-status` | dev | P0 | process | False | 8 | 1 | low | stub | docs/11 + contrib | |

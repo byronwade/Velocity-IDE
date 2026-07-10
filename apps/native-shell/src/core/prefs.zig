@@ -10,6 +10,7 @@ pub const max_path: usize = 240;
 pub const max_prefs_bytes: usize = 8192;
 pub const prefs_rel_path = ".velocity/prefs.txt";
 pub const default_disk_poll_interval_ms: u32 = 2000;
+pub const disk_poll_intervals_ms = [_]u32{ 500, 1000, 2000, 5000 };
 
 pub const BottomPanelTab = enum {
     terminal,
@@ -177,6 +178,13 @@ pub const Prefs = struct {
         self.last_path = "";
     }
 
+    pub fn isDiskPollIntervalAllowed(value: u32) bool {
+        for (disk_poll_intervals_ms) |allowed| {
+            if (value == allowed) return true;
+        }
+        return false;
+    }
+
     pub fn load(self: *Prefs, io: std.Io) void {
         self.* = .{};
         self.setTheme("dark");
@@ -217,7 +225,7 @@ pub const Prefs = struct {
             }
             if (std.mem.eql(u8, key, "disk_poll_interval_ms")) {
                 if (std.fmt.parseInt(u32, val, 10)) |n| {
-                    if (n > 0) self.disk_poll_interval_ms = n;
+                    if (isDiskPollIntervalAllowed(n)) self.disk_poll_interval_ms = n;
                 } else |_| {}
             }
             if (std.mem.eql(u8, key, "word_wrap")) self.word_wrap = std.mem.eql(u8, val, "1");
@@ -315,7 +323,7 @@ test "prefs roundtrip theme and recent" {
     p.focus_mode = true;
     p.bottom_panel_open = true;
     p.bottom_panel_tab = .problems;
-    p.disk_poll_interval_ms = 750;
+    p.disk_poll_interval_ms = 1000;
     p.word_wrap = true;
     p.trim_trailing_ws = true;
     p.insert_final_newline = false;
@@ -338,7 +346,7 @@ test "prefs roundtrip theme and recent" {
     try std.testing.expect(p2.focus_mode);
     try std.testing.expect(p2.bottom_panel_open);
     try std.testing.expectEqual(BottomPanelTab.problems, p2.bottom_panel_tab);
-    try std.testing.expectEqual(@as(u32, 750), p2.disk_poll_interval_ms);
+    try std.testing.expectEqual(@as(u32, 1000), p2.disk_poll_interval_ms);
     try std.testing.expect(p2.word_wrap);
     try std.testing.expect(p2.trim_trailing_ws);
     try std.testing.expect(!p2.insert_final_newline);
