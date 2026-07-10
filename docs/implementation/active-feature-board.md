@@ -46,14 +46,13 @@ today; LSP + PTY feasible via governed sidecar broker; no SDK upgrade needed).
 
 | Rank | Item | Class | Dependency |
 |---|---|---|---|
-| 1 | LSP broker productionization: `--liveness=http` heartbeat (SDK closes child stdin), TERM→KILL escalation, then governed app integration + didOpen/diagnostics vertical | SPIKE→READY | sidecar spike (done) |
-| 2 | Command surface completion (registry coverage + fuzzy command search) | PARTIAL | none |
-| 3 | Git: stage/unstage hunks, guarded discard-file confirm flow, stash | READY | branch slice (done) |
-| 4 | Workspace Trust Plus (granular read/write/run/net) | READY | none |
-| 5 | PTY vertical slice via sidecar broker (Linux openpty first) | SPIKE | broker (proven) |
-| 6 | File watcher spike (SDK FS events absent → tiered bounded polling exists; formalize) | SPIKE | none |
-| 7 | Language registry (extensions/comments/brackets per language) | READY | none |
-| 8 | Editor island WebView spike (web_panes + bridge invoke; focus/IME on WebKitGTK) | SPIKE | none |
+| 1 | Git hunk staging: unified-diff patch builder as standalone lane module (bounded parse → single-hunk patch → git apply --cached), then SCM UI | READY | unified_diff.zig exists |
+| 2 | Workspace Trust Plus (granular read/write/run/net) | READY | needs per-workspace persistence design (prefs are app-global today) |
+| 3 | File watcher formalization (SDK FS events absent → tiered bounded polling; document + widen coverage) | SPIKE | none |
+| 4 | LSP capabilities round 2: completion, hover, definition through the proven session | READY | LSP vertical (done) |
+| 5 | Terminal round 2: resize wiring, per-command exit codes (OSC-133), ANSI rendering | PARTIAL | interactive vertical (done) |
+| 6 | Editor island WebView spike (web_panes + bridge invoke; focus/IME on WebKitGTK) | SPIKE | none |
+| 7 | Multibuffer data model (read-only slice over search/diagnostic results) | READY | none |
 
 ## Blocked
 
