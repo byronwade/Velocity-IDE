@@ -166,9 +166,11 @@ if [ -n "${REAL_LSP:-}" ]; then
   done
   RPORT=$(grep -o '"port":[0-9]*' "$OUT/real.ndjson" | head -1 | cut -d: -f2)
   RTOKEN=$(grep -o '"token":"[a-f0-9]*"' "$OUT/real.ndjson" | head -1 | cut -d'"' -f4)
+  INIT_OPTS="${REAL_LSP_INIT_OPTS:-}"
+  [ -n "$INIT_OPTS" ] || INIT_OPTS='{}'
   curl -s -o /dev/null -X POST "http://127.0.0.1:$RPORT/message" \
     -H "X-Broker-Token: $RTOKEN" \
-    --data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"processId\":null,\"rootUri\":\"file://$PWD\",\"capabilities\":{},\"initializationOptions\":${REAL_LSP_INIT_OPTS:-{}}}}"
+    --data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"processId\":null,\"rootUri\":\"file://$PWD\",\"capabilities\":{},\"initializationOptions\":$INIT_OPTS}}"
   deadline=$((SECONDS + 20))
   until grep -q '"id":1' "$OUT/real.ndjson" 2>/dev/null; do
     [ $SECONDS -lt $deadline ] || break

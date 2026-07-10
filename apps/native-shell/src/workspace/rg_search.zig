@@ -813,7 +813,15 @@ test "parser handles empty input and reuse via clear" {
 // acme-dashboard fixture, same assumptions as search.zig / git_status.zig)
 // ---------------------------------------------------------------------------
 
+/// End-to-end tests spawn the real binary; environments without ripgrep
+/// (e.g. stock CI runners) skip them honestly. Unit tests always run.
+fn skipUnlessRipgrep() !void {
+    var probe: Probe = .{};
+    if (probe.ensure(std.testing.io) != .available) return error.SkipZigTest;
+}
+
 test "probe detects installed ripgrep once and caches the verdict" {
+    try skipUnlessRipgrep();
     var probe: Probe = .{};
     try std.testing.expectEqual(Availability.unknown, probe.state);
     try std.testing.expectEqual(Availability.available, probe.ensure(std.testing.io));
@@ -832,6 +840,7 @@ test "probe reports missing binary as unavailable without crashing" {
 }
 
 test "end-to-end literal search on fixture finds createSession with column" {
+    try skipUnlessRipgrep();
     const results = try std.testing.allocator.create(Results);
     defer std.testing.allocator.destroy(results);
     results.* = .{};
@@ -852,6 +861,7 @@ test "end-to-end literal search on fixture finds createSession with column" {
 }
 
 test "end-to-end search honors exclude glob and reports no matches" {
+    try skipUnlessRipgrep();
     const results = try std.testing.allocator.create(Results);
     defer std.testing.allocator.destroy(results);
     results.* = .{};
@@ -879,6 +889,7 @@ test "end-to-end guards: no workspace, unavailable rg, empty query" {
         runSearch(results, &missing_probe, std.testing.io, "fixtures/acme-dashboard", "q", .{}),
     );
 
+    try skipUnlessRipgrep();
     try std.testing.expectEqualStrings(
         "empty query",
         runSearch(results, &probe, std.testing.io, "fixtures/acme-dashboard", "   ", .{}),
@@ -886,6 +897,7 @@ test "end-to-end guards: no workspace, unavailable rg, empty query" {
 }
 
 test "end-to-end whole word and case sensitivity change results" {
+    try skipUnlessRipgrep();
     const results = try std.testing.allocator.create(Results);
     defer std.testing.allocator.destroy(results);
     results.* = .{};
