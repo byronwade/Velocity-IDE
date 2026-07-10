@@ -2,18 +2,16 @@
 //! Whole-document operations (no selection API yet).
 
 const std = @import("std");
+const scanner = @import("scanner.zig");
+const language_registry = @import("../core/language_registry.zig");
 
-pub const max_out = 16 * 1024;
+/// Transforms must be able to hold any editable document (tracks the editor
+/// ceiling, not a private cap - a comment toggle on a 100 KiB file is
+/// ordinary work, not an overflow).
+pub const max_out = scanner.max_file_bytes;
 
 fn commentPrefixFor(path: []const u8) []const u8 {
-    if (std.mem.endsWith(u8, path, ".py") or std.mem.endsWith(u8, path, ".sh") or std.mem.endsWith(u8, path, ".yaml") or std.mem.endsWith(u8, path, ".yml") or std.mem.endsWith(u8, path, ".toml")) {
-        return "# ";
-    }
-    if (std.mem.endsWith(u8, path, ".html") or std.mem.endsWith(u8, path, ".xml") or std.mem.endsWith(u8, path, ".svg")) {
-        return "<!-- ";
-    }
-    // Default C-like
-    return "// ";
+    return language_registry.commentPrefixForPath(path);
 }
 
 fn lineIsCommented(line: []const u8, prefix: []const u8) bool {
@@ -1107,4 +1105,27 @@ test "eol convert and duplicate path" {
     const formatted = formatDocument("hi  \n", &out).?;
     try std.testing.expectEqualStrings("hi\n", out[0..formatted]);
     try std.testing.expect(findSymbolLine("foo\n  export function bar()\n", "bar") == 2);
+}
+
+test "transforms handle documents at the full editor ceiling" {
+    // A ~100 KiB document (far beyond the old private 16 KiB transform cap)
+    // must round-trip a comment toggle; buffers scale with max_out and are
+    // heap-resident in the test because they track the editor ceiling.
+    const lines = 4000;
+    const line = "const value = compute(input);\n";
+    const doc = try std.testing.allocator.alloc(u8, lines * line.len);
+    defer std.testing.allocator.free(doc);
+    var off: usize = 0;
+    while (off < doc.len) : (off += line.len) @memcpy(doc[off..][0..line.len], line);
+
+    const out = try std.testing.allocator.alloc(u8, max_out);
+    defer std.testing.allocator.free(out);
+    const commented_len = toggleLineComments(doc, "src/big.zig", out) orelse return error.TestUnexpectedResult;
+    try std.testing.expect(commented_len > doc.len);
+    try std.testing.expect(std.mem.startsWith(u8, out[0..commented_len], "// const value"));
+
+    const back = try std.testing.allocator.alloc(u8, max_out);
+    defer std.testing.allocator.free(back);
+    const restored_len = toggleLineComments(out[0..commented_len], "src/big.zig", back) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualSlices(u8, doc, back[0..restored_len]);
 }

@@ -1,8 +1,10 @@
 //! In-document replace helpers (MVP).
 
 const std = @import("std");
+const scanner = @import("scanner.zig");
 
-pub const max_out = 16 * 1024;
+// Tracks the editor ceiling so in-document replace works on any open file.
+pub const max_out = scanner.max_file_bytes;
 
 pub const ReplaceResult = struct {
     count: u32 = 0,

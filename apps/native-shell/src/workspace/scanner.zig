@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const Io = std.Io;
+const language_registry = @import("../core/language_registry.zig");
 
 pub const max_nodes: usize = 256;
 pub const max_depth: u8 = 8;
@@ -398,19 +399,7 @@ pub fn joinRootRel(root: []const u8, rel: []const u8, out: []u8) ![]const u8 {
 }
 
 pub fn languageForPath(path: []const u8) []const u8 {
-    if (std.mem.endsWith(u8, path, ".tsx")) return "TypeScript React";
-    if (std.mem.endsWith(u8, path, ".ts")) return "TypeScript";
-    if (std.mem.endsWith(u8, path, ".jsx")) return "JavaScript React";
-    if (std.mem.endsWith(u8, path, ".js")) return "JavaScript";
-    if (std.mem.endsWith(u8, path, ".json")) return "JSON";
-    if (std.mem.endsWith(u8, path, ".md")) return "Markdown";
-    if (std.mem.endsWith(u8, path, ".css")) return "CSS";
-    if (std.mem.endsWith(u8, path, ".html")) return "HTML";
-    if (std.mem.endsWith(u8, path, ".zig")) return "Zig";
-    if (std.mem.endsWith(u8, path, ".rs")) return "Rust";
-    if (std.mem.endsWith(u8, path, ".py")) return "Python";
-    if (std.mem.endsWith(u8, path, ".go")) return "Go";
-    return "Plain Text";
+    return language_registry.displayNameForPath(path);
 }
 
 pub fn baseName(path: []const u8) []const u8 {
