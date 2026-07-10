@@ -201,17 +201,24 @@
         <!-- Center + agent -->
         <column grow="1">
           <if test="{showIdeChrome}">
-            <!-- Tab strip: navigation + tabs + agent toggle -->
+            <!-- Tab strip: icon-forward nav + flat per-file tabs + agent toggle.
+                 Each tab is its own flat cell (active = selected fill), carries a
+                 dirty dot when unsaved, and its own close affordance. -->
             <row height="34" gap="2" padding="4" background="surface" cross="center">
-              <button size="sm" variant="ghost" icon="chevron-left" on-press="navigate_back" label="{navigationBackLabel}">Back</button>
-              <button size="sm" variant="ghost" icon="chevron-right" on-press="navigate_forward" label="{navigationForwardLabel}">Forward</button>
+              <button size="sm" variant="ghost" icon="chevron-left" on-press="navigate_back" label="{navigationBackLabel}" />
+              <button size="sm" variant="ghost" icon="chevron-right" on-press="navigate_forward" label="{navigationForwardLabel}" />
               <spacer width="4" />
-              <tabs>
+              <row gap="2" grow="1" cross="center">
                 <for each="open_tabs" key="id" as="t">
-                  <button size="sm" selected="{t.id == active_tab_id}" on-press="select_tab:{t.id}">{t.title}</button>
+                  <row gap="2" cross="center">
+                    <button size="sm" selected="{t.id == active_tab_id}" on-press="select_tab:{t.id}">{t.title}</button>
+                    <if test="{t.dirty}">
+                      <text size="sm" foreground="warning">●</text>
+                    </if>
+                    <button size="sm" variant="ghost" icon="x" on-press="close_tab:{t.id}" label="Close {t.title}" />
+                  </row>
                 </for>
-              </tabs>
-              <button size="sm" variant="ghost" icon="x" on-press="close_active_tab" label="Close tab" />
+              </row>
               <spacer grow="1" />
               <button size="sm" variant="ghost" icon="send" on-press="toggle_agent_panel">{agentPanelLabel}</button>
             </row>
@@ -229,7 +236,12 @@
                   <if test="{hasPeek}">
                     <badge variant="secondary">{editorFocusLabel}</badge>
                   </if>
-                  <badge variant="secondary">{dirtyLabel}</badge>
+                  <if test="{documentDirty}">
+                    <row gap="4" cross="center">
+                      <text size="sm" foreground="warning">●</text>
+                      <text size="sm" foreground="text_muted">Unsaved</text>
+                    </row>
+                  </if>
                 </row>
                 <if test="{showDiskConflict}">
                   <row gap="6" padding="8" cross="center" background="warning" label="External file change conflict">

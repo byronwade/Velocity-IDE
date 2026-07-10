@@ -358,7 +358,7 @@ pub const Msg = union(enum) {
         "open_symbol_palette",
         "open_def_hit",
         "open_tab",
-        "close_tab",
+        "close_active_tab",
         "open_settings",
         "submit_open_path",
         "delete_selected_file",
@@ -1397,6 +1397,10 @@ pub const Model = struct {
 
     pub fn dirtyLabel(model: *const Model) []const u8 {
         return if (model.document_dirty) "dirty" else "clean";
+    }
+
+    pub fn documentDirty(model: *const Model) bool {
+        return model.document_dirty;
     }
 
     pub fn showDiskConflict(model: *const Model) bool {
