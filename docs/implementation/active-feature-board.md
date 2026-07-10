@@ -31,6 +31,10 @@ today; LSP + PTY feasible via governed sidecar broker; no SDK upgrade needed).
 | W4 **operational LSP vertical**: Settings toggle (default off) → governed broker spawn on supported-file open → initialize/didOpen/didChange/didSave/didClose → publishDiagnostics in the Problems panel; heartbeat liveness, TERM→KILL escalation, honest unavailable states. Two runtime-Io defects (PATH_MAX realpath contract) found by driving the real app and fixed | LSP lane + orchestrator | 348/348 tests; lsp-smoke PASS end-to-end with real typescript-language-server (SKIPs honestly without it) | green |
 | W11 fuzzy command search (subsequence ranking, 'gts' → Go to Symbol) | orchestrator | registry + app tests | green |
 | W3 language registry (display/LSP ids/comments/server candidates); transform caps scaled to editor ceiling (defect fix) | orchestrator | registry tests + 100 KiB toggle round-trip | green |
+| W9b git stash (push/list/apply/pop/drop, dirty-editor gate, rescan) | orchestrator | real-repo round-trip test | green |
+| W8 PTY spike: real openpty broker, interactive echo, resize, session-sweep reaping | terminal lane | 41 unit tests + pty-spike PASS | proven |
+| W8 **interactive terminal vertical**: explicit switch → governed PTY broker → persistent shell state, ANSI-stripped bounded ring, exit codes, Stop/Restart, clean teardown; pipe runner stays default/fallback | terminal lane + orchestrator | 400/400 tests; pty-terminal-smoke PASS (state persistence proven); terminal-smoke green | green |
+| CI: smoke (lsp) suite green after build-order, version-pin, torn-read fixes | orchestrator | CI run on latest completed head | green |
 
 ## Implementing
 
