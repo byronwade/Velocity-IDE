@@ -44,6 +44,23 @@ fn expectByText(widget: canvas.Widget, kind: canvas.WidgetKind, text: []const u8
     };
 }
 
+fn findByLabel(widget: canvas.Widget, kind: canvas.WidgetKind, label: []const u8) ?canvas.Widget {
+    if (widget.kind == kind and std.mem.eql(u8, widget.semantics.label, label)) return widget;
+    for (widget.children) |child| {
+        if (findByLabel(child, kind, label)) |found| return found;
+    }
+    return null;
+}
+
+/// Assert an accessible name is present on a control. Icon-only controls carry
+/// no visible text, so this matches the widget's semantics label instead.
+fn expectByLabel(widget: canvas.Widget, kind: canvas.WidgetKind, label: []const u8) !canvas.Widget {
+    return findByLabel(widget, kind, label) orelse {
+        std.debug.print("no {t} with accessible name \"{s}\" in the view\n", .{ kind, label });
+        return error.WidgetNotFound;
+    };
+}
+
 fn shortcutMatchesHint(shortcut: native_sdk.Shortcut, hint: []const u8) bool {
     var primary = false;
     var control = false;
@@ -556,8 +573,10 @@ test "editor chrome exposes accessible navigation controls" {
     main.update(&model, .{ .open_project = "acme-dashboard" });
     main.update(&model, .{ .select_activity = .search });
     const tree = try buildTree(arena_state.allocator(), &model);
-    _ = try expectByText(tree.root, .button, "Back");
-    _ = try expectByText(tree.root, .button, "Forward");
+    // Back/Forward are icon-only (chevron) controls in the Precision Workbench
+    // chrome; they remain accessible via their semantics label.
+    _ = try expectByLabel(tree.root, .button, "Navigate Back");
+    _ = try expectByLabel(tree.root, .button, "Navigate Forward");
     _ = try expectByText(tree.root, .button, "Whole Word");
 }
 
