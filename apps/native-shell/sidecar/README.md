@@ -1,11 +1,23 @@
-# LSP Sidecar Broker
+# Sidecar Brokers (LSP + PTY)
 
-Status: production-shaped transport, proven end-to-end by `./spike.sh`
-(unit tests + fake server + kill-escalation scenarios + real
-`typescript-language-server` handshake through the heartbeat-mode
-broker). The pure client-side state machine the app drives lives at
-`../src/lsp/broker_transport.zig`; only the effect wiring in
-`app_model.zig` remains (checklist below).
+Two sibling binaries share one architecture (and most plumbing): the
+app spawns exactly one governed broker child per language server / per
+terminal; the broker owns the real child and re-frames its traffic
+into the SDK's two legal channels (stdout NDJSON lines in, localhost
+token-authed POSTs out).
+
+**LSP broker** status: production-shaped transport, proven end-to-end
+by `./spike.sh` (unit tests + fake server + kill-escalation scenarios
++ real `typescript-language-server` handshake through the
+heartbeat-mode broker). The pure client-side state machine the app
+drives lives at `../src/lsp/broker_transport.zig`; only the effect
+wiring in `app_model.zig` remains (checklist below).
+
+**PTY broker** status: proven end-to-end on Linux by `./pty-spike.sh`
+(real `/dev/pts/N` interactive bash: input echo round trip, resize via
+TIOCSWINSZ, session-tree reaping, natural-exit reporting). Pure app
+side: `../src/terminal/pty_transport.zig`. See "PTY broker" below for
+protocol and platform gates.
 
 ## Why this exists
 
@@ -33,10 +45,13 @@ language session — this broker — and the broker owns the server.
 
 | File | Purpose |
 |---|---|
-| `lsp_broker.zig` | The broker. Single file, `std` only, Zig 0.16. Unit tests inline (`zig test lsp_broker.zig`, 22 tests). |
+| `lsp_broker.zig` | The LSP broker. Single file, `std` only, Zig 0.16. Unit tests inline (`zig test lsp_broker.zig`, 22 tests). Also exports the shared broker plumbing (HTTP head parsing, token compare, raw-fd I/O, clock, kill escalation, death backstop) that `pty_broker.zig` imports. |
+| `pty_broker.zig` | The PTY broker (separate binary; imports the shared plumbing above). Unit tests inline (`zig test pty_broker.zig`, 16 tests + the imported 22). |
 | `../src/lsp/broker_transport.zig` | Pure client state machine for the app: NDJSON event parsing, chunk (re)assembly, POST planning, LSP session/lifecycle bookkeeping, typed v1 extract/build. `zig test broker_transport.zig`, 49 tests (+3 via `jsonrpc.zig`). No SDK calls, no I/O. |
+| `../src/terminal/pty_transport.zig` | Pure client state machine for the terminal: PTY NDJSON event parsing, bounded base64 decode into a caller buffer, `/input`/`/resize` body builders (`InputPlan` chunking for large pastes), starting/running/exited lifecycle. `zig test pty_transport.zig`, 25 tests. No SDK calls, no I/O. |
 | `fake_lsp.zig` | Tiny Content-Length stdio server for the e2e proof (answers `initialize`, echoes `didOpen` as diagnostics). |
-| `spike.sh` | Builds both, runs the transport + lifecycle scenarios end-to-end, prints `RESULT: PASS/FAIL`. |
+| `spike.sh` | LSP e2e: builds, runs the transport + lifecycle scenarios, prints `RESULT: PASS/FAIL`. |
+| `pty-spike.sh` | PTY e2e: real interactive bash on a real PTY through the broker, prints `RESULT: PASS/FAIL`. |
 
 Build (toolchain already present in the repo image):
 
