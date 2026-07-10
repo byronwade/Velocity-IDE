@@ -771,6 +771,7 @@ pub const Model = struct {
         "perf_value_storage",
         "perf_value_lens",
         "perf_row_count",
+        "show_perf_hud",
         "isIde",
         "isPerf",
         "activeTabTitle",
