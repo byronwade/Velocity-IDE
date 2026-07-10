@@ -1,9 +1,8 @@
 //! Velocity design tokens.
-//! Warm, clean, editor-first palette — a hand-tuned neutral foundation with a
-//! subtle warm undertone (stone/sand rather than cold zinc), hairline borders,
-//! monochrome primary, and a single restrained amber signal for focus and
-//! selection. Original palette; no third-party brand assets or proprietary
-//! fonts.
+//! Precise, app-first palette — a neutral graphite foundation (cool, not warm)
+//! with hairline borders and a single restrained indigo accent for primary
+//! actions, focus, and selection. Tuned for a quiet, Linear-like desktop feel.
+//! Original palette; no third-party brand assets or proprietary fonts.
 
 const native_sdk = @import("native_sdk");
 const canvas = native_sdk.canvas;
@@ -11,56 +10,56 @@ const Color = canvas.Color;
 
 pub const ThemePreference = enum { dark, light, high_contrast };
 
-/// Dark canvas: warm near-black ("ink") with gently lifted surfaces for a
-/// Cursor-like sense of depth, kept warm so it never reads blue or clinical.
+/// Dark canvas: neutral graphite near-black with gently lifted surfaces and a
+/// restrained indigo accent. Reads precise and app-like, never warm/decorative.
 pub const dark_colors = canvas.ColorTokens{
-    .background = Color.rgb8(13, 12, 11),
-    .surface = Color.rgb8(20, 18, 16),
-    .surface_subtle = Color.rgb8(28, 25, 23),
-    .surface_pressed = Color.rgba8(255, 246, 235, 20),
-    .text = Color.rgb8(247, 244, 239),
-    .text_muted = Color.rgb8(151, 143, 133),
-    .border = Color.rgba8(255, 244, 230, 20),
-    .accent = Color.rgb8(246, 243, 238),
-    .accent_text = Color.rgb8(20, 17, 14),
-    .destructive = Color.rgb8(233, 92, 78),
-    .destructive_text = Color.rgb8(252, 248, 244),
-    .success = Color.rgb8(78, 190, 130),
-    .success_text = Color.rgb8(13, 12, 11),
+    .background = Color.rgb8(14, 14, 17),
+    .surface = Color.rgb8(21, 21, 25),
+    .surface_subtle = Color.rgb8(30, 30, 35),
+    .surface_pressed = Color.rgba8(255, 255, 255, 18),
+    .text = Color.rgb8(236, 237, 241),
+    .text_muted = Color.rgb8(138, 139, 150),
+    .border = Color.rgba8(255, 255, 255, 20),
+    .accent = Color.rgb8(94, 106, 210),
+    .accent_text = Color.rgb8(247, 248, 252),
+    .destructive = Color.rgb8(233, 90, 78),
+    .destructive_text = Color.rgb8(250, 250, 252),
+    .success = Color.rgb8(74, 190, 140),
+    .success_text = Color.rgb8(14, 14, 17),
     .warning = Color.rgb8(224, 158, 82),
-    .warning_text = Color.rgb8(24, 18, 12),
-    .info = Color.rgb8(126, 164, 244),
-    .info_text = Color.rgb8(13, 12, 11),
-    .focus_ring = Color.rgb8(219, 170, 108),
-    .shadow = Color.rgba8(0, 0, 0, 170),
-    .scrim = Color.rgba8(10, 8, 6, 178),
-    .disabled = Color.rgb8(48, 44, 40),
+    .warning_text = Color.rgb8(22, 18, 12),
+    .info = Color.rgb8(120, 148, 240),
+    .info_text = Color.rgb8(14, 14, 17),
+    .focus_ring = Color.rgb8(124, 136, 235),
+    .shadow = Color.rgba8(0, 0, 0, 180),
+    .scrim = Color.rgba8(6, 6, 9, 184),
+    .disabled = Color.rgb8(44, 44, 50),
 };
 
-/// Light canvas: warm paper — an off-white background with warm ink text,
-/// soft warm shadows, and the same amber signal for continuity with dark.
+/// Light canvas: neutral off-white with graphite text, a cool hairline, and
+/// the same indigo accent for continuity with the dark theme.
 pub const light_colors = canvas.ColorTokens{
-    .background = Color.rgb8(250, 249, 246),
-    .surface = Color.rgb8(255, 255, 253),
-    .surface_subtle = Color.rgb8(244, 242, 237),
-    .surface_pressed = Color.rgb8(232, 228, 220),
-    .text = Color.rgb8(28, 25, 22),
-    .text_muted = Color.rgb8(122, 114, 104),
-    .border = Color.rgb8(232, 227, 218),
-    .accent = Color.rgb8(28, 25, 22),
-    .accent_text = Color.rgb8(250, 249, 246),
-    .destructive = Color.rgb8(206, 68, 56),
-    .destructive_text = Color.rgb8(255, 252, 249),
-    .success = Color.rgb8(28, 148, 98),
-    .success_text = Color.rgb8(255, 255, 253),
-    .warning = Color.rgb8(190, 122, 38),
-    .warning_text = Color.rgb8(255, 253, 249),
-    .info = Color.rgb8(44, 98, 214),
-    .info_text = Color.rgb8(255, 255, 253),
-    .focus_ring = Color.rgb8(198, 146, 84),
-    .shadow = Color.rgba8(60, 50, 38, 28),
-    .scrim = Color.rgba8(40, 32, 24, 44),
-    .disabled = Color.rgb8(240, 237, 230),
+    .background = Color.rgb8(251, 251, 252),
+    .surface = Color.rgb8(255, 255, 255),
+    .surface_subtle = Color.rgb8(244, 244, 246),
+    .surface_pressed = Color.rgb8(229, 229, 233),
+    .text = Color.rgb8(24, 24, 28),
+    .text_muted = Color.rgb8(112, 113, 122),
+    .border = Color.rgb8(228, 228, 232),
+    .accent = Color.rgb8(78, 90, 196),
+    .accent_text = Color.rgb8(251, 251, 252),
+    .destructive = Color.rgb8(204, 64, 52),
+    .destructive_text = Color.rgb8(255, 255, 255),
+    .success = Color.rgb8(24, 146, 100),
+    .success_text = Color.rgb8(255, 255, 255),
+    .warning = Color.rgb8(184, 120, 36),
+    .warning_text = Color.rgb8(255, 255, 255),
+    .info = Color.rgb8(48, 92, 208),
+    .info_text = Color.rgb8(255, 255, 255),
+    .focus_ring = Color.rgb8(108, 120, 224),
+    .shadow = Color.rgba8(20, 22, 40, 26),
+    .scrim = Color.rgba8(18, 20, 32, 44),
+    .disabled = Color.rgb8(238, 238, 241),
 };
 
 pub fn tokens(preference: ThemePreference, high_contrast: bool, reduce_motion: bool) canvas.DesignTokens {

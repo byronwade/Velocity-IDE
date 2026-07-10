@@ -517,34 +517,75 @@
                   <column gap="20" width="760">
                   <text-field text="{settingsQueryText}" placeholder="Search settings..." on-input="update_settings_query" label="Settings search" />
                   <if test="{showSettingsAppearance}">
-                    <column gap="8" cross="start">
+                    <column gap="10">
                       <text size="sm" foreground="text_muted">Appearance</text>
-                      <button variant="secondary" on-press="switch_theme" label="Change color theme">Color theme: {themeLabel}</button>
-                      <text size="sm" foreground="text_muted">Window: {windowStatusLabel}</text>
+                      <row cross="center" gap="8">
+                        <text grow="1">Color theme</text>
+                        <select text="{themeLabel}" on-press="switch_theme" label="Change color theme" />
+                      </row>
+                      <row cross="center" gap="8">
+                        <text grow="1">Window</text>
+                        <text size="sm" foreground="text_muted">{windowStatusLabel}</text>
+                      </row>
                     </column>
                     <separator />
                   </if>
                   <if test="{showSettingsEditor}">
-                    <column gap="8" cross="start">
+                    <column gap="10">
                       <text size="sm" foreground="text_muted">Editor</text>
-                      <button variant="ghost" on-press="toggle_find_case" label="Toggle case-sensitive find">{findCaseLabel}</button>
-                      <button variant="ghost" on-press="toggle_trim_trailing" label="Toggle trimming trailing whitespace">{trimTrailingLabel}</button>
-                      <button variant="ghost" on-press="toggle_final_newline" label="Toggle final newline insertion">{finalNewlineLabel}</button>
-                      <button variant="ghost" on-press="cycle_indent_size" label="Change editor indentation size">{indentSizeLabel}</button>
-                      <button variant="ghost" on-press="toggle_word_wrap" label="Toggle editor word wrap">{wordWrapLabel}</button>
+                      <row cross="center" gap="8">
+                        <text grow="1">Case-sensitive find</text>
+                        <switch checked="{find_case_sensitive}" on-toggle="toggle_find_case" label="Case-sensitive find" />
+                      </row>
+                      <row cross="center" gap="8">
+                        <text grow="1">Trim trailing whitespace</text>
+                        <switch checked="{trim_trailing_ws}" on-toggle="toggle_trim_trailing" label="Trim trailing whitespace" />
+                      </row>
+                      <row cross="center" gap="8">
+                        <text grow="1">Insert final newline</text>
+                        <switch checked="{insert_final_newline}" on-toggle="toggle_final_newline" label="Insert final newline" />
+                      </row>
+                      <row cross="center" gap="8">
+                        <text grow="1">Editor indentation</text>
+                        <select text="{indentSizeValue}" on-press="cycle_indent_size" label="Change editor indentation size" />
+                      </row>
+                      <row cross="center" gap="8">
+                        <text grow="1">Word wrap</text>
+                        <switch checked="{word_wrap}" on-toggle="toggle_word_wrap" label="Word wrap" />
+                      </row>
                     </column>
                     <separator />
                   </if>
                   <if test="{showSettingsWorkspace}">
-                    <column gap="8" cross="start">
+                    <column gap="10">
                       <text size="sm" foreground="text_muted">Workspace</text>
-                      <button variant="ghost" on-press="toggle_terminal" label="Toggle integrated terminal panel">{terminalPanelLabel}</button>
-                      <button variant="ghost" on-press="toggle_agent_panel" label="Toggle AI agent panel">{agentPanelLabel}</button>
-                      <button variant="ghost" on-press="toggle_auto_save" label="Toggle automatic file saving">{autoSaveLabel}</button>
-                      <button variant="ghost" on-press="cycle_disk_poll_interval" label="Files: Cycle Disk Poll Interval">{diskPollIntervalLabel}</button>
-                      <button variant="ghost" on-press="toggle_sidebar" label="Toggle workspace sidebar">{sidebarLabel}</button>
-                      <button variant="ghost" on-press="toggle_focus_mode" label="Toggle focus mode">{focusModeLabel}</button>
-                      <button variant="ghost" on-press="save_prefs">Save Preferences</button>
+                      <row cross="center" gap="8">
+                        <text grow="1">Integrated terminal</text>
+                        <switch checked="{terminalPanelShown}" on-toggle="toggle_terminal" label="Toggle integrated terminal panel" />
+                      </row>
+                      <row cross="center" gap="8">
+                        <text grow="1">AI agent panel</text>
+                        <switch checked="{show_agent_panel}" on-toggle="toggle_agent_panel" label="Toggle AI agent panel" />
+                      </row>
+                      <row cross="center" gap="8">
+                        <text grow="1">Automatic file saving</text>
+                        <switch checked="{auto_save}" on-toggle="toggle_auto_save" label="Toggle automatic file saving" />
+                      </row>
+                      <row cross="center" gap="8">
+                        <text grow="1">Disk poll interval</text>
+                        <select text="{diskPollValue}" on-press="cycle_disk_poll_interval" label="Files: Cycle Disk Poll Interval" />
+                      </row>
+                      <row cross="center" gap="8">
+                        <text grow="1">Workspace sidebar</text>
+                        <switch checked="{show_sidebar}" on-toggle="toggle_sidebar" label="Toggle workspace sidebar" />
+                      </row>
+                      <row cross="center" gap="8">
+                        <text grow="1">Focus mode</text>
+                        <switch checked="{focus_mode}" on-toggle="toggle_focus_mode" label="Toggle focus mode" />
+                      </row>
+                      <row>
+                        <button size="sm" variant="secondary" icon="check" on-press="save_prefs">Save Preferences</button>
+                      </row>
                     </column>
                     <separator />
                   </if>

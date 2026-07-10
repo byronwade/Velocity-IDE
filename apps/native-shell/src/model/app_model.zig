@@ -869,19 +869,11 @@ pub const Model = struct {
         "find_label_buf",
         "find_status",
         "find_matches",
-        "find_case_sensitive",
         "find_whole_word",
         "search_case_sensitive",
-        "show_sidebar",
-        "word_wrap",
-        "auto_save",
-        "trim_trailing_ws",
-        "insert_final_newline",
         "indent_size",
-        "focus_mode",
         "pinned_tab_id",
         "show_terminal",
-        "show_agent_panel",
         "show_find_panel",
         "breadcrumb",
         "breadcrumb_buf",
@@ -1316,6 +1308,26 @@ pub const Model = struct {
 
     pub fn indentSizeLabel(model: *const Model) []const u8 {
         return if (model.indent_size == 4) "Editor indentation: 4 spaces" else "Editor indentation: 2 spaces";
+    }
+
+    /// Value-only labels for the Settings select triggers (label lives to the
+    /// left of the control, so the trigger shows just the current value).
+    pub fn indentSizeValue(model: *const Model) []const u8 {
+        return if (model.indent_size == 4) "4 spaces" else "2 spaces";
+    }
+
+    pub fn diskPollValue(model: *const Model) []const u8 {
+        return switch (model.disk_poll_interval_ms) {
+            500 => "500 ms",
+            1000 => "1000 ms",
+            5000 => "5000 ms",
+            else => "2000 ms",
+        };
+    }
+
+    /// Whether the integrated terminal panel is the visible bottom panel.
+    pub fn terminalPanelShown(model: *const Model) bool {
+        return model.bottom_panel_open and model.bottom_panel_tab == .terminal;
     }
 
     pub fn focusModeLabel(model: *const Model) []const u8 {
