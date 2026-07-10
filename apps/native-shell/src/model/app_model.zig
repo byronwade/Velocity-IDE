@@ -23,6 +23,8 @@ const go_to_def_mod = @import("../workspace/go_to_def.zig");
 const editor_view = @import("../workspace/editor_view.zig");
 const terminal_session = @import("../terminal/terminal_session.zig");
 const process_governor = @import("../processes/process_governor.zig");
+const lsp_session = @import("../lsp/lsp_session.zig");
+const broker_transport = @import("../lsp/broker_transport.zig");
 const git_status = @import("../scm/git_status.zig");
 const prefs_mod = @import("../core/prefs.zig");
 const undo_stack = @import("../workspace/undo_stack.zig");
@@ -342,6 +344,12 @@ pub const Msg = union(enum) {
     copy_diff_internal,
     terminal_line: native_sdk.EffectLine,
     terminal_exit: native_sdk.EffectExit,
+    toggle_lsp,
+    lsp_broker_line: native_sdk.EffectLine,
+    lsp_broker_exit: native_sdk.EffectExit,
+    lsp_heartbeat_timer: native_sdk.EffectTimer,
+    lsp_send_response: native_sdk.EffectResponse,
+    lsp_hb_response: native_sdk.EffectResponse,
     chrome_changed: native_sdk.WindowChrome,
     perf_frame: PerfFrame,
     set_appearance: native_sdk.Appearance,
@@ -431,6 +439,11 @@ pub const Msg = union(enum) {
         "close_command_palette",
         "terminal_line",
         "terminal_exit",
+        "lsp_broker_line",
+        "lsp_broker_exit",
+        "lsp_heartbeat_timer",
+        "lsp_send_response",
+        "lsp_hb_response",
     };
 };
 
@@ -439,6 +452,13 @@ pub const toast_timer_key: u64 = 0x746f617374_01;
 pub const disk_poll_timer_key: u64 = 0x6469736b_706f6c6c;
 pub const search_debounce_timer_key: u64 = 0x73656172_63686462;
 pub const terminal_process_effect_key: u64 = 0x7465726d_696e616c;
+/// LSP effect keys. The broker spawn and heartbeat timer are fixed keys;
+/// send/heartbeat POSTs rotate a sequence into the low bits so a completed
+/// fetch slot can never collide with the next POST.
+pub const lsp_broker_effect_key: u64 = 0x6c73705f_62726f6b; // "lsp_brok"
+pub const lsp_heartbeat_timer_key: u64 = 0x6c73705f_74696d72; // "lsp_timr"
+pub const lsp_send_key_base: u64 = 0x6c737073_00000000; // "lsps"
+pub const lsp_hb_key_base: u64 = 0x6c737068_00000000; // "lsph"
 pub const toast_auto_clear_ms: u64 = 3200;
 pub const search_debounce_ms: u64 = 220;
 pub const max_toast_text: usize = 520;
@@ -681,6 +701,20 @@ pub const Model = struct {
     terminal_stopping: bool = false,
     terminal_process_id: u32 = 0,
     governor: process_governor.Governor = .{},
+    /// Settings toggle: LSP activation requires BOTH this AND a supported
+    /// file opening (performance gate: no process before then).
+    lsp_enabled: bool = false,
+    lsp: ?*lsp_session.Runtime = null,
+    lsp_status: lsp_session.Status = .off,
+    /// One activation attempt per enable/workspace episode so honest
+    /// unavailable states persist instead of re-probing every message.
+    lsp_activation_attempted: bool = false,
+    /// PATH captured at boot (main.zig) for binary discovery; tests set it
+    /// directly. Bounded copy, empty when unset.
+    env_path_buf: [4096]u8 = undefined,
+    env_path_len: usize = 0,
+    /// Test seam: skip the on-disk probe and use these argv paths.
+    lsp_test_paths: ?struct { broker: []const u8, server: []const u8 } = null,
     toast: []const u8 = "",
     toast_buf: [max_toast_text]u8 = undefined,
     toast_len: usize = 0,
@@ -757,6 +791,7 @@ pub const Model = struct {
     problem_source_all: problems_mod.SourceFilter = .all,
     problem_source_terminal: problems_mod.SourceFilter = .terminal,
     problem_source_marker: problems_mod.SourceFilter = .marker,
+    problem_source_lsp: problems_mod.SourceFilter = .lsp,
     project_acme: []const u8 = "acme-dashboard",
 
     // Static mock collections exposed for markup `for each=...`
@@ -958,6 +993,12 @@ pub const Model = struct {
         "terminal_stopping",
         "terminal_process_id",
         "governor",
+        "lsp",
+        "lsp_status",
+        "lsp_activation_attempted",
+        "env_path_buf",
+        "env_path_len",
+        "lsp_test_paths",
         "editorBody",
         "editor_focus_line",
         "editor_focus_buf",
@@ -1289,7 +1330,7 @@ pub const Model = struct {
     }
 
     pub fn showSettingsWorkspace(model: *const Model) bool {
-        return settingsSectionVisible(model, "workspace sidebar terminal agent panel auto save search match case whole word disk poll interval files reload");
+        return settingsSectionVisible(model, "workspace sidebar terminal agent panel auto save search match case whole word disk poll interval files reload lsp language server");
     }
 
     pub fn showSettingsAccessibility(model: *const Model) bool {
@@ -1439,6 +1480,11 @@ pub const Model = struct {
         return "idle";
     }
 
+    /// Honest LSP session state for the Problems panel header status line.
+    pub fn lspStatusLabel(model: *const Model) []const u8 {
+        return model.lsp_status.label();
+    }
+
     pub fn processGovernorSummary(model: *const Model) []const u8 {
         _ = model;
         return "Pipe terminal via governor / no PTY yet";
@@ -1478,6 +1524,10 @@ pub const Model = struct {
         if (model.diff_review) |review| {
             std.heap.page_allocator.destroy(review);
             model.diff_review = null;
+        }
+        if (model.lsp) |runtime| {
+            std.heap.page_allocator.destroy(runtime);
+            model.lsp = null;
         }
     }
 };
@@ -1556,6 +1606,14 @@ pub fn initialModelAt(clock: native_sdk.Clock, boot_ns: u64) Model {
     var model: Model = .{};
     model.perf_timer = startup_timer.Timer.init(clock, boot_ns);
     return model;
+}
+
+/// Capture PATH at boot for LSP binary discovery (probe-only; the app
+/// never shells out for lookup).
+pub fn setEnvPath(model: *Model, path: []const u8) void {
+    const length = @min(path.len, model.env_path_buf.len);
+    @memcpy(model.env_path_buf[0..length], path[0..length]);
+    model.env_path_len = length;
 }
 
 pub fn setUserSnippetsPath(model: *Model, path: []const u8) void {
@@ -1652,6 +1710,10 @@ fn cancelOwnedEffects(model: *Model, fx: *Effects) void {
         fx.cancel(model.terminal_effect_key);
         clearActiveCommand(model, .cancelled, native_sdk.effect_error_exit_code);
     }
+    // Workspace close kills the LSP feature: broker cancel reaps the
+    // server tree (PDEATHSIG + heartbeat lapse are the backstops).
+    teardownLsp(model, fx, if (model.lsp_enabled) .stopped else .off);
+    model.lsp_activation_attempted = false;
     model.governor.killAll();
     model.process_count = 0;
     model.terminal_process_count = 0;
@@ -1698,6 +1760,532 @@ pub fn updateFx(model: *Model, msg: Msg, fx: *Effects) void {
     handleWindowActions(model, msg, fx);
     if ((!messageClosesWindow(msg) or model.hot_exit_persist_failed) and model.current_view != .launch) {
         reconcileDiskPoll(model, fx);
+        reconcileLsp(model, msg, fx);
+    }
+}
+
+// ------------------------------------------------------------------ LSP
+// Effect wiring for the sidecar broker (sidecar/README.md checklist):
+// governed spawn with NDJSON .lines output, X-Broker-Token'd POSTs,
+// a 10 s heartbeat timer that also expires request deadlines, strictly
+// serial sends, and publishDiagnostics into the Problems panel.
+
+/// The path LSP activation and document sync react to: the real
+/// disk-backed editor document only (never the mock tab fallback).
+fn lspActivePath(model: *const Model) []const u8 {
+    if (!model.workspace_from_disk) return "";
+    const ws = model.workspace orelse return "";
+    const path = ws.editorPath();
+    if (path.len > 0) return path;
+    for (ws.tabsSlice()) |tab| {
+        if (tab.id == model.active_tab_id) return tab.path;
+    }
+    return "";
+}
+
+fn lspDocMutatingMsg(msg: Msg) bool {
+    return switch (msg) {
+        .edit_document,
+        .undo_edit,
+        .redo_edit,
+        .replace_once,
+        .replace_all,
+        .toggle_line_comment,
+        .indent_document,
+        .outdent_document,
+        .format_document,
+        .join_lines,
+        .move_line_up,
+        .move_line_down,
+        .duplicate_line,
+        .insert_timestamp,
+        .insert_uuid,
+        .revert_file,
+        .restore_backup,
+        .hard_wrap,
+        => true,
+        else => false,
+    };
+}
+
+fn lspSaveMsg(msg: Msg) bool {
+    return switch (msg) {
+        .save_file, .save_all, .overwrite_file => true,
+        .run_command => |id| std.mem.eql(u8, id, "save_file") or
+            std.mem.eql(u8, id, "save_all") or
+            std.mem.eql(u8, id, "overwrite_file"),
+        else => false,
+    };
+}
+
+/// Post-update reconciliation, mirroring `reconcileDiskPoll`: activation
+/// when the toggle + a supported file line up, document sync + send pump
+/// while a session lives, teardown when the gate closes.
+fn reconcileLsp(model: *Model, msg: Msg, fx: *Effects) void {
+    if (model.lsp) |runtime| {
+        if (!model.lsp_enabled or !model.workspace_from_disk) {
+            teardownLsp(model, fx, if (model.lsp_enabled) .stopped else .off);
+            return;
+        }
+        markLspDocEvents(model, runtime, msg);
+        syncLspOpenDoc(model, runtime);
+        flushLspDocEvents(model, runtime);
+        pumpLspSends(model, fx, runtime);
+        return;
+    }
+    if (!model.lsp_enabled) {
+        if (model.lsp_status != .off) model.lsp_status = .off;
+        return;
+    }
+    if (!lsp_session.shouldActivate(
+        model.lsp_enabled,
+        model.workspace_from_disk,
+        model.lsp_activation_attempted,
+        lspActivePath(model),
+    )) return;
+    activateLsp(model, fx);
+}
+
+fn activateLsp(model: *Model, fx: *Effects) void {
+    model.lsp_activation_attempted = true;
+    var broker_buf: [lsp_session.max_path_bytes]u8 = undefined;
+    var server_buf: [lsp_session.max_path_bytes]u8 = undefined;
+    var broker_path: []const u8 = undefined;
+    var server_path: []const u8 = undefined;
+    if (model.lsp_test_paths) |paths| {
+        broker_path = paths.broker;
+        server_path = paths.server;
+    } else {
+        const availability = lsp_session.probe(
+            modelIo(model),
+            model.env_path_buf[0..model.env_path_len],
+            &broker_buf,
+            &server_buf,
+        );
+        switch (availability) {
+            .no_broker => {
+                model.lsp_status = .unavailable_broker;
+                model.toast = model.lsp_status.detail();
+                return;
+            },
+            .no_server => {
+                model.lsp_status = .unavailable_server;
+                model.toast = model.lsp_status.detail();
+                return;
+            },
+            .available => |paths| {
+                broker_path = paths.broker;
+                server_path = paths.server;
+            },
+        }
+    }
+
+    var root_buf: [lsp_session.max_path_bytes]u8 = undefined;
+    const root_len = std.Io.Dir.cwd().realPathFile(modelIo(model), model.project_path, &root_buf) catch {
+        model.lsp_status = .failed;
+        model.toast = "LSP: could not resolve the workspace root";
+        return;
+    };
+
+    const runtime = std.heap.page_allocator.create(lsp_session.Runtime) catch {
+        model.lsp_status = .failed;
+        model.toast = "LSP: session allocation failed";
+        return;
+    };
+    runtime.reset();
+    if (!runtime.setRoot(root_buf[0..root_len])) {
+        std.heap.page_allocator.destroy(runtime);
+        model.lsp_status = .failed;
+        model.toast = "LSP: workspace root is not a usable file URI";
+        return;
+    }
+    _ = model.governor.spawnEffect(
+        "feature.lsp-broker",
+        "velocity-lsp-broker typescript-language-server --stdio",
+        lsp_broker_effect_key,
+        .{ .lsp = true },
+    ) catch {
+        std.heap.page_allocator.destroy(runtime);
+        model.lsp_status = .failed;
+        model.toast = "LSP process budget is in use";
+        return;
+    };
+    model.lsp = runtime;
+    fx.spawn(.{
+        .key = lsp_broker_effect_key,
+        .argv = &.{ broker_path, "--liveness=http", lsp_session.hb_window_ms_arg, "--", server_path, "--stdio" },
+        .output = .lines,
+        .max_line_bytes = lsp_session.max_broker_line_bytes,
+        .on_line = Effects.lineMsg(.lsp_broker_line),
+        .on_exit = Effects.exitMsg(.lsp_broker_exit),
+    });
+    model.lsp_status = .starting;
+    model.process_count = model.governor.aliveCount();
+    model.lsp_process_count = model.governor.aliveOwnershipCounts().lsp;
+    appendOutput(model, "LSP: broker starting (typescript-language-server)");
+}
+
+fn teardownLsp(model: *Model, fx: ?*Effects, status: lsp_session.Status) void {
+    if (fx) |effects| {
+        effects.cancelTimer(lsp_heartbeat_timer_key);
+        effects.cancel(lsp_broker_effect_key);
+        if (model.lsp) |runtime| {
+            if (runtime.current_send_key != 0) effects.cancel(runtime.current_send_key);
+            if (runtime.current_hb_key != 0) effects.cancel(runtime.current_hb_key);
+        }
+    }
+    model.governor.closeEffect(lsp_broker_effect_key, .cancelled, native_sdk.effect_error_exit_code);
+    if (model.lsp) |runtime| {
+        std.heap.page_allocator.destroy(runtime);
+        model.lsp = null;
+    }
+    model.lsp_status = status;
+    model.process_count = model.governor.aliveCount();
+    model.lsp_process_count = model.governor.aliveOwnershipCounts().lsp;
+}
+
+fn toggleLsp(model: *Model, fx: ?*Effects) void {
+    model.lsp_enabled = !model.lsp_enabled;
+    model.lsp_activation_attempted = false;
+    if (model.lsp_enabled) {
+        model.lsp_status = .off;
+        model.toast = "Language server enabled; starts when a TypeScript/JavaScript file opens";
+    } else {
+        teardownLsp(model, fx, .off);
+        model.toast = "Language server disabled";
+    }
+    persistPrefs(model);
+}
+
+/// Flag pending didChange/didSave for the open document. Only messages
+/// that mutate or save the active document count, and only while that
+/// document is the one the server knows about.
+fn markLspDocEvents(model: *Model, runtime: *lsp_session.Runtime, msg: Msg) void {
+    if (!runtime.hasOpenDoc()) return;
+    if (!std.mem.eql(u8, runtime.openRel(), lspActivePath(model))) return;
+    if (lspDocMutatingMsg(msg)) runtime.change_pending = true;
+    if (lspSaveMsg(msg)) runtime.save_pending = true;
+}
+
+/// Keep the server's single open document aligned with the active tab:
+/// didClose the old file, didOpen the new one (full text).
+fn syncLspOpenDoc(model: *Model, runtime: *lsp_session.Runtime) void {
+    if (!runtime.transport.session.canSendDocumentEvents()) return;
+    const active = lspActivePath(model);
+    const language_id = lsp_session.languageIdForTsServer(active);
+    const same = runtime.hasOpenDoc() and language_id != null and
+        std.mem.eql(u8, runtime.openRel(), active);
+    if (same) return;
+    if (runtime.hasOpenDoc()) {
+        if (runtime.nextSlotBuf()) |buf| {
+            if (broker_transport.buildDidClose(buf, runtime.openUri())) |payload| {
+                runtime.commit(payload.len);
+            } else |_| runtime.dropped_sends += 1;
+        } else runtime.dropped_sends += 1;
+        runtime.clearOpenDoc();
+    }
+    if (language_id) |lang| {
+        if (!runtime.beginOpenDoc(active, lang)) return;
+        if (runtime.nextSlotBuf()) |buf| {
+            if (broker_transport.buildDidOpen(buf, runtime.openUri(), lang, runtime.doc_version, model.document.text())) |payload| {
+                runtime.commit(payload.len);
+            } else |_| {
+                runtime.clearOpenDoc();
+                runtime.dropped_sends += 1;
+                model.toast = "LSP: document too large to sync";
+            }
+        } else {
+            runtime.clearOpenDoc();
+            runtime.dropped_sends += 1;
+        }
+    }
+}
+
+/// Coalesced didChange/didSave: pending flags flush only when the send
+/// queue is idle, so a typing burst becomes one full-text didChange.
+fn flushLspDocEvents(model: *Model, runtime: *lsp_session.Runtime) void {
+    if (!runtime.transport.session.canSendDocumentEvents()) return;
+    if (!runtime.hasOpenDoc() or !runtime.sendQueueIdle()) return;
+    if (runtime.change_pending) {
+        runtime.change_pending = false;
+        runtime.doc_version += 1;
+        if (runtime.nextSlotBuf()) |buf| {
+            if (broker_transport.buildDidChange(buf, runtime.openUri(), runtime.doc_version, model.document.text())) |payload| {
+                runtime.commit(payload.len);
+            } else |_| runtime.dropped_sends += 1;
+        } else runtime.dropped_sends += 1;
+    }
+    if (runtime.save_pending) {
+        runtime.save_pending = false;
+        if (runtime.nextSlotBuf()) |buf| {
+            if (broker_transport.buildDidSave(buf, runtime.openUri())) |payload| {
+                runtime.commit(payload.len);
+            } else |_| runtime.dropped_sends += 1;
+        } else runtime.dropped_sends += 1;
+    }
+}
+
+/// Issue the next queued POST (strictly one in flight per broker).
+fn pumpLspSends(model: *Model, fx: *Effects, runtime: *lsp_session.Runtime) void {
+    _ = model;
+    if (runtime.transport.phase != .ready) return;
+    const post = runtime.duePost() orelse return;
+    var url_buf: [64]u8 = undefined;
+    const url = std.fmt.bufPrint(&url_buf, "http://127.0.0.1:{d}{s}", .{
+        runtime.transport.port,
+        if (post.target == .message) "/message" else "/chunk",
+    }) catch return;
+    var id_buf: [24]u8 = undefined;
+    var seq_buf: [12]u8 = undefined;
+    var headers: [4]std.http.Header = undefined;
+    headers[0] = .{ .name = "X-Broker-Token", .value = runtime.transport.authToken() };
+    var header_count: usize = 1;
+    if (post.target == .chunk) {
+        headers[1] = .{
+            .name = "X-Chunk-Id",
+            .value = std.fmt.bufPrint(&id_buf, "{d}", .{post.chunk_id}) catch return,
+        };
+        headers[2] = .{
+            .name = "X-Chunk-Seq",
+            .value = std.fmt.bufPrint(&seq_buf, "{d}", .{post.chunk_seq}) catch return,
+        };
+        header_count = 3;
+        if (post.chunk_last) {
+            headers[3] = .{ .name = "X-Chunk-Last", .value = "1" };
+            header_count = 4;
+        }
+    }
+    fx.fetch(.{
+        .key = runtime.takeSendKey(lsp_send_key_base),
+        .method = .POST,
+        .url = url,
+        .headers = headers[0..header_count],
+        .body = post.body,
+        .on_response = Effects.responseMsg(.lsp_send_response),
+    });
+}
+
+fn handleLspBrokerLine(model: *Model, fx: ?*Effects, line: native_sdk.EffectLine) void {
+    if (line.key != lsp_broker_effect_key) return;
+    const runtime = model.lsp orelse return;
+    if (line.truncated) {
+        runtime.line_error_count += 1;
+        return;
+    }
+    const incoming = runtime.transport.onLine(line.line, &runtime.scratch) catch {
+        runtime.line_error_count += 1;
+        return;
+    };
+    switch (incoming) {
+        .none => {},
+        .listening => {
+            if (fx) |effects| {
+                effects.startTimer(.{
+                    .key = lsp_heartbeat_timer_key,
+                    .interval_ms = @intCast(lsp_session.heartbeat_interval_ms),
+                    .mode = .repeating,
+                    .on_fire = Effects.timerMsg(.lsp_heartbeat_timer),
+                });
+            }
+            const id = runtime.transport.session.beginInitialize(
+                runtime.now_ms,
+                broker_transport.default_request_timeout_ms,
+            ) catch {
+                teardownLsp(model, fx, .failed);
+                return;
+            };
+            if (runtime.nextSlotBuf()) |buf| {
+                if (broker_transport.buildInitialize(buf, id, runtime.rootUri())) |payload| {
+                    runtime.commit(payload.len);
+                } else |_| {
+                    teardownLsp(model, fx, .failed);
+                    return;
+                }
+            }
+            if (fx) |effects| pumpLspSends(model, effects, runtime);
+        },
+        .lsp_message => |payload| handleLspServerMessage(model, fx, runtime, payload),
+        .server_exit, .broker_exit => {
+            // Terminal broker line; the spawn's on_exit finishes cleanup.
+            if (fx) |effects| effects.cancelTimer(lsp_heartbeat_timer_key);
+            model.lsp_status = .stopped;
+        },
+        .broker_error => |broker_error| {
+            runtime.line_error_count += 1;
+            _ = broker_error;
+        },
+    }
+}
+
+fn handleLspServerMessage(model: *Model, fx: ?*Effects, runtime: *lsp_session.Runtime, payload: []const u8) void {
+    const kind = broker_transport.classifyServerMessage(payload, &runtime.scratch) catch {
+        runtime.line_error_count += 1;
+        return;
+    };
+    switch (kind) {
+        .response => |id| {
+            const session = &runtime.transport.session;
+            if (session.phase == .initializing and id == session.initialize_id) {
+                const outcome = broker_transport.extractInitializeResult(payload, &runtime.scratch) catch {
+                    teardownLsp(model, fx, .failed);
+                    return;
+                };
+                if (!outcome.ok) {
+                    teardownLsp(model, fx, .failed);
+                    model.toast = "LSP initialize failed";
+                    return;
+                }
+                session.onInitializeResponse(id) catch {
+                    teardownLsp(model, fx, .failed);
+                    return;
+                };
+                model.lsp_status = .running;
+                if (runtime.nextSlotBuf()) |buf| {
+                    if (broker_transport.buildInitialized(buf)) |initialized| {
+                        runtime.commit(initialized.len);
+                    } else |_| runtime.dropped_sends += 1;
+                }
+                syncLspOpenDoc(model, runtime);
+                if (fx) |effects| pumpLspSends(model, effects, runtime);
+            } else if (session.phase == .shutting_down and id == session.shutdown_id) {
+                session.onShutdownResponse(id) catch {};
+                if (runtime.nextSlotBuf()) |buf| {
+                    if (broker_transport.buildExit(buf)) |exit_payload| {
+                        runtime.commit(exit_payload.len);
+                    } else |_| runtime.dropped_sends += 1;
+                }
+                if (fx) |effects| pumpLspSends(model, effects, runtime);
+            } else {
+                _ = session.completeRequest(id) catch {};
+            }
+        },
+        .publish_diagnostics => {
+            broker_transport.extractPublishDiagnostics(payload, &runtime.scratch, &runtime.diags) catch {
+                runtime.line_error_count += 1;
+                return;
+            };
+            ingestLspDiagnostics(model, runtime);
+        },
+        // v1: no server->client requests are honored; ignoring is legal
+        // for the optional ones ts-language-server sends.
+        .server_request => {},
+        .notification => {},
+    }
+}
+
+fn ingestLspDiagnostics(model: *Model, runtime: *lsp_session.Runtime) void {
+    var rel_buf: [lsp_session.max_path_bytes]u8 = undefined;
+    const rel = lsp_session.uriToWorkspaceRel(runtime.diags.uri(), runtime.rootAbs(), &rel_buf) orelse return;
+    const bufs = ensureProblemBuffers(model) catch return;
+    var staged: [broker_transport.max_diagnostics]problems_mod.LspDiagnostic = undefined;
+    var staged_count: usize = 0;
+    var index: usize = 0;
+    while (runtime.diags.item(index)) |diagnostic| : (index += 1) {
+        if (staged_count >= staged.len) break;
+        staged[staged_count] = .{
+            // LSP positions are 0-based; the Problems panel is 1-based.
+            .line = diagnostic.range.start.line + 1,
+            .column = diagnostic.range.start.character + 1,
+            .severity = switch (diagnostic.severity) {
+                .@"error" => .@"error",
+                .warning => .warning,
+                .information, .hint => .info,
+            },
+            .message = diagnostic.message(),
+        };
+        staged_count += 1;
+    }
+    bufs.replaceLspForPath(rel, staged[0..staged_count]);
+    syncProblemView(model, bufs);
+}
+
+fn handleLspHeartbeatTimer(model: *Model, fx: ?*Effects, timer: native_sdk.EffectTimer) void {
+    if (timer.key != lsp_heartbeat_timer_key) return;
+    const runtime = model.lsp orelse return;
+    if (timer.outcome == .rejected) {
+        teardownLsp(model, fx, .failed);
+        model.toast = "LSP heartbeat timer unavailable; language server stopped";
+        return;
+    }
+    runtime.now_ms +|= lsp_session.heartbeat_interval_ms;
+    var expired: [4]broker_transport.ExpiredRequest = undefined;
+    const expired_count = runtime.transport.session.expireOverdue(runtime.now_ms, &expired);
+    if (expired_count > 0 and runtime.transport.session.phase == .failed) {
+        teardownLsp(model, fx, .failed);
+        model.toast = "LSP request timed out";
+        return;
+    }
+    if (runtime.transport.phase != .ready or runtime.hb_in_flight) return;
+    const effects = fx orelse return;
+    var url_buf: [48]u8 = undefined;
+    const url = std.fmt.bufPrint(&url_buf, "http://127.0.0.1:{d}/hb", .{runtime.transport.port}) catch return;
+    effects.fetch(.{
+        .key = runtime.takeHbKey(lsp_hb_key_base),
+        .method = .POST,
+        .url = url,
+        .headers = &.{.{ .name = "X-Broker-Token", .value = runtime.transport.authToken() }},
+        .on_response = Effects.responseMsg(.lsp_hb_response),
+    });
+    runtime.hb_in_flight = true;
+}
+
+fn handleLspSendResponse(model: *Model, fx: ?*Effects, response: native_sdk.EffectResponse) void {
+    const runtime = model.lsp orelse return;
+    if (response.key != runtime.current_send_key) return;
+    if (response.outcome == .cancelled) return;
+    if (response.outcome != .ok or response.status != 204) {
+        runtime.transport.session.fail();
+        teardownLsp(model, fx, .failed);
+        model.toast = "LSP send failed; language server session stopped";
+        return;
+    }
+    runtime.ackPost();
+    flushLspDocEvents(model, runtime);
+    if (fx) |effects| pumpLspSends(model, effects, runtime);
+}
+
+fn handleLspHbResponse(model: *Model, fx: ?*Effects, response: native_sdk.EffectResponse) void {
+    const runtime = model.lsp orelse return;
+    if (response.key != runtime.current_hb_key) return;
+    runtime.hb_in_flight = false;
+    if (response.outcome == .cancelled) return;
+    if (response.outcome == .ok and response.status == 204) {
+        runtime.hb_fail_count = 0;
+        return;
+    }
+    runtime.hb_fail_count += 1;
+    // Three misses is the broker's own lapse budget; stop honestly first.
+    if (runtime.hb_fail_count >= 3) {
+        teardownLsp(model, fx, .failed);
+        model.toast = "LSP heartbeat failed; language server stopped";
+    }
+}
+
+fn handleLspBrokerExit(model: *Model, fx: ?*Effects, exit: native_sdk.EffectExit) void {
+    if (exit.key != lsp_broker_effect_key) return;
+    model.governor.closeEffect(lsp_broker_effect_key, switch (exit.reason) {
+        .exited => .exited,
+        .cancelled => .cancelled,
+        .rejected => .rejected,
+        .signaled => .signaled,
+        .spawn_failed => .spawn_failed,
+    }, exit.code);
+    if (fx) |effects| effects.cancelTimer(lsp_heartbeat_timer_key);
+    if (model.lsp) |runtime| {
+        std.heap.page_allocator.destroy(runtime);
+        model.lsp = null;
+    }
+    model.process_count = model.governor.aliveCount();
+    model.lsp_process_count = model.governor.aliveOwnershipCounts().lsp;
+    switch (model.lsp_status) {
+        .starting, .running, .stopped => {
+            model.lsp_status = switch (exit.reason) {
+                .spawn_failed, .rejected => .failed,
+                else => .stopped,
+            };
+            if (exit.reason == .spawn_failed) model.toast = "LSP broker failed to start";
+        },
+        else => {},
     }
 }
 
@@ -2150,6 +2738,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 model.selected_activity = .processes;
             } else if (std.mem.eql(u8, id, "kill_all_workspace_processes")) {
                 if (fx) |effects| cancelOwnedEffects(model, effects);
+                // Explicit kill: no silent respawn until re-toggled or a
+                // workspace change resets the attempt gate.
+                model.lsp_activation_attempted = true;
                 model.governor.killAll();
                 model.process_count = model.governor.aliveCount();
                 model.terminal_process_count = 0;
@@ -2385,6 +2976,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         },
         .kill_all_workspace_processes => {
             if (fx) |effects| cancelOwnedEffects(model, effects);
+            model.lsp_activation_attempted = true;
             model.governor.killAll();
             model.process_count = model.governor.aliveCount();
             model.terminal_process_count = 0;
@@ -2700,6 +3292,12 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 };
             }
         },
+        .toggle_lsp => toggleLsp(model, fx),
+        .lsp_broker_line => |line| handleLspBrokerLine(model, fx, line),
+        .lsp_broker_exit => |exit| handleLspBrokerExit(model, fx, exit),
+        .lsp_heartbeat_timer => |timer| handleLspHeartbeatTimer(model, fx, timer),
+        .lsp_send_response => |response| handleLspSendResponse(model, fx, response),
+        .lsp_hb_response => |response| handleLspHbResponse(model, fx, response),
         .chrome_changed => |chrome| {
             model.perf_timer.markChromeCallback();
             model.chrome_leading = chrome.insets.left;
@@ -6897,6 +7495,7 @@ fn applyPrefsToModel(model: *Model) void {
     model.show_terminal = model.prefs.show_terminal;
     model.show_agent_panel = model.prefs.show_agent;
     model.auto_save = model.prefs.auto_save;
+    model.lsp_enabled = model.prefs.lsp_enabled;
     model.find_case_sensitive = model.prefs.find_case_sensitive;
     model.find_whole_word = model.prefs.find_whole_word;
     model.search_case_sensitive = model.prefs.search_case_sensitive;
@@ -6947,6 +7546,7 @@ fn persistPrefs(model: *Model) void {
     model.prefs.show_terminal = model.show_terminal;
     model.prefs.show_agent = model.show_agent_panel;
     model.prefs.auto_save = model.auto_save;
+    model.prefs.lsp_enabled = model.lsp_enabled;
     model.prefs.find_case_sensitive = model.find_case_sensitive;
     model.prefs.find_whole_word = model.find_whole_word;
     model.prefs.search_case_sensitive = model.search_case_sensitive;

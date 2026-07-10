@@ -311,6 +311,204 @@ test "updateFx arms one fixed disk poll timer and cancels it on launch" {
     try testing.expect(!model.terminal_async);
 }
 
+fn workspaceNodeId(model: *const Model, path: []const u8) ?u32 {
+    for (model.file_nodes) |node| {
+        if (std.mem.eql(u8, node.path, path)) return node.id;
+    }
+    return null;
+}
+
+fn lastPendingFetch(fx: *model_mod.Effects) ?model_mod.Effects.FetchRequest {
+    const count = fx.pendingFetchCount();
+    if (count == 0) return null;
+    return fx.pendingFetchAt(count - 1);
+}
+
+test "lsp stays off without the toggle and reports honest unavailability" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    const ts_id = workspaceNodeId(&model, "src/lib/db.ts").?;
+    model_mod.updateFx(&model, .{ .select_file = ts_id }, &fx);
+
+    // Toggle off: a supported file alone must never spawn anything.
+    try testing.expectEqual(@as(usize, 0), fx.pendingSpawnCount());
+    try testing.expectEqualStrings("off", model.lspStatusLabel());
+    try testing.expect(model.lsp == null);
+
+    // Toggle on with no discoverable server (empty PATH): honest
+    // unavailable state, still no process, and no probe storm (one
+    // attempt per episode).
+    model.env_path_len = 0;
+    model_mod.updateFx(&model, .toggle_lsp, &fx);
+    try testing.expect(model.lsp_enabled);
+    try testing.expectEqual(@as(usize, 0), fx.pendingSpawnCount());
+    try testing.expectEqualStrings("unavailable", model.lspStatusLabel());
+    try testing.expect(model.lsp == null);
+    try testing.expect(model.lsp_activation_attempted);
+    model_mod.updateFx(&model, .clear_toast, &fx);
+    try testing.expectEqual(@as(usize, 0), fx.pendingSpawnCount());
+
+    model_mod.updateFx(&model, .toggle_lsp, &fx); // back off for hygiene
+    try testing.expectEqualStrings("off", model.lspStatusLabel());
+}
+
+test "lsp broker spawn, handshake, and diagnostics reach the problems panel" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    defer model.deinit();
+    model.lsp_test_paths = .{ .broker = "/opt/velocity/velocity-lsp-broker", .server = "/opt/velocity/tsls" };
+
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    const ts_id = workspaceNodeId(&model, "src/lib/db.ts").?;
+    model_mod.updateFx(&model, .{ .select_file = ts_id }, &fx);
+    model_mod.updateFx(&model, .toggle_lsp, &fx);
+
+    // Governed spawn: exactly one broker process, ledgered under
+    // feature.lsp-broker with LSP ownership, http liveness argv.
+    try testing.expectEqual(@as(usize, 1), fx.pendingSpawnCount());
+    const spawn_request = fx.pendingSpawnAt(0).?;
+    try testing.expectEqual(model_mod.lsp_broker_effect_key, spawn_request.key);
+    try testing.expectEqualStrings("/opt/velocity/velocity-lsp-broker", spawn_request.argv[0]);
+    try testing.expectEqualStrings("--liveness=http", spawn_request.argv[1]);
+    try testing.expectEqualStrings("--stdio", spawn_request.argv[spawn_request.argv.len - 1]);
+    const record = model.governor.recordForEffect(model_mod.lsp_broker_effect_key).?;
+    try testing.expect(record.lsp_owned);
+    try testing.expectEqualStrings("feature.lsp-broker", record.parent_feature);
+    try testing.expectEqual(@as(u32, 1), model.lsp_process_count);
+    try testing.expectEqualStrings("starting", model.lspStatusLabel());
+
+    // listening -> heartbeat timer armed + initialize POSTed with token.
+    model_mod.updateFx(&model, .{ .lsp_broker_line = .{
+        .key = model_mod.lsp_broker_effect_key,
+        .line = "{\"event\":\"listening\",\"port\":38617,\"token\":\"fee8c75f408e830831425370bb633345\"}",
+    } }, &fx);
+    try testing.expect(pendingTimerByKey(&fx, model_mod.lsp_heartbeat_timer_key) != null);
+    const init_request = lastPendingFetch(&fx).?;
+    try testing.expect(std.mem.indexOf(u8, init_request.url, "127.0.0.1:38617/message") != null);
+    try testing.expect(std.mem.indexOf(u8, init_request.body, "\"method\":\"initialize\"") != null);
+    try testing.expectEqualStrings("X-Broker-Token", init_request.headers[0].name);
+    try testing.expectEqualStrings("fee8c75f408e830831425370bb633345", init_request.headers[0].value);
+    const init_key = init_request.key;
+    try fx.feedResponse(init_key, 204, "");
+    model_mod.updateFx(&model, .{ .lsp_send_response = .{ .key = init_key, .outcome = .ok, .status = 204 } }, &fx);
+
+    // initialize response -> running; initialized + didOpen flow serially.
+    model_mod.updateFx(&model, .{ .lsp_broker_line = .{
+        .key = model_mod.lsp_broker_effect_key,
+        .line = "{\"event\":\"message\",\"payload\":{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"capabilities\":{}}}}",
+    } }, &fx);
+    try testing.expectEqualStrings("running", model.lspStatusLabel());
+    const initialized_request = lastPendingFetch(&fx).?;
+    try testing.expect(std.mem.indexOf(u8, initialized_request.body, "\"method\":\"initialized\"") != null);
+    try fx.feedResponse(initialized_request.key, 204, "");
+    model_mod.updateFx(&model, .{ .lsp_send_response = .{ .key = initialized_request.key, .outcome = .ok, .status = 204 } }, &fx);
+    const did_open_request = lastPendingFetch(&fx).?;
+    try testing.expect(std.mem.indexOf(u8, did_open_request.body, "textDocument/didOpen") != null);
+    try testing.expect(std.mem.indexOf(u8, did_open_request.body, "\"languageId\":\"typescript\"") != null);
+    try testing.expect(std.mem.indexOf(u8, did_open_request.body, "src/lib/db.ts") != null);
+    try fx.feedResponse(did_open_request.key, 204, "");
+    model_mod.updateFx(&model, .{ .lsp_send_response = .{ .key = did_open_request.key, .outcome = .ok, .status = 204 } }, &fx);
+
+    // publishDiagnostics -> Problems rows tagged "lsp", replaced per URI.
+    var line_buf: [1024]u8 = undefined;
+    const diag_line = try std.fmt.bufPrint(&line_buf, "{{\"event\":\"message\",\"payload\":{{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{{\"uri\":\"file://{s}/src/lib/db.ts\",\"diagnostics\":[{{\"range\":{{\"start\":{{\"line\":2,\"character\":6}},\"end\":{{\"line\":2,\"character\":7}}}},\"severity\":1,\"message\":\"Type 'string' is not assignable to type 'number'.\"}}]}}}}}}", .{model.lsp.?.rootAbs()});
+    model_mod.updateFx(&model, .{ .lsp_broker_line = .{
+        .key = model_mod.lsp_broker_effect_key,
+        .line = diag_line,
+    } }, &fx);
+    try testing.expect(model.problems.len >= 1);
+    var found_lsp_row = false;
+    for (model.problems) |problem| {
+        if (std.mem.eql(u8, problem.source_label, "lsp")) {
+            found_lsp_row = true;
+            try testing.expectEqualStrings("src/lib/db.ts", problem.path);
+            try testing.expectEqual(@as(u32, 3), problem.line); // 0-based -> 1-based
+            try testing.expectEqualStrings("error", problem.severity_label);
+            try testing.expect(std.mem.indexOf(u8, problem.preview, "not assignable") != null);
+        }
+    }
+    try testing.expect(found_lsp_row);
+
+    // An empty follow-up publish clears the file's LSP rows (per-URI replace).
+    const clear_line = try std.fmt.bufPrint(&line_buf, "{{\"event\":\"message\",\"payload\":{{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{{\"uri\":\"file://{s}/src/lib/db.ts\",\"diagnostics\":[]}}}}}}", .{model.lsp.?.rootAbs()});
+    model_mod.updateFx(&model, .{ .lsp_broker_line = .{
+        .key = model_mod.lsp_broker_effect_key,
+        .line = clear_line,
+    } }, &fx);
+    for (model.problems) |problem| {
+        try testing.expect(!std.mem.eql(u8, problem.source_label, "lsp"));
+    }
+
+    // Document mutation -> one coalesced full-text didChange.
+    model_mod.updateFx(&model, .insert_uuid, &fx);
+    const did_change_request = lastPendingFetch(&fx).?;
+    try testing.expect(std.mem.indexOf(u8, did_change_request.body, "textDocument/didChange") != null);
+    try testing.expect(std.mem.indexOf(u8, did_change_request.body, "\"version\":2") != null);
+    try fx.feedResponse(did_change_request.key, 204, "");
+    model_mod.updateFx(&model, .{ .lsp_send_response = .{ .key = did_change_request.key, .outcome = .ok, .status = 204 } }, &fx);
+
+    // Heartbeat tick -> authenticated /hb POST and deadline bookkeeping.
+    model_mod.updateFx(&model, .{ .lsp_heartbeat_timer = .{
+        .key = model_mod.lsp_heartbeat_timer_key,
+        .outcome = .fired,
+    } }, &fx);
+    const hb_request = lastPendingFetch(&fx).?;
+    try testing.expect(std.mem.indexOf(u8, hb_request.url, "/hb") != null);
+    try testing.expectEqualStrings("X-Broker-Token", hb_request.headers[0].name);
+    try fx.feedResponse(hb_request.key, 204, "");
+    model_mod.updateFx(&model, .{ .lsp_hb_response = .{ .key = hb_request.key, .outcome = .ok, .status = 204 } }, &fx);
+
+    // Toggling off tears everything down: timer cancelled, broker
+    // cancelled, ledger closed, runtime freed.
+    model_mod.updateFx(&model, .toggle_lsp, &fx);
+    try testing.expect(model.lsp == null);
+    try testing.expectEqualStrings("off", model.lspStatusLabel());
+    try testing.expect(pendingTimerByKey(&fx, model_mod.lsp_heartbeat_timer_key) == null);
+    try testing.expectEqual(@as(u32, 0), model.lsp_process_count);
+    try testing.expect(!model.governor.recordForEffect(model_mod.lsp_broker_effect_key).?.alive);
+}
+
+test "lsp teardown on workspace close kills the feature and cancels the timer" {
+    var fx = model_mod.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    var model = main.initialModel();
+    defer model.deinit();
+    model.lsp_test_paths = .{ .broker = "/opt/velocity/velocity-lsp-broker", .server = "/opt/velocity/tsls" };
+
+    model_mod.updateFx(&model, .{ .open_project = "acme-dashboard" }, &fx);
+    const ts_id = workspaceNodeId(&model, "src/lib/db.ts").?;
+    model_mod.updateFx(&model, .{ .select_file = ts_id }, &fx);
+    model_mod.updateFx(&model, .toggle_lsp, &fx);
+    try testing.expect(model.lsp != null);
+    model_mod.updateFx(&model, .{ .lsp_broker_line = .{
+        .key = model_mod.lsp_broker_effect_key,
+        .line = "{\"event\":\"listening\",\"port\":38617,\"token\":\"fee8c75f408e830831425370bb633345\"}",
+    } }, &fx);
+    try testing.expect(pendingTimerByKey(&fx, model_mod.lsp_heartbeat_timer_key) != null);
+
+    model_mod.updateFx(&model, .go_launch, &fx);
+    try testing.expect(model.lsp == null);
+    try testing.expect(pendingTimerByKey(&fx, model_mod.lsp_heartbeat_timer_key) == null);
+    try testing.expectEqual(@as(u32, 0), model.lsp_process_count);
+    try testing.expectEqualStrings("stopped", model.lspStatusLabel());
+    try testing.expect(!model.governor.recordForEffect(model_mod.lsp_broker_effect_key).?.alive);
+
+    // A broker exit delivered after teardown stays a no-op.
+    model_mod.updateFx(&model, .{ .lsp_broker_exit = .{
+        .key = model_mod.lsp_broker_effect_key,
+        .code = 0,
+        .reason = .cancelled,
+    } }, &fx);
+    try testing.expect(model.lsp == null);
+}
+
 test "rejected disk poll stays disarmed without re-arm storm" {
     var fx = model_mod.Effects.init(testing.allocator);
     defer fx.deinit();

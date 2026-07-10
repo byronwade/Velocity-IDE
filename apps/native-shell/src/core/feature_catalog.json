@@ -1407,7 +1407,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "prototype",
     "category": "editor",
     "implementation": "process",
     "priority": "P0"
@@ -2509,7 +2509,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "prototype",
     "category": "lsp",
     "implementation": "process",
     "priority": "P0"
@@ -2532,7 +2532,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "prototype",
     "category": "lsp",
     "implementation": "native",
     "priority": "P0"
@@ -2578,7 +2578,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "prototype",
     "category": "lsp",
     "implementation": "native",
     "priority": "P0"

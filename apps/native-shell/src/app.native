@@ -429,7 +429,9 @@
                     <button size="sm" variant="ghost" selected="{problem_source_filter == problem_source_all}" on-press="set_problem_source_filter:{problem_source_all}" label="Show all problem sources">All</button>
                     <button size="sm" variant="ghost" selected="{problem_source_filter == problem_source_terminal}" on-press="set_problem_source_filter:{problem_source_terminal}" label="Show terminal problems">Terminal</button>
                     <button size="sm" variant="ghost" selected="{problem_source_filter == problem_source_marker}" on-press="set_problem_source_filter:{problem_source_marker}" label="Show marker problems">Marker</button>
+                    <button size="sm" variant="ghost" selected="{problem_source_filter == problem_source_lsp}" on-press="set_problem_source_filter:{problem_source_lsp}" label="Show language server problems">LSP</button>
                     <spacer grow="1" />
+                    <badge variant="secondary">LSP: {lspStatusLabel}</badge>
                     <button size="sm" variant="ghost" on-press="parse_terminal_diagnostics">Parse Output</button>
                     <button size="sm" variant="ghost" on-press="scan_problems">Scan Markers</button>
                   </row>
@@ -599,6 +601,11 @@
                       <row cross="center" gap="8">
                         <text grow="1">Automatic file saving</text>
                         <switch checked="{auto_save}" on-toggle="toggle_auto_save" label="Toggle automatic file saving" />
+                      </row>
+                      <row cross="center" gap="8">
+                        <text grow="1">Language server (LSP)</text>
+                        <badge variant="secondary">{lspStatusLabel}</badge>
+                        <switch checked="{lsp_enabled}" on-toggle="toggle_lsp" label="Toggle language server (LSP)" />
                       </row>
                       <row cross="center" gap="8">
                         <text grow="1">Disk poll interval</text>

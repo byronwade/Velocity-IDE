@@ -160,6 +160,9 @@ pub fn main(init: std.process.Init) !void {
     if (init.environ_map.get("VELOCITY_USER_CONFIG")) |path| {
         model_mod.setUserSnippetsPath(&app_state.model, path);
     }
+    if (init.environ_map.get("PATH")) |path| {
+        model_mod.setEnvPath(&app_state.model, path);
+    }
     model_mod.ensurePrefsOnBoot(&app_state.model);
 
     try runner.runWithOptions(app_state.app(), .{
@@ -206,6 +209,8 @@ test {
     _ = @import("bridge/editor_island.zig");
     _ = @import("lsp/jsonrpc.zig");
     _ = @import("lsp/broker.zig");
+    _ = @import("lsp/broker_transport.zig");
+    _ = @import("lsp/lsp_session.zig");
     _ = @import("terminal/terminal_session.zig");
     _ = @import("terminal/pty_session.zig");
     _ = @import("scm/git_status.zig");

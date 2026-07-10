@@ -24,6 +24,7 @@ pub const Prefs = struct {
     show_terminal: bool = false,
     show_agent: bool = false,
     auto_save: bool = false,
+    lsp_enabled: bool = false,
     find_case_sensitive: bool = false,
     find_whole_word: bool = false,
     search_case_sensitive: bool = false,
@@ -213,6 +214,7 @@ pub const Prefs = struct {
             if (std.mem.eql(u8, key, "show_terminal")) self.show_terminal = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "show_agent")) self.show_agent = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "auto_save")) self.auto_save = std.mem.eql(u8, val, "1");
+            if (std.mem.eql(u8, key, "lsp_enabled")) self.lsp_enabled = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "find_case_sensitive")) self.find_case_sensitive = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "find_whole_word")) self.find_whole_word = std.mem.eql(u8, val, "1");
             if (std.mem.eql(u8, key, "search_case_sensitive")) self.search_case_sensitive = std.mem.eql(u8, val, "1");
@@ -262,6 +264,8 @@ pub const Prefs = struct {
         append(&out, &len, if (self.show_agent) "1" else "0");
         append(&out, &len, "\nauto_save=");
         append(&out, &len, if (self.auto_save) "1" else "0");
+        append(&out, &len, "\nlsp_enabled=");
+        append(&out, &len, if (self.lsp_enabled) "1" else "0");
         append(&out, &len, "\nfind_case_sensitive=");
         append(&out, &len, if (self.find_case_sensitive) "1" else "0");
         append(&out, &len, "\nfind_whole_word=");
@@ -315,6 +319,7 @@ test "prefs roundtrip theme and recent" {
     p.setLastPath("fixtures/acme-dashboard");
     p.show_terminal = false;
     p.auto_save = true;
+    p.lsp_enabled = true;
     p.find_case_sensitive = true;
     p.find_whole_word = true;
     p.search_case_sensitive = true;
@@ -338,6 +343,7 @@ test "prefs roundtrip theme and recent" {
     try std.testing.expectEqualStrings("fixtures/acme-dashboard", p2.lastPathSlice());
     try std.testing.expect(!p2.show_terminal);
     try std.testing.expect(p2.auto_save);
+    try std.testing.expect(p2.lsp_enabled);
     try std.testing.expect(p2.find_case_sensitive);
     try std.testing.expect(p2.find_whole_word);
     try std.testing.expect(p2.search_case_sensitive);
