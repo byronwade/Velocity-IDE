@@ -82,9 +82,13 @@ pub fn tokens(preference: ThemePreference, high_contrast: bool, reduce_motion: b
             .dark, .high_contrast => dark_colors,
         };
     }
-    // Clean, softly rounded chrome — enough radius to feel modern and calm
-    // without drifting into a bubbly, low-density look.
-    out.radius = .{ .sm = 4, .md = 7, .lg = 11, .xl = 15 };
+    // Precision Workbench radius policy: docked workbench panes are square
+    // (they render as background fills with no exterior radius), compact
+    // controls take a restrained 3–4 px, fields and menus 5 px, and floating
+    // dialogs/overlays 6–8 px. Large radii are deliberately avoided so the
+    // permanent chrome reads as one integrated instrument rather than a
+    // collection of bubbly cards.
+    out.radius = .{ .sm = 3, .md = 5, .lg = 6, .xl = 8 };
     out.pixel_snap = .{ .geometry = true, .text = true, .scale = 1 };
     return out;
 }

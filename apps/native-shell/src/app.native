@@ -198,21 +198,23 @@
         <!-- Center + agent -->
         <column grow="1">
           <if test="{showIdeChrome}">
-            <!-- Tabs only -->
+            <!-- Editor tab strip + upper-right workbench layout chrome -->
             <row gap="2" padding="4" background="surface" cross="center">
               <for each="open_tabs" key="id" as="t">
                 <button size="sm" variant="ghost" selected="{t.id == active_tab_id}" on-press="select_tab:{t.id}">{t.title}</button>
               </for>
               <button size="sm" variant="ghost" icon="x" on-press="close_active_tab" label="Close tab" />
               <spacer grow="1" />
-              <button size="sm" variant="ghost" icon="send" on-press="toggle_agent_panel">{agentPanelLabel}</button>
+              <button size="sm" variant="ghost" icon="panel-left" selected="{showLeftPanel}" on-press="toggle_sidebar" label="Toggle Primary Sidebar (Cmd+B)" />
+              <button size="sm" variant="ghost" icon="panel-right" selected="{showAgentChrome}" on-press="toggle_agent_panel" label="Toggle Secondary Sidebar (Cmd+Shift+A)" />
+              <button size="sm" variant="ghost" icon="ellipsis" on-press="run_command:{layout_cmd_open}" label="Customize Layout" />
             </row>
             <separator />
             <row grow="1">
-              <column grow="1" gap="4" padding="8">
-                <row gap="4" cross="center">
-                  <button size="sm" variant="ghost" icon="chevron-left" on-press="navigate_back" label="{navigationBackLabel}">Back</button>
-                  <button size="sm" variant="ghost" icon="chevron-right" on-press="navigate_forward" label="{navigationForwardLabel}">Forward</button>
+              <column grow="1" gap="0">
+                <row gap="4" padding="6" cross="center">
+                  <button size="sm" variant="ghost" icon="chevron-left" on-press="navigate_back" label="{navigationBackLabel}" />
+                  <button size="sm" variant="ghost" icon="chevron-right" on-press="navigate_forward" label="{navigationForwardLabel}" />
                   <row gap="2" grow="1" cross="center">
                     <for each="breadcrumb_segs" key="id" as="seg">
                       <button size="sm" variant="ghost" on-press="select_breadcrumb:{seg.id}">{seg.label}</button>
@@ -228,6 +230,7 @@
                   <button size="sm" variant="ghost" icon="archive" on-press="restore_backup" label="Restore backup">Backup</button>
                   <button size="sm" variant="primary" icon="save" on-press="save_file">Save</button>
                 </row>
+                <separator />
                 <if test="{showDiskConflict}">
                   <row gap="6" padding="8" cross="center" background="warning" label="External file change conflict">
                     <icon name="alert" width="15" height="15" foreground="warning_text" />
@@ -246,7 +249,7 @@
                   </row>
                 </if>
                 <if test="{showFindPanel}">
-                  <row gap="4" cross="center">
+                  <row gap="4" padding="6" cross="center">
                     <text-field text="{findQueryText}" placeholder="Find..." on-input="update_find_query" on-submit="run_find" grow="1" label="Find in file" />
                     <badge variant="secondary">{find_active_label}</badge>
                     <button size="sm" variant="ghost" icon="chevron-up" on-press="find_prev" label="Previous match" />
@@ -255,7 +258,7 @@
                     <button size="sm" variant="ghost" on-press="go_to_definition" label="Go to Definition">Definition</button>
                     <button size="sm" variant="ghost" icon="x" on-press="clear_find" label="Close find panel" />
                   </row>
-                  <row gap="4" cross="center">
+                  <row gap="4" padding="6" cross="center">
                     <text-field text="{replaceText}" placeholder="Replace..." on-input="update_replace_text" grow="1" label="Replace" />
                     <button size="sm" variant="ghost" on-press="replace_once">Once</button>
                     <button size="sm" variant="secondary" on-press="replace_all">All</button>
@@ -794,6 +797,39 @@
           </column>
         </scroll>
         <button size="sm" variant="ghost" on-press="toggle_shortcuts_help">Close</button>
+      </column>
+    </column>
+  </if>
+
+  <!-- Customize Layout: keyboard-accessible perspective + region menu.
+       Every control routes through the canonical run_command path, so the
+       command palette and shortcuts reach the same behaviour. -->
+  <if test="{layout_menu_open}">
+    <column grow="1" main="start" cross="end" padding="12" background="scrim">
+      <column width="300" gap="6" padding="12" background="surface" label="Customize Layout">
+        <row gap="6" cross="center">
+          <icon name="ellipsis" width="14" height="14" foreground="text_muted" />
+          <text grow="1">Customize Layout</text>
+          <button size="sm" variant="ghost" icon="x" on-press="run_command:{layout_cmd_close}" label="Close Customize Layout" />
+        </row>
+        <text size="sm" foreground="text_muted">Current perspective: {layoutPresetLabel}</text>
+        <separator />
+        <text size="sm" foreground="text_muted">PERSPECTIVES</text>
+        <button size="sm" variant="ghost" on-press="run_command:{layout_cmd_coding}" label="Coding: Explorer and dominant editor">Coding</button>
+        <button size="sm" variant="ghost" on-press="run_command:{layout_cmd_focus}" label="Focus: editor only with minimal chrome">Focus</button>
+        <button size="sm" variant="ghost" on-press="run_command:{layout_cmd_review}" label="Review: Source Control and Problems">Review</button>
+        <button size="sm" variant="ghost" on-press="run_command:{layout_cmd_debug}" label="Debug: editor with run console">Debug</button>
+        <button size="sm" variant="ghost" on-press="run_command:{layout_cmd_terminal}" label="Terminal: editor with enlarged terminal">Terminal</button>
+        <separator />
+        <text size="sm" foreground="text_muted">REGIONS</text>
+        <button size="sm" variant="ghost" icon="panel-left" selected="{showLeftPanel}" on-press="toggle_sidebar" label="Toggle Primary Sidebar">Primary Sidebar · Cmd+B</button>
+        <button size="sm" variant="ghost" selected="{showBottomPanel}" on-press="toggle_bottom_panel" label="Toggle Bottom Panel">Bottom Panel · Cmd+J</button>
+        <button size="sm" variant="ghost" icon="panel-right" selected="{showAgentChrome}" on-press="toggle_agent_panel" label="Toggle Secondary Sidebar">Secondary Sidebar · Cmd+Shift+A</button>
+        <separator />
+        <text size="sm" foreground="text_muted">LAYOUTS</text>
+        <button size="sm" variant="ghost" icon="save" on-press="run_command:{layout_cmd_save_custom}" label="Save the current layout as the Custom perspective">Save Current as Custom</button>
+        <button size="sm" variant="ghost" icon="repeat" on-press="run_command:{layout_cmd_restore_prev}" label="Restore the previous layout">Restore Previous Layout</button>
+        <button size="sm" variant="ghost" icon="refresh-cw" on-press="run_command:{layout_cmd_reset}" label="Reset the layout to the Coding default">Reset Layout</button>
       </column>
     </column>
   </if>
