@@ -2,6 +2,8 @@
 //! Keep Native SDK types and model messages out of this module so both layers
 //! can project the catalog without a generated source file.
 
+const std = @import("std");
+
 pub const Availability = enum {
     available,
     limited,
@@ -229,4 +231,75 @@ fn equal(a: []const u8, b: []const u8) bool {
         if (left != right) return false;
     }
     return true;
+}
+
+/// Case-insensitive greedy subsequence score for palette search.
+/// null = the query is not a subsequence. Higher = better: prefix and
+/// word-boundary hits and consecutive runs score up; scattered gaps score
+/// down; shorter titles win ties. Deterministic, allocation-free.
+pub fn fuzzyScore(haystack: []const u8, needle: []const u8) ?u32 {
+    if (needle.len == 0) return 0;
+    if (needle.len > haystack.len) return null;
+    var score: i32 = 0;
+    var h: usize = 0;
+    var prev_hit: usize = 0;
+    var has_prev = false;
+    for (needle) |raw| {
+        const want = std.ascii.toLower(raw);
+        var found: ?usize = null;
+        while (h < haystack.len) : (h += 1) {
+            if (std.ascii.toLower(haystack[h]) == want) {
+                found = h;
+                h += 1;
+                break;
+            }
+        }
+        const at = found orelse return null;
+        if (at == 0) {
+            score += 8;
+        } else if (!std.ascii.isAlphanumeric(haystack[at - 1])) {
+            score += 6;
+        }
+        if (has_prev) {
+            if (at == prev_hit + 1) score += 5;
+            score -= @intCast(@min(at - prev_hit - 1, 8));
+        }
+        prev_hit = at;
+        has_prev = true;
+    }
+    const brevity: i32 = @intCast(32 - @min(haystack.len, 32));
+    // Offset keeps every real match >= 1 so callers can treat 0 as "empty query".
+    return @intCast(@max(score + brevity + 256, 1));
+}
+
+/// Palette ranking: title matches outrank id-only matches.
+pub fn scorePaletteCommand(command: PaletteCommand, query: []const u8) ?u32 {
+    if (fuzzyScore(command.title, query)) |title_score| return title_score + 64;
+    return fuzzyScore(command.id, query);
+}
+
+test "fuzzy score matches subsequences and rejects non-matches" {
+    try std.testing.expect(fuzzyScore("Go to Symbol", "gts") != null);
+    try std.testing.expect(fuzzyScore("Go to Symbol", "symbol") != null);
+    try std.testing.expect(fuzzyScore("Go to Symbol", "xyz") == null);
+    try std.testing.expect(fuzzyScore("ab", "abc") == null);
+    try std.testing.expectEqual(@as(?u32, 0), fuzzyScore("anything", ""));
+}
+
+test "fuzzy score ranks prefix and word-boundary hits above scattered hits" {
+    const prefix = fuzzyScore("Save File", "save").?;
+    const scattered = fuzzyScore("Set Available Environment", "save").?;
+    try std.testing.expect(prefix > scattered);
+
+    const boundary = fuzzyScore("Go to Symbol", "sym").?;
+    const inner = fuzzyScore("Assymmetric", "sym").?;
+    try std.testing.expect(boundary > inner);
+}
+
+test "palette ranking prefers title hits over id hits" {
+    const stub = .{ .hint = "", .availability = .available, .availability_label = "" };
+    const by_title = scorePaletteCommand(.{ .id = "zzz", .title = "Save File", .hint = stub.hint, .availability = stub.availability, .availability_label = stub.availability_label }, "save").?;
+    const by_id = scorePaletteCommand(.{ .id = "save_file", .title = "Persist Document", .hint = stub.hint, .availability = stub.availability, .availability_label = stub.availability_label }, "save").?;
+    try std.testing.expect(by_title > by_id);
+    try std.testing.expect(scorePaletteCommand(.{ .id = "run_task", .title = "Run Task", .hint = stub.hint, .availability = stub.availability, .availability_label = stub.availability_label }, "qqq") == null);
 }

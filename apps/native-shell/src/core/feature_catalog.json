@@ -1659,7 +1659,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "search",
     "implementation": "native",
     "priority": "P0"

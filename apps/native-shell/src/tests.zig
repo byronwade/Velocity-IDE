@@ -962,10 +962,40 @@ test "command palette filters by query" {
     model_mod.filterCommandPaletteForTest(&model);
     try testing.expect(model.command_items.len > 0);
     try testing.expect(model.command_items.len < model_mod.commands.len);
+    // Fuzzy semantics: every hit contains the query as a subsequence of its
+    // title or id, and direct "save" commands rank at the very top.
     for (model.command_items) |cmd| {
-        const hit = std.ascii.indexOfIgnoreCase(cmd.title, "save") != null or std.ascii.indexOfIgnoreCase(cmd.id, "save") != null;
+        const hit = isSubsequenceIgnoreCase(cmd.title, "save") or isSubsequenceIgnoreCase(cmd.id, "save");
         try testing.expect(hit);
     }
+    try testing.expect(std.ascii.indexOfIgnoreCase(model.command_items[0].title, "save") != null);
+
+    // Abbreviation search: "gts" reaches Go to Symbol without a substring hit.
+    model.command_query.set("gts");
+    model_mod.filterCommandPaletteForTest(&model);
+    try testing.expect(model.command_items.len > 0);
+    var found_go_to_symbol = false;
+    for (model.command_items) |cmd| {
+        if (std.mem.eql(u8, cmd.id, "go_to_symbol")) found_go_to_symbol = true;
+    }
+    try testing.expect(found_go_to_symbol);
+}
+
+fn isSubsequenceIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+    var h: usize = 0;
+    for (needle) |raw| {
+        const want = std.ascii.toLower(raw);
+        var matched = false;
+        while (h < haystack.len) : (h += 1) {
+            if (std.ascii.toLower(haystack[h]) == want) {
+                matched = true;
+                h += 1;
+                break;
+            }
+        }
+        if (!matched) return false;
+    }
+    return true;
 }
 
 test "save all clears dirty active document" {

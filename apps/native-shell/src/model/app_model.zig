@@ -3793,19 +3793,30 @@ fn saveAllDirtyTabs(model: *Model) void {
 }
 
 fn filterCommandPalette(model: *Model) void {
-    const q = model.command_query.text();
+    const q = std.mem.trim(u8, model.command_query.text(), " \t");
     if (q.len == 0) {
         model.command_items = &commands;
         model.command_filtered_count = 0;
         return;
     }
+    // Fuzzy subsequence ranking ("gts" finds Go to Symbol): best score
+    // first, catalog order on ties, bounded by the fixed result array.
+    var scores: [commands.len]u32 = undefined;
     var count: u32 = 0;
     for (commands) |cmd| {
-        if (count >= model.command_filtered.len) break;
-        if (std.ascii.indexOfIgnoreCase(cmd.title, q) != null or std.ascii.indexOfIgnoreCase(cmd.id, q) != null) {
-            model.command_filtered[count] = cmd;
-            count += 1;
+        const score = command_registry.scorePaletteCommand(cmd, q) orelse continue;
+        var insert_at = count;
+        while (insert_at > 0 and scores[insert_at - 1] < score) : (insert_at -= 1) {}
+        if (insert_at >= model.command_filtered.len) continue;
+        const tail_end = @min(count, model.command_filtered.len - 1);
+        var move = tail_end;
+        while (move > insert_at) : (move -= 1) {
+            model.command_filtered[move] = model.command_filtered[move - 1];
+            scores[move] = scores[move - 1];
         }
+        model.command_filtered[insert_at] = cmd;
+        scores[insert_at] = score;
+        if (count < model.command_filtered.len) count += 1;
     }
     model.command_filtered_count = count;
     model.command_items = model.command_filtered[0..count];
