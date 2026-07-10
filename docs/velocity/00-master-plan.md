@@ -2,7 +2,10 @@
 
 ## Product vision
 
-**Velocity** is a native, extremely fast, minimal, agent-aware IDE. It is not a VS Code skin. The existing Code-OSS fork in this repository is a reference implementation, compatibility bunker, and performance baseline — not the product we ship.
+**Velocity** is a native, minimal, agent-aware IDE. It is not a VS Code skin.
+Startup and memory goals remain budgets until repeatable release measurements
+demonstrate them. VS Code is an external behavioral reference at
+https://github.com/microsoft/vscode.
 
 ## What we are building
 
@@ -25,12 +28,11 @@
 
 VS Code’s workbench is deeply coupled: contribution registration, extension host, Electron packaging, and decades of feature surface. Melting it into a blade is valuable research; shipping Velocity requires a clean native shell with explicit state and performance budgets.
 
-## Role of the VS Code fork
+## Role of the external VS Code baseline
 
-1. Reference architecture (editor, LSP, terminal lessons)
-2. Compatibility bunker for legacy VSIX experiments later
-3. Performance comparison baseline
-4. Temporary fallback while Velocity matures
+1. Research editor, LSP, terminal, and extension behaviors
+2. Define reproducible comparison scenarios against published VS Code builds
+3. Inform optional legacy VSIX experiments without importing upstream source
 
 ## High-level milestones
 
@@ -50,7 +52,7 @@ VS Code’s workbench is deeply coupled: contribution registration, extension ho
 
 | Risk | Mitigation |
 |---|---|
-| Native SDK pre-1.0 / platform gaps | Document blockers; keep VS Code fork; Linux software renderer path |
+| Native SDK pre-1.0 / platform gaps | Document blockers; preserve a Linux software-renderer path |
 | Zig/toolchain friction | CLI downloads pinned Zig; document setup |
 | Editor quality gap vs Monaco | Editor island WebView, not shell WebView |
 | Plugin ecosystem cold start | Trusted core plugins + clear author SDK |

@@ -9,15 +9,18 @@
     "build": "native build",
     "test": "native test",
     "clean": "rm -rf .native zig-out zig-cache .zig-cache",
+    "smoke": "npm run perf-smoke && npm run task-smoke && npm run test-smoke && npm run launch-smoke && npm run explorer-smoke && npm run review-snippet-smoke && npm run terminal-smoke && npm run diagnostics-smoke",
     "perf-smoke": "bash scripts/perf-smoke.sh",
     "task-smoke": "bash scripts/task-smoke.sh",
     "test-smoke": "bash scripts/test-smoke.sh",
     "launch-smoke": "bash scripts/launch-smoke.sh",
     "explorer-smoke": "bash scripts/explorer-smoke.sh",
     "review-snippet-smoke": "bash scripts/review-snippet-smoke.sh",
+    "terminal-smoke": "bash scripts/terminal-smoke.sh",
+    "diagnostics-smoke": "bash scripts/diagnostics-smoke.sh",
     "doctor": "native doctor"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }

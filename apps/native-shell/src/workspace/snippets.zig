@@ -1,4 +1,4 @@
-//! Copyright (c) Microsoft Corporation. All rights reserved.
+//! Copyright (c) Velocity IDE contributors.
 //! Bounded, literal-only workspace and optional user snippet configuration.
 
 const std = @import("std");

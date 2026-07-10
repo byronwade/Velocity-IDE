@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@native-sdk/cli": "0.4.0"
+  }
+}

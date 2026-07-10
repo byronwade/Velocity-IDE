@@ -25,7 +25,10 @@ Near-instant terminal panel; low idle RAM; no leaked shells.
 - Memory estimate shown in Performance HUD + Terminal Memory Inspector.
 
 ## VS Code comparison
-This fork defaults `terminal.integrated.scrollback` to **1000** and pre-allocates for smoothness (`terminalConfiguration.ts`). Velocity keeps a higher default for usability but **hard-caps** and uses a ring buffer to avoid unbounded growth.
+The external [Microsoft VS Code terminal baseline](https://github.com/microsoft/vscode/tree/main/src/vs/workbench/contrib/terminal)
+has historically defaulted `terminal.integrated.scrollback` to **1000**.
+Velocity keeps a higher default for usability but **hard-caps** and uses a ring
+buffer to avoid unbounded growth.
 
 ## Status
 Prototype: the non-interactive pipe runner captures command output. A bounded

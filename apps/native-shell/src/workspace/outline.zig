@@ -92,7 +92,7 @@ fn matchSymbol(line: []const u8, path: []const u8) ?Hit {
     if (takeAfter(line, "struct ")) |n| return .{ .name = stripName(n), .kind = "struct" };
     if (takeAfter(line, "def ")) |n| return .{ .name = stripName(n), .kind = "fn" };
     if (takeAfter(line, "async def ")) |n| return .{ .name = stripName(n), .kind = "fn" };
-    if (takeAfter(line, "const ") ) |rest| {
+    if (takeAfter(line, "const ")) |rest| {
         if (std.mem.indexOf(u8, rest, " = ") != null or std.mem.indexOf(u8, rest, "=>") != null) {
             return .{ .name = stripName(rest), .kind = "const" };
         }

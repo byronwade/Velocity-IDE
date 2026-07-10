@@ -1,35 +1,35 @@
+# OS and editor state
 .DS_Store
-.cache
-npm-debug.log
 Thumbs.db
-node_modules/
-.build/
-.vscode/extensions/**/out/
-extensions/**/dist/
-/out*/
-/extensions/**/out/
-build/node_modules
-coverage/
-test_data/
-test-results/
-test-results.xml
-vscode.lsif
-vscode.db
-/.profile-oss
-/cli/target
-/cli/openssl
-product.overrides.json
-*.snap.actual
-*.tsbuildinfo
-.vscode-test
-vscode-telemetry-docs/
+.idea/
+.vscode/
+*.swp
 
-# Local Native SDK CLI install
-.tools/
+# JavaScript tooling
+node_modules/
+npm-debug.log*
+coverage/
+
+# Reproducible local Native SDK CLI
+.tools/*
+!.tools/package.json
+!.tools/package-lock.json
+.tools/node_modules/
+
+# Native SDK and Zig output
 apps/native-shell/.native/
 apps/native-shell/zig-out/
 apps/native-shell/zig-cache/
 apps/native-shell/.zig-cache/
+zig-cache/
+.zig-cache/
+zig-out/
 
-# Local agent scratch (not part of Velocity)
+# Runtime workspace state and test output
+apps/native-shell/.velocity/
+test-results/
+*.log
+
+# Local scratch
+.cursor/
 .perf-fork/

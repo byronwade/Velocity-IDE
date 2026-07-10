@@ -1,0 +1,37 @@
+name: Smoke
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - perf
+          - task
+          - test
+          - launch
+          - explorer
+          - review-snippet
+          - terminal
+          - diagnostics
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Linux native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev xvfb
+      - name: Install pinned Native SDK CLI
+        run: npm ci --prefix .tools
+      - name: Run smoke suite
+        run: xvfb-run -a npm run smoke:${{ matrix.suite }}

@@ -322,8 +322,8 @@ pub fn sortLines(text: []const u8, out: []u8) ?usize {
     while (a < count) : (a += 1) {
         var b = a;
         while (b > 0) {
-            const left = text[starts[b - 1] ..][0..lens[b - 1]];
-            const right = text[starts[b] ..][0..lens[b]];
+            const left = text[starts[b - 1]..][0..lens[b - 1]];
+            const right = text[starts[b]..][0..lens[b]];
             if (std.mem.order(u8, left, right) != .gt) break;
             const ts = starts[b - 1];
             const tl = lens[b - 1];
@@ -337,7 +337,7 @@ pub fn sortLines(text: []const u8, out: []u8) ?usize {
     var dst: usize = 0;
     var li: usize = 0;
     while (li < count) : (li += 1) {
-        const line = text[starts[li] ..][0..lens[li]];
+        const line = text[starts[li]..][0..lens[li]];
         if (dst + line.len > out.len) return null;
         @memcpy(out[dst..][0..line.len], line);
         dst += line.len;
@@ -372,7 +372,7 @@ pub fn reverseLines(text: []const u8, out: []u8) ?usize {
     var li: usize = count;
     while (li > 0) {
         li -= 1;
-        const line = text[starts[li] ..][0..lens[li]];
+        const line = text[starts[li]..][0..lens[li]];
         if (dst + line.len > out.len) return null;
         @memcpy(out[dst..][0..line.len], line);
         dst += line.len;
@@ -717,8 +717,8 @@ pub fn sortUniqueLines(text: []const u8, out: []u8) ?usize {
     while (a < count) : (a += 1) {
         var b = a;
         while (b > 0) {
-            const left = text[starts[b - 1] ..][0..lens[b - 1]];
-            const right = text[starts[b] ..][0..lens[b]];
+            const left = text[starts[b - 1]..][0..lens[b - 1]];
+            const right = text[starts[b]..][0..lens[b]];
             if (std.mem.order(u8, left, right) != .gt) break;
             const ts = starts[b - 1];
             const tl = lens[b - 1];
@@ -733,9 +733,9 @@ pub fn sortUniqueLines(text: []const u8, out: []u8) ?usize {
     var li: usize = 0;
     var wrote: usize = 0;
     while (li < count) : (li += 1) {
-        const line = text[starts[li] ..][0..lens[li]];
+        const line = text[starts[li]..][0..lens[li]];
         if (wrote > 0) {
-            const prev = text[starts[li - 1] ..][0..lens[li - 1]];
+            const prev = text[starts[li - 1]..][0..lens[li - 1]];
             if (std.mem.eql(u8, prev, line)) continue;
         }
         if (wrote > 0) {

@@ -22,22 +22,26 @@
 - https://code.visualstudio.com/docs/agents/overview
 - https://github.com/vercel-labs/native / https://native-sdk.dev
 
-### This fork (exact paths)
-- `package.json`, `product.json`, `README.md`
-- `src/vs/workbench/workbench.desktop.main.ts`
-- `src/vs/workbench/workbench.common.main.ts`
-- `src/vs/code/electron-main/`
-- `src/vs/workbench/api/`
-- `src/vs/workbench/services/extensions/` (esp. `common/extensionsRegistry.ts`, `common/abstractExtensionService.ts`)
-- `src/vs/platform/extensions/common/extensions.ts` (`IExtensionContributions`)
-- Contrib: `src/vs/workbench/contrib/{terminal,files,search,scm,debug,tasks,testing,notebook,chat,extensions}/`
-- Built-in extensions: `extensions/` (~93 package.json manifests with `contributes`)
+### External Microsoft VS Code source baseline
+
+Research used the external `microsoft/vscode` repository; none of these paths
+exist locally:
+
+- https://github.com/microsoft/vscode/blob/main/package.json
+- https://github.com/microsoft/vscode/tree/main/src/vs/workbench
+- https://github.com/microsoft/vscode/tree/main/src/vs/code/electron-main
+- https://github.com/microsoft/vscode/tree/main/src/vs/workbench/api
+- https://github.com/microsoft/vscode/tree/main/src/vs/workbench/services/extensions
+- https://github.com/microsoft/vscode/blob/main/src/vs/platform/extensions/common/extensions.ts
+- https://github.com/microsoft/vscode/tree/main/src/vs/workbench/contrib
+- https://github.com/microsoft/vscode/tree/main/extensions
 
 ---
 
 ## Contribution point inventory
 
-From official contribution-points docs + local `IExtensionContributions` / docs list:
+From official contribution-point docs and the external baseline's
+`IExtensionContributions` definition:
 
 | Contribution | Velocity mapping | Mode | Impl | Startup | Mem risk | Proc risk | Priority |
 |---|---|---|---|---|---|---|---|
@@ -72,7 +76,7 @@ From official contribution-points docs + local `IExtensionContributions` / docs 
 
 ## Activation event inventory
 
-From docs + `extensionsRegistry.ts` in this fork:
+From the docs and the external baseline's `extensionsRegistry.ts`:
 
 | Event | Velocity policy | Allowed before first paint? |
 |---|---|---|
@@ -107,35 +111,42 @@ Velocity adds: `onStartupCritical`, `onFirstPaintDone`, `onIdle`, `onPanelVisibl
 
 ### Editor / workbench
 Editing basics (docs/editing/codebasics): multi-cursor, find/replace, folding, breadcrumbs, minimap, sticky scroll, etc.
-**Fork:** `contrib/codeEditor`, `contrib/folding`, `contrib/snippets`, `contrib/preferences`, `contrib/keybindings`, `contrib/themes`, `contrib/quickaccess`.
+**External baseline:** corresponding modules under
+https://github.com/microsoft/vscode/tree/main/src/vs/workbench/contrib.
 **Velocity:** core shell + editor-island; minimap **disabled by default**; Monaco via island after paint.
 
 ### Terminal
-Docs: profiles, tabs, splits, links, scrollback (default **1000** in this fork: `terminalConfiguration.ts`), shell integration, sticky scroll, command nav.
-**Fork:** `contrib/terminal`, `contrib/terminalContrib`, `contrib/externalTerminal`.
+Docs: profiles, tabs, splits, links, scrollback, shell integration, sticky
+scroll, and command navigation.
+**External baseline:** https://github.com/microsoft/vscode/tree/main/src/vs/workbench/contrib/terminal.
 **Velocity:** bounded scrollback default **2000** / hard max **10000**; no shell integration before first command; Process Governor owns PTY; see `12-terminal-ram-and-process-management.md`.
 
 ### SCM
 Docs: sourcecontrol/overview.
-**Fork:** `contrib/scm`, `extensions/git`, `extensions/git-base`.
+**External baseline:** [SCM workbench](https://github.com/microsoft/vscode/tree/main/src/vs/workbench/contrib/scm)
+and [Git extensions](https://github.com/microsoft/vscode/tree/main/extensions).
 **Velocity:** Dev mode; no git process until SCM visible/queried.
 
 ### Debug / tasks / testing
 Docs: debugging, tasks.
-**Fork:** `contrib/debug`, `contrib/tasks`, `contrib/testing`, `contrib/output`, `contrib/markers`.
+**External baseline:** relevant modules under
+https://github.com/microsoft/vscode/tree/main/src/vs/workbench/contrib.
 **Velocity:** Dev mode; adapters/tasks only on explicit start.
 
 ### Notebook / webview / remote
-**Fork:** `contrib/notebook`, `contrib/webview*`, `contrib/remote*`, `contrib/customEditor`.
+**External baseline:** relevant modules under
+https://github.com/microsoft/vscode/tree/main/src/vs/workbench/contrib.
 **Velocity:** Heavy/Remote; never boot.
 
 ### Agent / chat
 Docs: agents/overview.
-**Fork:** `contrib/chat`, `contrib/inlineChat`, `contrib/mcp`, `contrib/remoteCodingAgents`.
+**External baseline:** relevant modules under
+https://github.com/microsoft/vscode/tree/main/src/vs/workbench/contrib.
 **Velocity:** Agent mode first-class; no network/AI calls in scaffold; MCP disabled by default.
 
 ### Extensions security risks
-From extension-runtime-security + Workspace Trust docs + local host:
+From extension-runtime-security, Workspace Trust docs, and the external host
+implementation:
 - Extension host has **same OS permissions as the app** (filesystem, network, processes).
 - Publisher trust prompts do not sandbox capabilities.
 - Workspace Trust / Restricted Mode gates automatic code execution; still not a true capability sandbox.

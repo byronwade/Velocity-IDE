@@ -1,6 +1,7 @@
 # Velocity MVP Definition
 
-Ship a **usable daily-driver core** beside the VS Code fork — not feature parity, not Monaco, not plugins.
+Ship a **usable standalone core** informed by the external Microsoft VS Code
+baseline — not feature parity, not Monaco, and not plugins.
 
 ## In scope (this MVP)
 
@@ -124,11 +125,11 @@ Ship a **usable daily-driver core** beside the VS Code fork — not feature pari
   caret/scroll synchronization contracts)
 - Plugin downloads / marketplace
 - OS folder dialog (stretch; path entry ships first)
-- Electron workbench changes
+- Electron workbench integration
 
 ## Success criteria
 
-1. `native check` / `test` / `build` pass
+1. Root `npm run check`, `npm test`, and `npm run build` pass
 2. Open fixture → edit → save → re-open shows change
 3. Run a shell command in terminal panel; output captured; governor tracks it
 4. Search finds known fixture symbols; SCM panel refreshes without crashing

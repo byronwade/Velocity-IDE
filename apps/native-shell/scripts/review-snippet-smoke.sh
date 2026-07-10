@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Exercise snippet append/undo and read-only diff review open/close.
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
-export PATH="/workspace/.tools/node_modules/.bin:/home/ubuntu/.native/toolchains/zig-0.16.0:${PATH:-}"
+SHELL_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$SHELL_ROOT/../.." && pwd)"
+cd "$SHELL_ROOT"
+export PATH="$REPO_ROOT/.tools/node_modules/.bin:${PATH:-}"
 
 native build -Dautomation=true
 rm -rf .zig-cache/native-sdk-automation

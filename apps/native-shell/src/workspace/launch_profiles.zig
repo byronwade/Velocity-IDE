@@ -305,8 +305,8 @@ fn validEnvKey(key: []const u8) bool {
 
 fn isDebugKey(key: []const u8) bool {
     const debug_keys = [_][]const u8{
-        "configurations", "type", "request", "program", "args", "runtimeExecutable",
-        "runtimeArgs", "preLaunchTask", "postDebugTask", "debugServer", "stopOnEntry",
+        "configurations", "type",          "request",       "program",     "args",        "runtimeExecutable",
+        "runtimeArgs",    "preLaunchTask", "postDebugTask", "debugServer", "stopOnEntry",
     };
     for (debug_keys) |debug_key| {
         if (std.mem.eql(u8, key, debug_key)) return true;

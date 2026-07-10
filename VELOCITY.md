@@ -1,36 +1,37 @@
 # Velocity IDE
 
-This repository contains:
-
-1. The original **VS Code / Code-OSS fork** under `src/`, `extensions/`, etc. — reference, feature oracle, compatibility bunker, performance baseline. **Not the product we ship.**
-2. The new **Velocity** native IDE under `apps/native-shell/`.
+This repository is the standalone Velocity native IDE. Microsoft VS Code is
+used only as an external research reference.
 
 ## Status
 
 | Area | Status |
 |---|---|
-| Native SDK mock shell | Runs (`native check` / `test` / `build`) |
+| Native SDK shell | Runs (`npm run check` / `test` / `build`) |
+| Automated coverage | 252 native tests; eight end-to-end smoke scripts |
 | Workspace file I/O (M2) | Fixture + typed path open, bounded scan, text read |
 | Edit + Save (MVP) | Native textarea + disk write (Cmd+S) |
 | New / Rename / Delete | Explorer file ops + rescan |
+| Explorer collapse | Per-folder and all-folder controls; filter temporarily reveals matches |
 | Find + Quick Open | In-doc find; Cmd+P file filter |
 | Replace + Copy path | Replace once/all; copy active path to toast |
 | Prefs + Recent | Theme / last path / panels / recent / auto-save / find-case |
 | Document stats | Status bar line + byte counts |
 | Breadcrumb | Active relative path in editor header |
 | Problems | Marker + terminal/test diagnostics, severity/source filters |
-| Diff review | Read-only bounded unified line review for saved files and staged/unstaged SCM |
-| Snippets | Bounded workspace/user literal snippets with searchable append picker |
+| Diff review | Read-only, bounded line review for saved and staged/unstaged Git changes; not an editable diff editor |
+| Snippets | Versioned, bounded workspace/user literal snippets; no dynamic placeholders |
 | Editor transforms | Toggle comment, indent/outdent, reopen closed tab |
 | Search (MVP) | Bounded in-process workspace text search |
 | SCM (MVP) | Lazy `git status` / branch via governor |
 | Terminal (MVP) | Async `fx.spawn` pipe runner (sync fallback in tests) |
 | Tasks / Tests (MVP) | npm + tasks.json + Make detection; governed run/stop/rerun |
+| Run profiles | Bounded `.velocity/launch.json` command profiles; not debugger configurations |
 | Output (MVP) | Bounded labeled task/test terminal mirror |
-| Feature modules | 200 stubs under `src/features/` |
+| Feature modules | Registry scaffold under `apps/native-shell/src/features/` |
 | Feature registry + activation policy | Scaffold |
 | Process Governor | Tracks terminal / search / scm runs |
-| Performance HUD / Feature Matrix | UI + mock metrics labeled **mock** |
+| Performance HUD | Reports measured values or `n/a`; no startup/RSS budget claim yet |
 | Research docs | `docs/velocity/11-*.md` … `18-*.md` |
 
 Codename **Velocity** is temporary and rename-ready.
@@ -38,11 +39,7 @@ Codename **Velocity** is temporary and rename-ready.
 ## Run
 
 ```bash
-npm install -g @native-sdk/cli   # or: npm install --prefix .tools @native-sdk/cli
-# Linux:
-sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
-
-cd apps/native-shell
+npm install
 npm run check && npm run test && npm run build
 npm run dev
 ```
@@ -64,4 +61,4 @@ npm run dev
 
 MVP definition: `docs/velocity/18-mvp-definition.md`
 
-Do **not** rewrite the Electron workbench for Velocity features in this phase.
+VS Code reference: https://github.com/microsoft/vscode

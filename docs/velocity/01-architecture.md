@@ -8,7 +8,7 @@ packages/ide-core/     # Shared workspace/command concepts (TS stubs)
 packages/plugin-sdk/   # Manifest + permission schemas
 packages/registry-client/
 docs/velocity/
-src/                   # Untouched VS Code / Code-OSS fork (reference)
+.tools/                # Locked Native SDK CLI installer metadata
 ```
 
 ## Systems
@@ -25,7 +25,8 @@ src/                   # Untouched VS Code / Code-OSS fork (reference)
 
 ## Dependency boundaries
 
-- Shell must not import VS Code workbench modules.
+- Shell has no dependency on VS Code workbench modules. External reference:
+  https://github.com/microsoft/vscode.
 - Plugins cannot reach shell/network/fs without permissions.
 - LSP broker is the only language-intelligence process manager.
 - Editor island is the only allowed WebView in the product shell.

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Boot Velocity, run a compiler-like command, and verify clickable Problems output.
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
-export PATH="/workspace/.tools/node_modules/.bin:/home/ubuntu/.native/toolchains/zig-0.16.0:${PATH:-}"
+SHELL_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$SHELL_ROOT/../.." && pwd)"
+cd "$SHELL_ROOT"
+export PATH="$REPO_ROOT/.tools/node_modules/.bin:${PATH:-}"
 
 native build -Dautomation=true
 rm -rf .zig-cache/native-sdk-automation

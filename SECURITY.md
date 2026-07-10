@@ -1,14 +1,13 @@
-<!-- BEGIN MICROSOFT SECURITY.MD V1.0.0 BLOCK -->
+# Security policy
 
-## Security
+Velocity is pre-release software. Security fixes target the current `main`
+branch; no released version is currently supported.
 
-Microsoft takes the security of our software products and services seriously, which
-includes all source code repositories in our GitHub organizations.
+Do not file public issues for suspected vulnerabilities. Use GitHub's private
+vulnerability reporting feature for this repository. If that feature is
+unavailable, contact the repository maintainers privately through the
+repository's established maintainer contact channel.
 
-**Please do not report security vulnerabilities through public GitHub issues.**
-
-For security reporting information, locations, contact information, and policies,
-please review the latest guidance for Microsoft repositories at
-[https://aka.ms/SECURITY.md](https://aka.ms/SECURITY.md).
-
-<!-- END MICROSOFT SECURITY.MD BLOCK -->
+Include affected revision, impact, reproduction steps, and any suggested
+mitigation. Maintainers will acknowledge reports when reviewed; response and
+remediation timelines depend on severity and project capacity.
