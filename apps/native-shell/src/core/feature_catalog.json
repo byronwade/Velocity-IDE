@@ -530,7 +530,7 @@
     ],
     "dependencies": [],
     "permissions": [],
-    "status": "stub",
+    "status": "working",
     "category": "files",
     "implementation": "process",
     "priority": "P1"
@@ -1688,7 +1688,7 @@
       "unblockCriteria": [
         "macOS openpty ioctl variant in the sidecar broker (expected-compatible, untested)",
         "Windows ConPTY adapter (CreatePseudoConsole + Job Objects)",
-        "ANSI rendering (colors/cursor addressing) — sequences are currently stripped before the scrollback ring"
+        "ANSI rendering (colors/cursor addressing) \u2014 sequences are currently stripped before the scrollback ring"
       ]
     },
     "category": "terminal",

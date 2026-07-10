@@ -50,7 +50,7 @@ pub const catalog = [_]FeatureEntry{
     .{ .id = "feature.workspace-manager", .name = "Workspace Manager", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 0, .status = .stub, .enabled = true },
     .{ .id = "feature.multi-root-workspaces", .name = "Multi-root Workspaces", .mode = .dev, .default_enabled = false, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 0, .status = .stub, .enabled = false },
     .{ .id = "feature.recent-projects", .name = "Recent Projects", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 2, .max_processes = 0, .status = .prototype, .enabled = true },
-    .{ .id = "feature.file-watchers", .name = "File Watchers", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 1, .status = .stub, .enabled = true },
+    .{ .id = "feature.file-watchers", .name = "File Watchers", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 1, .status = .working, .enabled = true },
     .{ .id = "feature.hot-exit", .name = "Hot Exit", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 4, .max_processes = 0, .status = .working, .enabled = true },
     .{ .id = "feature.auto-save", .name = "Auto Save", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 2, .max_processes = 0, .status = .working, .enabled = true },
     .{ .id = "feature.backups", .name = "Backups", .mode = .core, .default_enabled = true, .startup_allowed = false, .memory_budget_mb = 8, .max_processes = 0, .status = .working, .enabled = true },

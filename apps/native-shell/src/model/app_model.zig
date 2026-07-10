@@ -28,6 +28,7 @@ const lsp_session = @import("../lsp/lsp_session.zig");
 const broker_transport = @import("../lsp/broker_transport.zig");
 const git_status = @import("../scm/git_status.zig");
 const hunk_patch = @import("../scm/hunk_patch.zig");
+const dir_watch = @import("../workspace/dir_watch.zig");
 const prefs_mod = @import("../core/prefs.zig");
 const undo_stack = @import("../workspace/undo_stack.zig");
 const tab_history = @import("../workspace/tab_history.zig");
@@ -635,6 +636,9 @@ pub const Model = struct {
     git_hunk_rows: [hunk_patch.max_hunks]GitHunkRow = [_]GitHunkRow{.{}} ** hunk_patch.max_hunks,
     git_hunk_labels: [hunk_patch.max_hunks][max_hunk_label]u8 = undefined,
     git_hunk_discard_pending: u32 = 0,
+    /// Bounded directory watcher: baselined after every scan, budgeted
+    /// re-stat per disk-poll tick, auto-refreshes the explorer on change.
+    dir_watcher: dir_watch.Watcher = .{},
     git_branch_status: []const u8 = "",
     git_new_branch: canvas.TextBuffer(git_status.max_branch_name) = .{},
     git_summary: []const u8 = "not loaded",
@@ -935,6 +939,7 @@ pub const Model = struct {
         "git_hunk_rows",
         "git_hunk_labels",
         "git_hunk_discard_pending",
+        "dir_watcher",
         "rg_results",
         "git_bufs",
         "task_bufs",
@@ -3890,6 +3895,22 @@ fn refreshDiskSync(model: *Model, manual: bool) void {
         if (manual) model.toast = "Open a workspace first";
         return;
     };
+    // Tree-level watch: a few dir stats per tick; a change triggers the
+    // tab-preserving rescan (which re-baselines below). Manual refresh
+    // sweeps the whole watch list.
+    if (model.workspace_from_disk) {
+        if (!model.dir_watcher.baselined) {
+            model.dir_watcher.baseline(modelIo(model), ws.rootPath(), ws.fileNodesSlice());
+        } else if (model.dir_watcher.check(
+            modelIo(model),
+            ws.rootPath(),
+            ws.fileNodesSlice(),
+            if (manual) dir_watch.max_dirs else 8,
+        )) {
+            refreshExplorer(model);
+            model.toast = "Workspace changed on disk; explorer refreshed";
+        }
+    }
     const batch = model.disk_checker.check(
         modelIo(model),
         ws,
@@ -4656,6 +4677,7 @@ fn applyWorkspaceMeta(model: *Model, ws: *workspace_store.WorkspaceBuffers, meta
     model.project_branch = meta.branch;
     model.explorer_collapse.clear();
     model.explorer_selected_path_len = 0;
+    model.dir_watcher.reset();
     if (model.git_bufs) |bufs| bufs.clear();
     model.git_entries = &.{};
     model.git_summary = "not loaded";
@@ -7335,6 +7357,9 @@ fn refreshExplorer(model: *Model) void {
         return;
     };
     model.file_nodes = ws.fileNodesSlice();
+    // Every rescan re-baselines the directory watcher, so app-originated
+    // file mutations never masquerade as external changes a tick later.
+    model.dir_watcher.baseline(modelIo(model), ws.rootPath(), ws.fileNodesSlice());
     model.open_tabs = ws.tabsSlice();
     syncExplorerScanMeta(model, ws);
     applyExplorerFilter(model);
