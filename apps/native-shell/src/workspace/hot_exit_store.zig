@@ -227,12 +227,15 @@ test "hot exit roundtrip preserves root active tab and dirty text" {
         .{ .path = "src/a.zig" },
         .{ .path = "src/b.zig", .dirty = true, .dirty_text = "unsaved\ntext\n" },
     };
-    var encoded: [max_serialized_bytes]u8 = undefined;
+    // max_serialized_bytes scales with the editor ceiling; keep it off the
+    // test stack.
+    const encoded = try std.testing.allocator.alloc(u8, max_serialized_bytes);
+    defer std.testing.allocator.free(encoded);
     const len = try serialize(.{
         .root = "/work/project",
         .active_path = "src/b.zig",
         .tabs = &tabs,
-    }, &encoded);
+    }, encoded);
 
     const state = try std.testing.allocator.create(State);
     defer std.testing.allocator.destroy(state);

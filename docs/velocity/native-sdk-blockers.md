@@ -1,5 +1,21 @@
 # Native SDK Blockers Log
 
+## Environment notes (egress-restricted runners, 2026-07-10)
+
+When `ziglang.org` is blocked (the CLI's toolchain download 403s), the same
+Zig release ships as the official `ziglang` wheel on PyPI, which most proxies
+allow. Install it where the CLI looks for its managed toolchain:
+
+```bash
+pip download ziglang==0.16.0 --no-deps -d /tmp/zigwheel
+unzip -q /tmp/zigwheel/ziglang-*.whl -d /tmp/zigpkg
+mkdir -p ~/.native/toolchains
+cp -r /tmp/zigpkg/ziglang ~/.native/toolchains/zig-0.16.0
+chmod +x ~/.native/toolchains/zig-0.16.0/zig
+```
+
+Headless runners without a display: run smoke suites under `xvfb-run -a`.
+
 ## Environment notes (Linux validation, 2026-07-09)
 
 - Host: Linux x86_64

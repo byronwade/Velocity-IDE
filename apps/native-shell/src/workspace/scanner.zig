@@ -10,7 +10,12 @@ pub const max_depth: u8 = 8;
 pub const max_name_len: usize = 64;
 pub const max_rel_path_len: usize = 240;
 pub const max_root_path_len: usize = 512;
-pub const max_file_bytes: usize = 16 * 1024;
+/// Hard editor-file ceiling. Files beyond this open nowhere in the shell and
+/// surface an honest FileTooLarge state. Raising it scales the per-tab text
+/// pools and hot-exit buffers, which live in heap-allocated singletons —
+/// only transient scratch may be stack-resident at this size (one buffer per
+/// frame; never arrays of them).
+pub const max_file_bytes: usize = 256 * 1024;
 pub const max_internal_rel_path_len: usize = 512;
 pub const max_atomic_temp_path_len: usize = max_internal_rel_path_len + ".velocity-tmp".len;
 
@@ -253,6 +258,24 @@ pub fn nodeName(bufs: *const ScanBuffers, node: ScanNode) []const u8 {
 
 pub fn nodePath(bufs: *const ScanBuffers, node: ScanNode) []const u8 {
     return bufs.path_pool[node.path_off..][0..node.path_len];
+}
+
+/// Stat-only size preflight so callers can refuse oversized files before
+/// mutating any editor or tab state (and without reading the content).
+pub fn statFileSize(io: Io, root_path: []const u8, rel_path: []const u8) ReadTextFileError!u64 {
+    validateRelativePathBounded(rel_path, max_internal_rel_path_len) catch return error.AccessDenied;
+    var root = Io.Dir.cwd().openDir(io, root_path, .{}) catch return error.AccessDenied;
+    defer root.close(io);
+    var file = root.openFile(io, rel_path, .{}) catch |err| {
+        return switch (err) {
+            error.FileNotFound => error.FileNotFound,
+            error.AccessDenied, error.PermissionDenied => error.AccessDenied,
+            else => error.AccessDenied,
+        };
+    };
+    defer file.close(io);
+    const stat = file.stat(io) catch return error.AccessDenied;
+    return stat.size;
 }
 
 pub fn readTextFile(io: Io, root_path: []const u8, rel_path: []const u8, out: []u8) ReadTextFileError!usize {

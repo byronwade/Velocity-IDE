@@ -2759,7 +2759,7 @@ fn openWorkspaceFile(model: *Model, ws: *workspace_store.WorkspaceBuffers, id: u
         var probe: [workspace_store.max_editor_bytes]u8 = undefined;
         _ = scanner_mod.readTextFile(modelIo(model), ws.rootPath(), node.path, &probe) catch |err| {
             model.toast = switch (err) {
-                error.FileTooLarge => "File exceeds the 16 KiB editor limit; active tab was not changed",
+                error.FileTooLarge => "File exceeds the " ++ workspace_store.editor_limit_label ++ " editor limit; active tab was not changed",
                 error.BinaryFile => "Binary file is not editable; active tab was not changed",
                 else => "Unable to read file; active tab was not changed",
             };
@@ -2769,7 +2769,7 @@ fn openWorkspaceFile(model: *Model, ws: *workspace_store.WorkspaceBuffers, id: u
     if (model.disk_checker.isStale(id) and !ws.tabIsDirty(id)) {
         ws.reloadFileById(modelIo(model), id) catch |err| {
             model.toast = switch (err) {
-                error.FileTooLarge => "File exceeds the 16 KiB editor limit; active tab was not changed",
+                error.FileTooLarge => "File exceeds the " ++ workspace_store.editor_limit_label ++ " editor limit; active tab was not changed",
                 else => "Unable to reload changed file; active tab was not changed",
             };
             return false;
@@ -2781,7 +2781,7 @@ fn openWorkspaceFile(model: *Model, ws: *workspace_store.WorkspaceBuffers, id: u
     ws.openFileById(modelIo(model), id) catch |err| {
         model.toast = switch (err) {
             error.AllTabsDirty => "All 8 tabs have unsaved changes; save or close one before opening another",
-            error.FileTooLarge => "File exceeds the 16 KiB editor limit; active tab was not changed",
+            error.FileTooLarge => "File exceeds the " ++ workspace_store.editor_limit_label ++ " editor limit; active tab was not changed",
             else => "Unable to open file; active tab was not changed",
         };
         return false;
@@ -3403,9 +3403,12 @@ fn ensureActiveHistory(model: *Model) !*undo_stack.UndoStack {
     const path = historyPath(model);
     if (path.len == 0) return error.NoActiveDocument;
     const store = try ensureHistoryStore(model);
+    // Snapshot history budget: 8 full-size documents deep at the ceiling,
+    // far deeper for typical files. Worst case per tab is 2 MiB heap,
+    // allocated only as edits happen.
     return try store.ensure(path, model.document.text(), .{
         .max_entries = 32,
-        .max_bytes = max_document * 16,
+        .max_bytes = max_document * 8,
     });
 }
 
@@ -3649,7 +3652,7 @@ fn saveActiveDocument(model: *Model) void {
             model.disk_changed = true;
             model.toast = "File changed on disk — Compare, Revert, or Overwrite";
         } else if (err == error.FileTooLarge) {
-            model.toast = "File exceeds the 16 KiB editor limit; nothing was saved";
+            model.toast = "File exceeds the " ++ workspace_store.editor_limit_label ++ " editor limit; nothing was saved";
         } else {
             model.toast = "Save failed";
         }
@@ -3677,7 +3680,7 @@ fn overwriteActiveDocument(model: *Model) void {
     applySaveHygiene(model);
     ws.saveActiveFileForce(modelIo(model), model.document.text()) catch |err| {
         model.toast = if (err == error.FileTooLarge)
-            "File exceeds the 16 KiB backup limit; original left unchanged"
+            "File exceeds the " ++ workspace_store.editor_limit_label ++ " backup limit; original left unchanged"
         else
             "Overwrite failed; original left unchanged";
         return;

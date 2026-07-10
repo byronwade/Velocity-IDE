@@ -364,11 +364,15 @@ test "rejects oversized replacement output before changing disk" {
     std.Io.Dir.cwd().deleteTree(std.testing.io, root_path) catch {};
     defer std.Io.Dir.cwd().deleteTree(std.testing.io, root_path) catch {};
     try std.Io.Dir.cwd().createDirPath(std.testing.io, root_path);
-    var source: [9000]u8 = undefined;
-    @memset(source[0..], 'a');
+    // Sized so doubling every byte overflows the ceiling regardless of the
+    // configured bound; heap-backed because it scales with max_file_bytes.
+    const source_len = scanner.max_file_bytes / 2 + 512;
+    const source = try std.testing.allocator.alloc(u8, source_len);
+    defer std.testing.allocator.free(source);
+    @memset(source, 'a');
     try std.Io.Dir.cwd().writeFile(std.testing.io, .{
         .sub_path = root_path ++ "/large.txt",
-        .data = source[0..],
+        .data = source,
     });
 
     const workspace = try std.testing.allocator.create(workspace_store.WorkspaceBuffers);
@@ -383,14 +387,15 @@ test "rejects oversized replacement output before changing disk" {
     );
     try std.testing.expectEqual(@as(u32, 0), workflow.preview_count);
 
-    var disk_buf: [9001]u8 = undefined;
+    const disk_buf = try std.testing.allocator.alloc(u8, source_len + 1);
+    defer std.testing.allocator.free(disk_buf);
     const disk = try std.Io.Dir.cwd().readFile(
         std.testing.io,
         root_path ++ "/large.txt",
-        disk_buf[0..],
+        disk_buf,
     );
     try std.testing.expectEqual(@as(usize, source.len), disk.len);
-    try std.testing.expectEqualSlices(u8, source[0..], disk);
+    try std.testing.expectEqualSlices(u8, source, disk);
 }
 
 test "whole word and path scope stay identical between preview and apply" {

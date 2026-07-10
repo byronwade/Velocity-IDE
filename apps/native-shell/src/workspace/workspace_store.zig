@@ -9,6 +9,9 @@ const backup_store = @import("backup_store.zig");
 pub const max_nodes = scanner.max_nodes;
 pub const max_open_tabs: usize = 8;
 pub const max_editor_bytes = scanner.max_file_bytes;
+/// Human label for the editor ceiling, kept in sync with the constant so
+/// user-facing limit messages never go stale when the bound changes.
+pub const editor_limit_label = std.fmt.comptimePrint("{d} KiB", .{max_editor_bytes / 1024});
 pub const max_root_path_len = scanner.max_root_path_len;
 
 pub const FileNode = struct {
@@ -230,26 +233,37 @@ pub const WorkspaceBuffers = struct {
         @memcpy(saved_active_path[0..active_path.len], active_path);
         const active = saved_active_path[0..active_path.len];
 
-        var saved_paths: [max_open_tabs][scanner.max_rel_path_len]u8 = undefined;
-        var saved_lens: [max_open_tabs]usize = [_]usize{0} ** max_open_tabs;
-        var saved_dirty: [max_open_tabs]bool = [_]bool{false} ** max_open_tabs;
-        var saved_stale: [max_open_tabs]bool = [_]bool{false} ** max_open_tabs;
-        var saved_text: [max_open_tabs][max_editor_bytes]u8 = undefined;
-        var saved_text_lens: [max_open_tabs]usize = [_]usize{0} ** max_open_tabs;
-        var saved_fingerprints: [max_open_tabs]file_fingerprint.Fingerprint = [_]file_fingerprint.Fingerprint{.{}} ** max_open_tabs;
+        // The dirty-text save area scales with max_editor_bytes, so it must be
+        // transient heap, never a stack frame (same pattern as hot-exit state).
+        const SavedTabs = struct {
+            paths: [max_open_tabs][scanner.max_rel_path_len]u8,
+            lens: [max_open_tabs]usize,
+            dirty: [max_open_tabs]bool,
+            stale: [max_open_tabs]bool,
+            text: [max_open_tabs][max_editor_bytes]u8,
+            text_lens: [max_open_tabs]usize,
+            fingerprints: [max_open_tabs]file_fingerprint.Fingerprint,
+        };
+        const saved = std.heap.page_allocator.create(SavedTabs) catch return error.NotFound;
+        defer std.heap.page_allocator.destroy(saved);
+        saved.lens = [_]usize{0} ** max_open_tabs;
+        saved.dirty = [_]bool{false} ** max_open_tabs;
+        saved.stale = [_]bool{false} ** max_open_tabs;
+        saved.text_lens = [_]usize{0} ** max_open_tabs;
+        saved.fingerprints = [_]file_fingerprint.Fingerprint{.{}} ** max_open_tabs;
         var saved_count: u32 = 0;
         for (self.tabsSlice(), 0..) |tab, source_idx| {
             if (saved_count >= max_open_tabs) break;
-            const n = @min(tab.path.len, saved_paths[saved_count].len);
-            @memcpy(saved_paths[saved_count][0..n], tab.path[0..n]);
-            saved_lens[saved_count] = n;
-            saved_dirty[saved_count] = tab.dirty;
-            saved_stale[saved_count] = tab.stale;
+            const n = @min(tab.path.len, saved.paths[saved_count].len);
+            @memcpy(saved.paths[saved_count][0..n], tab.path[0..n]);
+            saved.lens[saved_count] = n;
+            saved.dirty[saved_count] = tab.dirty;
+            saved.stale[saved_count] = tab.stale;
             if (tab.dirty) {
                 const text_len = self.tab_text_lens[source_idx];
-                @memcpy(saved_text[saved_count][0..text_len], self.tab_text_pool[source_idx][0..text_len]);
-                saved_text_lens[saved_count] = text_len;
-                saved_fingerprints[saved_count] = self.tab_disk_fingerprints[source_idx];
+                @memcpy(saved.text[saved_count][0..text_len], self.tab_text_pool[source_idx][0..text_len]);
+                saved.text_lens[saved_count] = text_len;
+                saved.fingerprints[saved_count] = self.tab_disk_fingerprints[source_idx];
             }
             saved_count += 1;
         }
@@ -278,15 +292,15 @@ pub const WorkspaceBuffers = struct {
 
         var i: u32 = 0;
         while (i < saved_count) : (i += 1) {
-            const path = saved_paths[i][0..saved_lens[i]];
+            const path = saved.paths[i][0..saved.lens[i]];
             if (self.findNodeByPath(path)) |node| {
                 self.openFileById(io, node.id) catch continue;
-                if (saved_dirty[i]) {
-                    self.cacheActiveText(saved_text[i][0..saved_text_lens[i]]);
-                    if (self.activeTabIndex()) |idx| self.tab_disk_fingerprints[idx] = saved_fingerprints[i];
+                if (saved.dirty[i]) {
+                    self.cacheActiveText(saved.text[i][0..saved.text_lens[i]]);
+                    if (self.activeTabIndex()) |idx| self.tab_disk_fingerprints[idx] = saved.fingerprints[i];
                     self.setTabDirty(node.id, true);
                 }
-                self.setTabStale(node.id, saved_stale[i]);
+                self.setTabStale(node.id, saved.stale[i]);
             }
         }
 
@@ -449,7 +463,7 @@ pub const WorkspaceBuffers = struct {
             if (!n.is_dir) {
                 self.openFileById(io, n.id) catch |err| {
                     first_open_error = switch (err) {
-                        error.FileTooLarge => "First file exceeds the 16 KiB editor limit",
+                        error.FileTooLarge => "First file exceeds the " ++ editor_limit_label ++ " editor limit",
                         else => "Unable to open first file",
                     };
                 };
@@ -497,6 +511,17 @@ pub const WorkspaceBuffers = struct {
     pub fn openFileById(self: *WorkspaceBuffers, io: std.Io, id: u32) !void {
         const node = self.findNode(id) orelse return error.NotFound;
         if (node.is_dir) return;
+
+        // Refuse oversized files before ensureTab or the editor-path copy so
+        // a FileTooLarge open provably leaves tabs and editor state unchanged.
+        // Unreadable files fall through to the existing honest read path.
+        const cached = if (self.tabIndexById(id)) |i| self.tab_text_loaded[i] else false;
+        if (!cached) {
+            if (scanner.statFileSize(io, self.rootPath(), node.path)) |size| {
+                if (size > max_editor_bytes) return error.FileTooLarge;
+            } else |_| {}
+        }
+
         const idx = try self.ensureTab(node);
 
         // Copy path into editor path buf
@@ -773,6 +798,56 @@ test "tab working copies survive switches and save independently" {
     try std.testing.expectEqualStrings("a edited\n", a_disk);
     const b_disk = try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/b.txt", &out);
     try std.testing.expectEqualStrings("b edited\n", b_disk);
+}
+
+test "documents well beyond the historical 16 KiB prototype bound open, edit, and save" {
+    const root = "zig-out/test-large-document";
+    std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
+
+    // 100 KiB of real line-structured text (would have been FileTooLarge at
+    // the old 16 KiB ceiling); one byte under the current ceiling must load.
+    const big_len: usize = 100 * 1024;
+    const big = try std.testing.allocator.alloc(u8, big_len);
+    defer std.testing.allocator.free(big);
+    for (big, 0..) |*ch, i| ch.* = if (i % 64 == 63) '\n' else 'x';
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/big.txt", .data = big });
+
+    const over = try std.testing.allocator.alloc(u8, max_editor_bytes + 1);
+    defer std.testing.allocator.free(over);
+    @memset(over, 'y');
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = root ++ "/over.txt", .data = over });
+
+    const ws = try std.testing.allocator.create(WorkspaceBuffers);
+    defer std.testing.allocator.destroy(ws);
+    ws.* = .{};
+    _ = try ws.openPath(std.testing.io, root);
+
+    const big_node = ws.findNodeByPath("big.txt").?;
+    try ws.openFileById(std.testing.io, big_node.id);
+    try std.testing.expectEqual(big_len, ws.editorText().len);
+    try std.testing.expectEqual(@as(u8, 'x'), ws.editorText()[0]);
+
+    // Edit and save round-trips the full large document.
+    big[0] = 'Z';
+    ws.cacheActiveText(big);
+    ws.setTabDirty(big_node.id, true);
+    try ws.saveTabById(std.testing.io, big_node.id);
+    const disk_buf = try std.testing.allocator.alloc(u8, big_len + 1);
+    defer std.testing.allocator.free(disk_buf);
+    const disk = try std.Io.Dir.cwd().readFile(std.testing.io, root ++ "/big.txt", disk_buf);
+    try std.testing.expectEqual(big_len, disk.len);
+    try std.testing.expectEqual(@as(u8, 'Z'), disk[0]);
+
+    // Beyond the ceiling stays an honest FileTooLarge refusal that leaves
+    // the active editor, path, and tab set completely untouched.
+    const tabs_before = ws.tab_count;
+    const over_node = ws.findNodeByPath("over.txt").?;
+    try std.testing.expectError(error.FileTooLarge, ws.openFileById(std.testing.io, over_node.id));
+    try std.testing.expectEqualStrings("big.txt", ws.editorPath());
+    try std.testing.expectEqual(big_len, ws.editorText().len);
+    try std.testing.expectEqual(tabs_before, ws.tab_count);
 }
 
 test "tab overflow evicts oldest clean tab and rescan keeps shifted dirty text" {
