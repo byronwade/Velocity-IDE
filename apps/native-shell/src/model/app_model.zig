@@ -148,6 +148,7 @@ pub const Msg = union(enum) {
     select_tab: u32,
     open_project: []const u8,
     go_launch,
+    close_settings,
     create_agent_task,
     update_agent_prompt: canvas.TextInputEvent,
     switch_theme,
@@ -436,6 +437,10 @@ pub const Effects = native_sdk.Effects(Msg);
 pub const Model = struct {
     current_view: ViewKind = .launch,
     selected_activity: Activity = .explorer,
+    /// Workbench state to restore when leaving a full-page surface (Settings)
+    /// via its Back button — returns the user to exactly where they were.
+    settings_return_view: ViewKind = .ide,
+    settings_return_activity: Activity = .explorer,
     command_palette_open: bool = false,
     command_query: canvas.TextBuffer(max_command_query) = .{},
     agent_prompt: canvas.TextBuffer(max_agent_prompt) = .{},
@@ -747,6 +752,8 @@ pub const Model = struct {
     pub const view_unbound = .{
         "current_view",
         "selected_activity",
+        "settings_return_view",
+        "settings_return_activity",
         "theme_preference",
         "next_task_id",
         "command_query",
@@ -1816,8 +1823,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 model.current_view = .plugins;
                 model.selected_activity = .plugins;
             } else if (std.mem.eql(u8, id, "open_settings")) {
-                model.current_view = .settings;
-                model.selected_activity = .settings;
+                enterSettings(model);
             } else if (std.mem.eql(u8, id, "run_perf")) {
                 refreshPerformanceMetrics(model);
             } else if (std.mem.eql(u8, id, "switch_theme")) {
@@ -2107,10 +2113,7 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                     model.selected_activity = activity;
                     model.current_view = .plugins;
                 },
-                .settings => {
-                    model.selected_activity = activity;
-                    model.current_view = .settings;
-                },
+                .settings => enterSettings(model),
                 .search => {
                     model.selected_activity = .search;
                     model.current_view = .ide;
@@ -2307,9 +2310,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
             model.current_view = .plugins;
             model.selected_activity = .plugins;
         },
-        .open_settings => {
-            model.current_view = .settings;
-            model.selected_activity = .settings;
+        .open_settings => enterSettings(model),
+        .close_settings => {
+            model.current_view = model.settings_return_view;
+            model.selected_activity = model.settings_return_activity;
         },
         .run_perf => {
             refreshPerformanceMetrics(model);
@@ -6858,6 +6862,17 @@ fn pathForFile(id: u32) []const u8 {
         if (node.id == id) return node.path;
     }
     return "";
+}
+
+/// Enter the full-page Settings surface, remembering the workbench state so
+/// the Settings Back button can restore it exactly.
+fn enterSettings(model: *Model) void {
+    if (model.current_view != .settings) {
+        model.settings_return_view = model.current_view;
+        model.settings_return_activity = model.selected_activity;
+    }
+    model.current_view = .settings;
+    model.selected_activity = .settings;
 }
 
 fn cycleTheme(model: *Model) void {

@@ -82,9 +82,32 @@ pub fn tokens(preference: ThemePreference, high_contrast: bool, reduce_motion: b
             .dark, .high_contrast => dark_colors,
         };
     }
-    // Clean, softly rounded chrome — enough radius to feel modern and calm
-    // without drifting into a bubbly, low-density look.
-    out.radius = .{ .sm = 4, .md = 7, .lg = 11, .xl = 15 };
+
+    // Compact desktop-IDE density. Radii stay tight so the workbench never
+    // reads bubbly: ~4px compact controls, ~6px fields/menus, ~8px floating
+    // surfaces (cards use radius.lg, dialogs radius.xl). Nothing in the
+    // chrome exceeds 8px.
+    out.radius.sm = 4;
+    out.radius.md = 6;
+    out.radius.lg = 8;
+    out.radius.xl = 8;
+
+    // Legibility-first, quiet hierarchy: UI body ~13px, compact labels ~12px,
+    // restrained section headings (no oversized display type in the shell).
+    // Hierarchy comes from weight, opacity, and spacing — not giant text.
+    out.typography.body_size = 13;
+    out.typography.label_size = 12;
+    out.typography.button_size = 13;
+    out.typography.title_size = 16;
+    out.typography.heading_size = 20;
+    out.typography.display_size = 30;
+
+    // One compact control-height register: sm 26 / default 30 / lg 34, so a
+    // toolbar row of same-size controls lands on a single tight height.
+    out.metrics.control_height_sm = 26;
+    out.metrics.control_height = 30;
+    out.metrics.control_height_lg = 34;
+
     out.pixel_snap = .{ .geometry = true, .text = true, .scale = 1 };
     return out;
 }
