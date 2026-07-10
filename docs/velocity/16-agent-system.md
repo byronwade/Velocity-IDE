@@ -10,5 +10,10 @@ Composer, task cards, review/apply, autonomy slider, permissions, terminal appro
 - MCP adapter disabled by default.
 - All agent tools permissioned; terminal/shell require approval.
 
-## Modules
-Under `apps/native-shell/src/features/agent-*` and related velocity modules.
+## Current implementation
+
+The shell has bounded agent-facing UI/model state in
+`apps/native-shell/src/model/app_model.zig`. Agent capability IDs, default
+enablement, and budgets are metadata in
+`apps/native-shell/src/core/feature_catalog.json`. There are no per-feature
+agent modules, model adapters, background agents, or network calls yet.

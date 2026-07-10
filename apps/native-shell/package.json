@@ -3,6 +3,16 @@
   "private": true,
   "version": "0.1.0",
   "description": "Velocity IDE native shell (Native SDK). Codename is rename-ready.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/byronwade/Velocity-IDE.git",
+    "directory": "apps/native-shell"
+  },
+  "bugs": {
+    "url": "https://github.com/byronwade/Velocity-IDE/issues"
+  },
+  "homepage": "https://github.com/byronwade/Velocity-IDE#readme",
   "scripts": {
     "dev": "native dev",
     "check": "native test && native check --strict",

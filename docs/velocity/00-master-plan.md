@@ -21,7 +21,7 @@ https://github.com/microsoft/vscode.
 - Rewriting the Electron workbench
 - Shipping Microsoft marketplace / Copilot / telemetry by default
 - Full Monaco in v0 (placeholder → island later)
-- Real AI network calls, plugin downloads, or shell execution in the scaffold
+- Real AI network calls or plugin downloads in the current MVP
 - Copying Cursor/Vercel branding or assets
 
 ## Why not a VS Code skin
@@ -38,15 +38,15 @@ VS Code’s workbench is deeply coupled: contribution registration, extension ho
 
 | M | Outcome |
 |---|---|
-| M0 | Docs + rules + Native SDK scaffold (this pass) |
-| M1 | Running mock IDE shell (launch + IDE chrome) |
-| M2 | Workspace core: open folder, file tree, save |
-| M3 | Monaco editor island after first paint |
-| M4 | Native terminal prototype |
-| M5 | LSP broker + one language server |
-| M6 | Plugin runtime + permissions enforcement |
-| M7 | Registry client (signed, allowlisted) |
-| M8 | Optional legacy VSIX bridge (sandboxed) |
+| M0 | Complete: standalone docs, rules, and Native SDK foundation |
+| M1 | Complete: running native shell |
+| M2 | MVP complete: bounded workspace editing, recovery, and pipe commands |
+| M3 | Blocked: operational rich editor island after first paint |
+| M4 | Blocked: native terminal PTY transport |
+| M5 | Blocked: LSP transport + one language server |
+| M6 | Not started: plugin runtime + permissions enforcement |
+| M7 | Not started: signed, allowlisted registry client |
+| M8 | Deferred: optional sandboxed legacy VSIX bridge |
 
 ## Risk register
 
@@ -58,9 +58,10 @@ VS Code’s workbench is deeply coupled: contribution registration, extension ho
 | Plugin ecosystem cold start | Trusted core plugins + clear author SDK |
 | Legal/brand confusion | Codename rename-ready; no third-party assets |
 
-## First 30-day roadmap
+## Original 30-day outline (historical)
 
-1. Week 1: Running shell + design tokens + docs (done in scaffold)
-2. Week 2: Real folder open + document model
-3. Week 3: Monaco island behind first paint
-4. Week 4: Terminal PTY prototype + perf marks
+1. Week 1: Running shell + design tokens + docs — complete
+2. Week 2: Folder open + document model — bounded MVP complete
+3. Week 3: Monaco island behind first paint — not operational
+4. Week 4: Terminal PTY prototype + perf marks — measured-or-unavailable perf
+   exists; PTY transport remains unavailable

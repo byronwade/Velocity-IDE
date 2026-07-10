@@ -171,9 +171,9 @@ implementation:
 
 ## Implementation priority (research → build)
 
-1. Feature registry + activation policy (done in this pass as scaffold)
+1. Canonical feature catalog + generated registry + activation policy
 2. Process Governor + Performance HUD
-3. Terminal RAM strategy + mock PTY
+3. Terminal RAM strategy + bounded PTY protocol (transport unavailable)
 4. File/search/workspace real I/O
 5. Monaco island after paint
 6. Git provider
@@ -182,4 +182,6 @@ implementation:
 9. Agent apply/review without cloud
 10. Legacy VSIX research only
 
-Full module list: `apps/native-shell/src/core/feature_catalog.json` and `14-feature-parity-matrix.md`.
+Full metadata list: `apps/native-shell/src/core/feature_catalog.json` and
+`14-feature-parity-matrix.md`. The generated Zig projection is
+`apps/native-shell/src/core/feature_registry.zig`.

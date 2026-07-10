@@ -2,6 +2,8 @@
 
 ## Install
 
+Use Node.js 22 and run installation only from the repository root:
+
 ```bash
 npm install
 ```
@@ -10,7 +12,7 @@ The root postinstall runs `npm ci --prefix .tools`, installing exactly Native
 SDK CLI 0.4.0 from the tracked `.tools/package-lock.json`. Do not install a
 second project CLI dependency.
 
-### Linux system deps (for `native build` / `native dev`)
+### Linux system deps (for `npm run build` / `npm run dev`)
 
 ```bash
 sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
@@ -21,7 +23,7 @@ The CLI can download its compatible Zig toolchain when required.
 ## Dev
 
 ```bash
-npm run check    # validate .native markup + app.zon
+npm run check    # feature drift + 252 tests + strict .native/app validation
 npm test         # 252 headless UI + unit/model tests
 npm run build    # ReleaseFast -> apps/native-shell/zig-out/bin/velocity-ide
 npm run dev      # Debug build + run with markup hot reload

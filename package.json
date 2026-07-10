@@ -3,13 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "description": "Standalone native Velocity IDE workspace",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/byronwade/Velocity-IDE.git"
+  },
+  "bugs": {
+    "url": "https://github.com/byronwade/Velocity-IDE/issues"
+  },
+  "homepage": "https://github.com/byronwade/Velocity-IDE#readme",
   "workspaces": [
     "apps/native-shell"
   ],
   "scripts": {
     "postinstall": "npm ci --prefix .tools",
     "setup": "npm ci --prefix .tools",
-    "check": "PATH=\"$PWD/.tools/node_modules/.bin:$PATH\" npm --workspace @velocity/native-shell run check",
+    "features:generate": "python3 tools/generate_feature_registry.py",
+    "features:check": "python3 tools/generate_feature_registry.py --check",
+    "check": "npm run features:check && PATH=\"$PWD/.tools/node_modules/.bin:$PATH\" npm --workspace @velocity/native-shell run check",
     "test": "PATH=\"$PWD/.tools/node_modules/.bin:$PATH\" npm --workspace @velocity/native-shell run test",
     "build": "PATH=\"$PWD/.tools/node_modules/.bin:$PATH\" npm --workspace @velocity/native-shell run build",
     "dev": "PATH=\"$PWD/.tools/node_modules/.bin:$PATH\" npm --workspace @velocity/native-shell run dev",

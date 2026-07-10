@@ -4,8 +4,7 @@
 
 ## Validation
 
-- [ ] `npm run check`
-- [ ] `npm test`
+- [ ] `npm run check` (feature drift, native tests, strict app validation)
 - [ ] `npm run build`
 - [ ] Relevant smoke suite(s), if applicable
 

@@ -27,6 +27,8 @@ zig-out/
 
 # Runtime workspace state and test output
 apps/native-shell/.velocity/
+**/.velocity/backups/
+apps/native-shell/fixtures/**/.git/
 test-results/
 *.log
 

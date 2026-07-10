@@ -1,6 +1,10 @@
 # Feature Parity Matrix
 
-Complete catalog: `apps/native-shell/src/core/feature_catalog.json` (200 modules).
+Canonical metadata: `apps/native-shell/src/core/feature_catalog.json` (200
+unique feature IDs). `apps/native-shell/src/core/feature_registry.zig` is
+generated from it by `npm run features:generate`; `npm run features:check`
+detects drift. Feature IDs are metadata boundaries, not per-feature source
+directories or proof that a runtime integration exists.
 Research: `11-vscode-feature-parity-research.md`.
 
 ## Columns

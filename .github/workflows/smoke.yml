@@ -1,6 +1,8 @@
 name: Smoke
 
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -30,8 +32,8 @@ jobs:
       - name: Install Linux native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev xvfb
-      - name: Install pinned Native SDK CLI
-        run: npm ci --prefix .tools
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev ripgrep xvfb
+      - name: Install project dependencies
+        run: npm ci
       - name: Run smoke suite
         run: xvfb-run -a npm run smoke:${{ matrix.suite }}

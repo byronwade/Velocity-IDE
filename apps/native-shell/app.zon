@@ -4,7 +4,6 @@
     .display_name = "Velocity",
     .description = "Native IDE for fast software creation. Codename Velocity — branding is rename-ready.",
     .version = "0.1.0",
-    .icons = .{"assets/icon.png"},
     .platforms = .{ "macos", "linux", "windows" },
     .permissions = .{ "view", "command" },
     .capabilities = .{ "native_views", "gpu_surfaces" },

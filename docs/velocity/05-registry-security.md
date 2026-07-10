@@ -8,7 +8,10 @@
 - Performance scores (activation ms, idle RSS)
 - Enterprise allowlists / denylists
 
-## Scaffold status
+## Current status
 
-Preview rows only in the native shell. No downloads, no signature verification yet.
-See `packages/registry-client/` and `apps/native-shell/src/registry/`.
+Preview rows exist in the native shell, but there is no registry client,
+download path, package format, or signature verification. Registry-related
+feature IDs and resource budgets are tracked in
+`apps/native-shell/src/core/feature_catalog.json`; this document is the security
+design target until an implementation exists.

@@ -1,9 +1,9 @@
 # Native SDK Blockers Log
 
-## Environment notes (cloud agent, 2026-07-09)
+## Environment notes (Linux validation, 2026-07-09)
 
 - Host: Linux x86_64
-- `@native-sdk/cli` **0.4.0** installed under `.tools/` (`npm install --prefix .tools @native-sdk/cli`)
+- `@native-sdk/cli` **0.4.0** installed under `.tools/` by root `npm install`
 - Zig **0.16.0** auto-downloaded by CLI to `~/.native/toolchains/zig-0.16.0`
 - Display: `DISPLAY=:1` available in this environment
 
@@ -11,11 +11,13 @@
 
 | Command | Result |
 |---|---|
-| `native check` | **Pass** (markup + app.zon; existing unbound-model warnings remain) |
-| `native test` | **Pass** (170/170 tests after integration-boundary scaffolds) |
-| `native build` | **Pass** after installing `libgtk-4-dev` + `libwebkitgtk-6.0-dev` → `zig-out/bin/velocity-ide` |
-| `native doctor` | Zig not on PATH (CLI-managed OK); WebKit/GTK were missing until apt install |
-| Interactive `native dev` / binary window | Attempted with short timeout; see run log below |
+| `npm run check` | **Pass**: generated feature check, 252/252 native tests, strict markup/app validation |
+| `npm test` | **Pass**: 252/252 native tests |
+| `npm run build` | **Pass on Linux** after installing GTK4 + WebKitGTK 6.0 development packages |
+| `npm run doctor` | Zig may be absent from PATH; the pinned CLI manages its compatible toolchain |
+
+The earlier 170/170 count in this log was a historical scaffold measurement
+and is obsolete. The current recorded native test count is 252.
 
 ## Fixed during scaffold
 
@@ -28,15 +30,16 @@
 
 - Linux packaging still pulls WebKitGTK even when the shell is GPU canvas only (no editor WebView yet).
 - `zig` is not on PATH unless you add `~/.native/toolchains/zig-0.16.0` or rely on `native * --yes`.
-- Do not claim real startup/memory benchmarks yet — perf HUD values are **mock**.
-- Empty `src/ui` / `src/workspace` dirs were removed (no theater). Terminal panel markup lives in `app.native`; `terminal/terminal_view.native` is a future extract stub.
+- Performance values are reported only when measured by the runtime; unsupported
+  RSS/process/startup values remain explicitly `n/a`. Budgets are not benchmark
+  claims.
 - The textarea has no stable gutter/decoration API or caret/scroll
   synchronization contract. Line numbers remain a separate bounded peek, not a
   real editor gutter.
-- A recurring Effects timer is not wired. It requires an app-lifetime timer
-  ownership contract with cancellation on window/app teardown and no callbacks
-  into deinitialized model state. Interaction polling and manual disk refresh
-  remain the honest fallback.
+- Recurring disk polling is wired in `src/model/app_model.zig` as one keyed
+  Effects timer. It is cancelled outside a disk-backed workspace, re-armed
+  after each accepted tick, and marks polling unavailable without a re-arm
+  storm if the runtime rejects the timer. Manual refresh remains available.
 
 ## Daily-driver integration boundaries
 
@@ -58,7 +61,9 @@ coverage.
 sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
 ```
 
-## Feature parity pass (2026-07-09)
+## Historical feature parity pass (2026-07-09)
 
-- `native check` / `native test` / `native build` passed after feature registry + Process Governor scaffold; latest boundary work revalidated check + 170 tests (build not rerun).
+- At that point, check/test/build passed after the initial registry and Process
+  Governor scaffold. Its 170-test note is retained only as history and is
+  superseded by the 252-test result above.
 - Zig reserved word: enum member cannot be named `suspend` — use `suspend_idle`.

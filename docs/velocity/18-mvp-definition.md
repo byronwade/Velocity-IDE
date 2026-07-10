@@ -58,7 +58,7 @@ baseline — not feature parity, not Monaco, and not plugins.
 | Undo / redo edits | Independent per-tab bounded 32-entry histories (minimum 16 full-size snapshots each) survive tab switches and are released with their tabs; Cmd+Z / Cmd+Shift+Z. |
 | Revert file | Reload active file from disk; undo restores discarded buffer. |
 | Safe overwrite backups | Confirmed conflict overwrite first stores the disk version under `.velocity/backups/`; active-file restore previews and double-confirms, refuses dirty/missing state, and refreshes cache/fingerprints. |
-| Disk refresh | Bounded interaction polling plus a manual **Refresh Files from Disk** command; recurring Effects timer remains deferred until app-lifetime ownership and teardown cancellation are stable. |
+| Disk refresh | One keyed recurring Effects timer while a disk-backed workspace is open, bounded save-time checks, manual **Refresh Files from Disk**, and explicit unavailable fallback when the runtime rejects timers. |
 | Hot exit | Close Window persists bounded tabs and dirty text to `.velocity/hot-exit.bin` and restores the matching workspace. |
 | Copy absolute path | Join workspace root + relative path into toast. |
 | EOL in status | Document stats show LF / CRLF. |
@@ -129,7 +129,8 @@ baseline — not feature parity, not Monaco, and not plugins.
 
 ## Success criteria
 
-1. Root `npm run check`, `npm test`, and `npm run build` pass
+1. Root `npm run check` (feature drift + 252 tests + strict validation) and
+   `npm run build` pass
 2. Open fixture → edit → save → re-open shows change
 3. Run a shell command in terminal panel; output captured; governor tracks it
 4. Search finds known fixture symbols; SCM panel refreshes without crashing

@@ -1,34 +1,35 @@
 # Implementation Sequence
 
-1. Research + parity docs — **this pass**
-2. Native app scaffold validates/runs — **M1 done**
-3. Feature registry — **scaffold**
-4. Activation policy — **scaffold**
+1. Research + parity docs — **maintained**
+2. Native app foundation validates/runs — **M1 done on Linux**
+3. Feature catalog + generated registry — **done; catalog is authoritative**
+4. Activation policy — **bounded metadata policy present**
 5. Theme tokens — **done**
-6. Command palette — **done (mock)**
-7. Feature toggle matrix — **UI scaffold this pass**
-8. Process Governor — **scaffold**
-9. Performance HUD — **UI + model**
-10. Terminal scaffold + RAM strategy — **docs + mock**
-11. File explorer/search/editor placeholders — **M2 + MVP edit/save**
+6. Command palette — **working for implemented commands**
+7. Feature toggle matrix — **metadata/UI only**
+8. Process Governor — **working for current command processes**
+9. Performance HUD — **measured-or-unavailable UI + model**
+10. Pipe terminal + RAM strategy — **MVP runner working; not a PTY**
+11. File explorer/search/textarea editor — **M2 MVP working**
 12. LSP broker scaffold — **bounded protocol; process transport blocked by SDK**
-13. SCM/debug/tasks/testing placeholders — **UI**
-14. Plugin runtime/registry placeholders — **stub**
-15. Agent panel/task board — **mock**
+13. SCM/tasks/testing — **bounded MVP behavior; debugger not implemented**
+14. Plugin runtime/registry — **not implemented**
+15. Agent panel/task board — **UI/model only; no agent runtime**
 16. Real terminal PTY — **bounded PTY protocol scaffold; transport blocked by SDK; MVP remains pipe `sh -c`**
 17. Monaco editor island bridge — **typed backend/event scaffold; MVP remains native textarea; WebView blocked by SDK**
-18. Real file/search/workspace — **path open + scan + read/write**
-19. Real Git provider
-20. Real LSP broker
-21. Native plugin MVP
-22. Legacy VSIX research only
+18. Real file/search/workspace — **bounded path open + scan + read/write done**
+19. Broader Git provider — **partial MVP; status/stage/commit/review implemented**
+20. Real LSP broker — **not operational**
+21. Native plugin MVP — **not started**
+22. Legacy VSIX research — **deferred**
 
 ## M2 notes (workspace file I/O)
 
-- Open Folder / recent `acme-dashboard` scans `fixtures/acme-dashboard` via Zig 0.16 `std.Io`
+- Open Folder / recent paths scan a bounded workspace via Zig 0.16 `std.Io`;
+  `fixtures/acme-dashboard` is the deterministic test/demo workspace
 - Caps: 256 nodes, depth 8, 16KB text read; skips `node_modules` / `.git` / vendor dirs
 - Editor placeholder shows real file bytes; Monaco still deferred
-- No OS folder dialog yet — fixture path only
+- No OS folder dialog yet; typed paths and recent paths are supported
 
 ## MVP core notes
 
@@ -40,6 +41,6 @@
 - Protocol scaffolds do not imply runtime integrations: no PTY or LSP child
   process exists, and no Monaco WebView is hosted.
 - Textarea gutters still require a stable SDK gutter/decoration and
-  caret/scroll contract. Recurring Effects polling still requires verified
-  app-lifetime ownership and teardown cancellation.
+  caret/scroll contract. Disk polling now uses one keyed recurring Effects
+  timer with cancellation and an explicit runtime-rejected fallback.
 - See `docs/velocity/18-mvp-definition.md`

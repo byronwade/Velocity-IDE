@@ -4,35 +4,30 @@ Codename **Velocity** (rename-ready). Native SDK app shell for the new IDE.
 
 ## Requirements
 
-- Node.js 20+
-- `@native-sdk/cli` (`npm install -g @native-sdk/cli` or local install)
-- Zig toolchain (CLI can download the pinned version)
+- Node.js 22
+- Linux: GTK 4 and WebKitGTK 6 development packages
+- Zig toolchain downloaded by the pinned Native SDK CLI when needed
+
+Linux is the only CI-validated platform. Other manifest targets are not a claim
+of current build or runtime validation.
 
 ## Commands
 
 ```bash
-# from apps/native-shell
-npm run check    # validate markup + app.zon
-npm run test     # headless UI tests
-npm run dev      # open native window (macOS primary; Linux/Windows supported by SDK)
+# from the repository root
+npm install
+npm run check    # feature drift + 252 native tests + strict app validation
+npm run test     # 252 native tests only
 npm run build    # ReleaseFast binary
-npm run perf-smoke
-npm run task-smoke
-npm run test-smoke
-npm run launch-smoke
+npm run dev      # open the native window
+npm run smoke    # all eight smoke suites
 ```
 
-Or with the CLI directly:
-
-```bash
-native check
-native test
-native dev
-native build
-```
-
-Use `native check --strict` after model or markup changes. The test suite also
-refreshes the model contract and checks command/shortcut registry integrity.
+Root installation is required because its postinstall installs the locked CLI
+under `.tools`. Individual suites are `smoke:perf`, `smoke:task`, `smoke:test`,
+`smoke:launch`, `smoke:explorer`, `smoke:review-snippet`, `smoke:terminal`, and
+`smoke:diagnostics`. The native test suite also refreshes the model contract and
+checks command/shortcut registry integrity.
 `npm run perf-smoke` builds and boots an automation-enabled app, opens the
 command palette and terminal panel, then runs **Refresh Performance Metrics**.
 The HUD distinguishes Native SDK/in-process frame timings from external launch
@@ -41,11 +36,11 @@ timing and displays `n/a` for unsupported RSS or process metrics.
 Explorer controls, accessible folder chevrons, collapse/filter restoration,
 and Expand All behavior.
 
-External file changes are checked with bounded polling during editing and safe
-save operations. Use **Refresh Files from Disk** from the command palette for an
-immediate full check. A recurring timer is intentionally not wired until the
-Native SDK effects lifecycle exposes a verified app-lifetime polling contract;
-the persisted `disk_poll_interval_ms` preference is ready for that timer.
+External file changes are checked with a keyed recurring Effects timer while a
+disk-backed workspace is open and during safe save operations. The timer is
+cancelled on launch state, re-armed at the bounded configured interval, and
+falls back to an explicit unavailable state if the runtime rejects it. Use
+**Refresh Files from Disk** for an immediate full check.
 
 Closing through the shell's **Close Window** command writes the bounded session
 to `<workspace>/.velocity/hot-exit.bin`; reopening that workspace restores open
@@ -99,13 +94,14 @@ is double-confirmed and recursive tree deletion is always refused.
 |---|---|
 | `src/app.native` | Declarative IDE shell UI |
 | `src/main.zig` | Window / tokens / shortcuts wiring |
-| `src/model/app_model.zig` | TEA model + mock data |
-| `src/core/` | Feature registry, activation, commands, settings |
-| `src/features/` | One module per VS Code/Velocity feature category |
+| `src/model/app_model.zig` | TEA model and application behavior |
+| `src/core/feature_catalog.json` | Canonical metadata for 200 feature IDs |
+| `src/core/feature_registry.zig` | Generated typed Zig feature registry |
+| `src/core/` | Activation, commands, settings, and canonical registries |
 | `src/processes/` | Process Governor |
 | `src/theme/tokens.zig` | Design tokens |
 | `src/perf/` | Perf snapshot + budgets |
-| `src/plugins/` | Manifest + permissions stubs |
+| `src/plugins/permissions.zig` | Permission parsing and validation model |
 | `src/bridge/` | Typed editor backend/state/event scaffold; textarea runtime only |
 | `src/lsp/` | Bounded JSON-RPC/session/diagnostic scaffold; no process transport |
 | `src/terminal/` | Pipe runner plus bounded PTY protocol; PTY transport unavailable |
@@ -117,14 +113,10 @@ availability, optional feature ownership, and dispatch coverage declarations.
 records, canonical command aliases, supported-key constraints, and generated
 shortcut-help items; `main.zig` only projects those records into SDK types.
 Registry guards reject duplicate IDs/chords, orphan bindings, unsupported keys,
-stale shortcut hints, and unknown declared feature IDs. Mock performance,
-update, and plugin surfaces are labeled **Limited**; the no-op New Agent Task
-command is hidden until it has an operational implementation.
-
-## Feature modules
-
-200 stubs under `src/features/` with `feature.json`, README, model, messages, perf budget.
-See `docs/velocity/14-feature-parity-matrix.md`.
+stale shortcut hints, and unknown declared feature IDs. Feature status and
+budgets are authored only in `src/core/feature_catalog.json`; run
+`npm run features:generate` at the repository root to update the generated Zig
+registry. See `docs/velocity/14-feature-parity-matrix.md` for detailed parity.
 
 
 ## Product docs
@@ -134,7 +126,7 @@ See `/docs/velocity/`.
 The editor, LSP, and PTY protocol boundaries are scaffolds, not operational
 rich integrations. Exact Native SDK unblock criteria are tracked in
 `docs/velocity/native-sdk-blockers.md`. In particular, textarea gutters and an
-app-lifetime recurring Effects timer still lack stable SDK contracts.
+operational rich editor backend still lack stable SDK contracts.
 
 ## Legal / design
 

@@ -10,4 +10,7 @@ node_modules/
 !fixtures/acme-dashboard/.velocity/
 fixtures/acme-dashboard/.velocity/*
 !fixtures/acme-dashboard/.velocity/snippets.json
+!fixtures/acme-dashboard/.velocity/launch.json
+**/.velocity/backups/
+fixtures/**/.git/
 *.log

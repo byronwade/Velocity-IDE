@@ -9,9 +9,10 @@
 - Memory Pressure Mode disables heavy features and freezes background terminals / idle LSPs.
 
 ## Budgets
-See `06-performance-budget.md` and per-feature `perf_budget.md`.
+See `06-performance-budget.md` and the canonical per-feature budgets in
+`apps/native-shell/src/core/feature_catalog.json`.
 
 ## Instrumentation
-Performance HUD + RAM Budget Dashboard. The HUD reports RSS as `n/a` until a
-portable process-memory sampler is wired; memory budgets are targets, not
+Performance HUD + RAM Budget Dashboard. The HUD reports measured values when
+the runtime provides them and `n/a` otherwise; memory budgets are targets, not
 runtime measurements.

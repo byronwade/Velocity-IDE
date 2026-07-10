@@ -166,7 +166,6 @@ pub fn main(init: std.process.Init) !void {
         .app_name = "velocity-ide",
         .window_title = "Velocity",
         .bundle_id = "dev.velocity.ide",
-        .icon_path = "assets/icon.png",
         .default_frame = geometry.RectF.init(0, 0, window_width, window_height),
         .restore_state = false,
         .js_window_api = false,

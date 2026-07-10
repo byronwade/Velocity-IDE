@@ -6,14 +6,17 @@ upstream VS Code source.
 
 ## Development
 
+Use Node.js 22 and run commands from the repository root:
+
 ```bash
 npm install
 npm run check
-npm test
 npm run build
 ```
 
-Run the relevant `npm run smoke:<name>` suite for UI or process changes. Update
+`npm run check` verifies feature metadata, runs native tests, and performs the
+strict app check. Run the relevant `npm run smoke:<name>` suite for UI or
+process changes. Update
 documentation and tests with behavior changes. Pull requests should explain
 scope, validation, user-visible impact, and known limitations.
 

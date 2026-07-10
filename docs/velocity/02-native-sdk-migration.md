@@ -29,16 +29,16 @@ comparison scenarios. No local upstream source tree is required.
 | Risk | Notes |
 |---|---|
 | Pre-1.0 SDK | APIs and Linux host deps still moving |
-| Platform gaps | macOS primary; Linux needs GTK/WebKit link today even for canvas shell |
+| Platform gaps | Linux is CI-validated and still links GTK/WebKit even for the canvas shell; other platforms are unvalidated |
 | Toolchain | Zig pinned via CLI download |
 | Editor quality | Monaco island later; native editor TBD |
 
 ## Go / no-go checklist
 
-- [x] `native check` passes
-- [x] `native test` passes
-- [x] `native build` produces a binary (Linux deps installed)
-- [ ] Interactive polish on macOS primary target
+- [x] Root `npm run check` passes (feature drift, tests, strict app validation)
+- [x] Root `npm test` passes
+- [x] Root `npm run build` produces a binary on Linux
+- [ ] Validate build, tests, and interaction on macOS and Windows
 - [x] Honest measured-or-unavailable performance instrumentation
 - [x] Workspace file I/O without Electron
 - [ ] Repeatable release performance measurements under budget

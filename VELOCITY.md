@@ -7,7 +7,7 @@ used only as an external research reference.
 
 | Area | Status |
 |---|---|
-| Native SDK shell | Runs (`npm run check` / `test` / `build`) |
+| Native SDK shell | Check/test/build pass on Linux; other platforms are not CI-validated |
 | Automated coverage | 252 native tests; eight end-to-end smoke scripts |
 | Workspace file I/O (M2) | Fixture + typed path open, bounded scan, text read |
 | Edit + Save (MVP) | Native textarea + disk write (Cmd+S) |
@@ -28,8 +28,8 @@ used only as an external research reference.
 | Tasks / Tests (MVP) | npm + tasks.json + Make detection; governed run/stop/rerun |
 | Run profiles | Bounded `.velocity/launch.json` command profiles; not debugger configurations |
 | Output (MVP) | Bounded labeled task/test terminal mirror |
-| Feature modules | Registry scaffold under `apps/native-shell/src/features/` |
-| Feature registry + activation policy | Scaffold |
+| Feature metadata | Canonical 200-entry `src/core/feature_catalog.json`; no per-feature source directories |
+| Feature registry + activation policy | Generated `src/core/feature_registry.zig` plus bounded activation policy |
 | Process Governor | Tracks terminal / search / scm runs |
 | Performance HUD | Reports measured values or `n/a`; no startup/RSS budget claim yet |
 | Research docs | `docs/velocity/11-*.md` … `18-*.md` |
@@ -40,7 +40,7 @@ Codename **Velocity** is temporary and rename-ready.
 
 ```bash
 npm install
-npm run check && npm run test && npm run build
+npm run check && npm run build
 npm run dev
 ```
 
@@ -54,10 +54,10 @@ npm run dev
 
 ## Next
 
-1. OS folder dialog (`showOpenDialog`) when Runtime hook is wired
-2. Monaco editor island after first paint
-3. Real PTY terminal (replace pipe runner)
-4. Git provider + LSP broker
+1. OS folder dialog (`showOpenDialog`) when the runtime hook is wired
+2. Operational rich editor island after first paint
+3. Real PTY terminal to replace the pipe runner
+4. LSP transport and broader Git provider behavior
 
 MVP definition: `docs/velocity/18-mvp-definition.md`
 
