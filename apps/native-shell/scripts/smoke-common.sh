@@ -17,7 +17,7 @@ smoke_wait_for_app() {
       fi
       attempt=$((attempt + 1))
       sleep 0.5
-    fi
+    done
   fi
 
   printf 'smoke: app did not present an interactive frame; last snapshot follows\n' >&2
