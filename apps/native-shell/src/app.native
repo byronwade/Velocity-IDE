@@ -7,10 +7,9 @@
       <spacer width="{chrome_leading}" />
       <text wrap="false">Velocity</text>
       <spacer grow="1" />
-      <button size="sm" variant="ghost" on-press="open_command_palette" label="Command palette">Cmd+K</button>
+      <button size="sm" variant="ghost" icon="search" on-press="open_command_palette" label="Command palette">Cmd+K</button>
       <spacer width="{chrome_trailing}" />
     </row>
-    <separator />
 
     <!-- Launch screen -->
     <if test="{isLaunch}">
@@ -21,13 +20,13 @@
           <text foreground="text_muted" wrap="true">A native IDE built for fast, focused software creation.</text>
         </column>
         <row gap="8" main="center">
-          <button variant="primary" on-press="open_project:{project_acme}">Open Folder</button>
-          <button variant="secondary" on-press="reopen_last_workspace">Reopen Last</button>
+          <button variant="primary" icon="folder-open" on-press="open_project:{project_acme}">Open Folder</button>
+          <button variant="secondary" icon="clock" on-press="reopen_last_workspace">Reopen Last</button>
         </row>
         <column gap="8" width="480" padding="16" background="surface_subtle">
           <text size="sm" foreground="text_muted">RECENT PROJECTS</text>
           <for each="recent" as="p">
-            <list-item on-press="open_project:{p.path}" padding="10" gap="10" cross="center" label="{p.name}">
+            <list-item icon="folder" on-press="open_project:{p.path}" padding="10" gap="10" cross="center" label="{p.name}">
               <column gap="3" grow="1">
                 <text wrap="false">{p.name}</text>
                 <text size="sm" foreground="text_muted" wrap="false">{p.path}</text>
@@ -42,32 +41,29 @@
     <!-- IDE shell -->
     <if test="{showShell}">
       <row grow="1">
-        <!-- Slim activity rail -->
-        <column width="104" gap="2" padding="4" background="surface" cross="center">
-          <button size="sm" variant="ghost" selected="{explorerSelected}" on-press="select_activity:{activity_explorer}" label="Explorer: workspace files">Explorer</button>
-          <button size="sm" variant="ghost" selected="{searchSelected}" on-press="select_activity:{activity_search}" label="Search and replace across workspace">Search</button>
-          <button size="sm" variant="ghost" selected="{scmSelected}" on-press="select_activity:{activity_scm}" label="Source Control: Git changes">Source Control</button>
-          <button size="sm" variant="ghost" selected="{outlineSelected}" on-press="select_activity:{activity_outline}" label="Document outline">Outline</button>
-          <button size="sm" variant="ghost" selected="{problemsSelected}" on-press="select_activity:{activity_problems}" label="Problems and diagnostics">Problems</button>
-          <button size="sm" variant="ghost" selected="{agentsSelected}" on-press="select_activity:{activity_agents}" label="AI agents">Agents</button>
+        <!-- Slim icon-only activity rail -->
+        <column width="46" gap="4" padding="6" background="surface" cross="center">
+          <button size="sm" variant="ghost" icon="folder" selected="{explorerSelected}" on-press="select_activity:{activity_explorer}" label="Explorer: workspace files" />
+          <button size="sm" variant="ghost" icon="search" selected="{searchSelected}" on-press="select_activity:{activity_search}" label="Search and replace across workspace" />
+          <button size="sm" variant="ghost" icon="git-branch" selected="{scmSelected}" on-press="select_activity:{activity_scm}" label="Source Control: Git changes" />
+          <button size="sm" variant="ghost" icon="menu" selected="{outlineSelected}" on-press="select_activity:{activity_outline}" label="Document outline" />
+          <button size="sm" variant="ghost" icon="alert" selected="{problemsSelected}" on-press="select_activity:{activity_problems}" label="Problems and diagnostics" />
+          <button size="sm" variant="ghost" icon="send" selected="{agentsSelected}" on-press="select_activity:{activity_agents}" label="AI agents" />
           <spacer grow="1" />
-          <button size="sm" variant="ghost" selected="{terminalSelected}" on-press="toggle_terminal" label="Toggle integrated terminal">Terminal</button>
-          <button size="sm" variant="ghost" selected="{settingsSelected}" on-press="select_activity:{activity_settings}" label="Application settings">Settings</button>
+          <button size="sm" variant="ghost" icon="terminal" selected="{terminalSelected}" on-press="toggle_terminal" label="Toggle integrated terminal" />
+          <button size="sm" variant="ghost" icon="settings" selected="{settingsSelected}" on-press="select_activity:{activity_settings}" label="Application settings" />
         </column>
-        <separator />
 
         <!-- Left sidebar: activity panels (editor stays center) -->
         <if test="{showLeftPanel}">
-          <column width="260" gap="6" padding="8" background="surface">
+          <column width="260" gap="8" padding="10" background="surface">
             <if test="{showSidebarExplorer}">
-              <row gap="6" cross="center">
+              <row gap="2" cross="center">
                 <text size="lg" grow="1" wrap="false">{explorerHeaderLabel}</text>
-                <button size="sm" variant="ghost" on-press="refresh_explorer" label="Refresh Explorer">Refresh</button>
-                <button size="sm" variant="ghost" on-press="create_new_file" label="New file">+</button>
-              </row>
-              <row gap="4">
-                <button size="sm" variant="ghost" on-press="collapse_all_explorer" label="Collapse all Explorer folders">Collapse All</button>
-                <button size="sm" variant="ghost" on-press="expand_all_explorer" label="Expand all Explorer folders">Expand All</button>
+                <button size="sm" variant="ghost" icon="chevron-up" on-press="collapse_all_explorer" label="Collapse all Explorer folders" />
+                <button size="sm" variant="ghost" icon="chevron-down" on-press="expand_all_explorer" label="Expand all Explorer folders" />
+                <button size="sm" variant="ghost" icon="refresh-cw" on-press="refresh_explorer" label="Refresh Explorer" />
+                <button size="sm" variant="ghost" icon="plus" on-press="create_new_file" label="New file" />
               </row>
               <text-field text="{explorerFilterText}" placeholder="Filter files..." on-input="update_explorer_filter" label="Explorer filter" />
               <text-field text="{newFilePathText}" placeholder="path/to/file.ts" on-input="update_new_file_path" on-submit="create_new_file" label="New file path" />
@@ -77,10 +73,10 @@
                     <list-item on-press="select_file:{n.id}" selected="{n.id == selected_file_id}" padding="4" gap="4" cross="center" label="{n.name}">
                       <text size="sm" foreground="text_muted" wrap="false">{n.indent}</text>
                       <if test="{n.is_dir}">
-                        <button size="sm" variant="ghost" on-press="toggle_explorer_folder:{n.id}" label="{n.chevron_label}">{n.chevron}</button>
+                        <button size="sm" variant="ghost" icon="{n.chevron}" on-press="toggle_explorer_folder:{n.id}" label="{n.chevron_label}" />
                       </if>
                       <if test="{n.is_file}">
-                        <text size="sm" foreground="text_muted" wrap="false">·</text>
+                        <icon name="file-text" width="13" height="13" foreground="text_muted" />
                       </if>
                       <text grow="1" wrap="false">{n.name}</text>
                       <if test="{n.has_scm}">
@@ -103,7 +99,7 @@
               <row gap="4">
                 <button size="sm" variant="ghost" on-press="toggle_search_case" label="{searchCaseLabel}">Aa</button>
                 <button size="sm" variant="ghost" on-press="toggle_search_whole_word" label="{searchWholeWordLabel}">Whole Word</button>
-                <button size="sm" variant="primary" on-press="run_search" label="Run workspace search immediately">Search</button>
+                <button size="sm" variant="primary" icon="search" on-press="run_search" label="Run workspace search immediately">Search</button>
               </row>
               <text size="sm" foreground="text_muted" wrap="true">Path scopes are comma-separated. * matches any characters; patterns without * match a path prefix or suffix.</text>
               <separator />
@@ -141,14 +137,14 @@
             <if test="{isScm}">
               <row gap="6" cross="center">
                 <text size="lg" grow="1">Source Control</text>
-                <button size="sm" variant="ghost" on-press="refresh_git">Refresh</button>
+                <button size="sm" variant="ghost" icon="refresh-cw" on-press="refresh_git" label="Refresh Git status" />
               </row>
               <text size="sm" foreground="text_muted">{git_summary}</text>
               <text-field text="{commitMessageText}" placeholder="Commit message..." on-input="update_commit_message" on-submit="commit_changes" label="Commit message" />
               <row gap="4">
                 <button size="sm" variant="ghost" on-press="stage_all">Stage</button>
                 <button size="sm" variant="ghost" on-press="unstage_all">Unstage</button>
-                <button size="sm" variant="primary" on-press="commit_changes">Commit</button>
+                <button size="sm" variant="primary" icon="check" on-press="commit_changes">Commit</button>
               </row>
               <scroll grow="1" label="Git changes">
                 <column gap="2">
@@ -172,7 +168,7 @@
               </scroll>
               <column gap="4" padding="6" background="surface_subtle">
                 <text size="sm" foreground="text_muted">{git_diff_status}</text>
-                <button size="sm" variant="secondary" on-press="open_scm_diff" label="Open selected source control diff in read-only review">Open SCM Diff</button>
+                <button size="sm" variant="secondary" icon="eye" on-press="open_scm_diff" label="Open selected source control diff in read-only review">Open SCM Diff</button>
               </column>
             </if>
 
@@ -207,16 +203,16 @@
               <for each="open_tabs" key="id" as="t">
                 <button size="sm" variant="ghost" selected="{t.id == active_tab_id}" on-press="select_tab:{t.id}">{t.title}</button>
               </for>
-              <button size="sm" variant="ghost" on-press="close_active_tab" label="Close tab">Close</button>
+              <button size="sm" variant="ghost" icon="x" on-press="close_active_tab" label="Close tab" />
               <spacer grow="1" />
-              <button size="sm" variant="ghost" on-press="toggle_agent_panel">{agentPanelLabel}</button>
+              <button size="sm" variant="ghost" icon="send" on-press="toggle_agent_panel">{agentPanelLabel}</button>
             </row>
             <separator />
             <row grow="1">
               <column grow="1" gap="4" padding="8">
                 <row gap="4" cross="center">
-                  <button size="sm" variant="ghost" on-press="navigate_back" label="{navigationBackLabel}">Back</button>
-                  <button size="sm" variant="ghost" on-press="navigate_forward" label="{navigationForwardLabel}">Forward</button>
+                  <button size="sm" variant="ghost" icon="chevron-left" on-press="navigate_back" label="{navigationBackLabel}">Back</button>
+                  <button size="sm" variant="ghost" icon="chevron-right" on-press="navigate_forward" label="{navigationForwardLabel}">Forward</button>
                   <row gap="2" grow="1" cross="center">
                     <for each="breadcrumb_segs" key="id" as="seg">
                       <button size="sm" variant="ghost" on-press="select_breadcrumb:{seg.id}">{seg.label}</button>
@@ -226,14 +222,15 @@
                     <badge variant="secondary">{editorFocusLabel}</badge>
                   </if>
                   <badge variant="secondary">{dirtyLabel}</badge>
-                  <button size="sm" variant="ghost" on-press="go_to_symbol" label="Go to symbol">@</button>
+                  <button size="sm" variant="ghost" icon="circle-dot" on-press="go_to_symbol" label="Go to symbol" />
                   <button size="sm" variant="ghost" on-press="run_quick_open">Go to</button>
                   <button size="sm" variant="ghost" on-press="open_snippet_picker" label="Append a literal snippet at the end of the document">Append Snippet</button>
-                  <button size="sm" variant="ghost" on-press="restore_backup">Backup</button>
-                  <button size="sm" variant="primary" on-press="save_file">Save</button>
+                  <button size="sm" variant="ghost" icon="archive" on-press="restore_backup" label="Restore backup">Backup</button>
+                  <button size="sm" variant="primary" icon="save" on-press="save_file">Save</button>
                 </row>
                 <if test="{showDiskConflict}">
                   <row gap="6" padding="8" cross="center" background="warning" label="External file change conflict">
+                    <icon name="alert" width="15" height="15" foreground="warning_text" />
                     <text foreground="warning_text">External Change Conflict</text>
                     <text size="sm" foreground="warning_text" grow="1" wrap="false">The file changed on disk. Your unsaved working copy is protected.</text>
                     <button size="sm" variant="secondary" on-press="compare_with_saved">Compare</button>
@@ -252,11 +249,11 @@
                   <row gap="4" cross="center">
                     <text-field text="{findQueryText}" placeholder="Find..." on-input="update_find_query" on-submit="run_find" grow="1" label="Find in file" />
                     <badge variant="secondary">{find_active_label}</badge>
-                    <button size="sm" variant="ghost" on-press="find_prev">Prev</button>
-                    <button size="sm" variant="ghost" on-press="find_next">Next</button>
-                    <button size="sm" variant="secondary" on-press="run_find">Find</button>
+                    <button size="sm" variant="ghost" icon="chevron-up" on-press="find_prev" label="Previous match" />
+                    <button size="sm" variant="ghost" icon="chevron-down" on-press="find_next" label="Next match" />
+                    <button size="sm" variant="secondary" icon="search" on-press="run_find">Find</button>
                     <button size="sm" variant="ghost" on-press="go_to_definition" label="Go to Definition">Definition</button>
-                    <button size="sm" variant="ghost" on-press="clear_find">Close</button>
+                    <button size="sm" variant="ghost" icon="x" on-press="clear_find" label="Close find panel" />
                   </row>
                   <row gap="4" cross="center">
                     <text-field text="{replaceText}" placeholder="Replace..." on-input="update_replace_text" grow="1" label="Replace" />
@@ -280,12 +277,12 @@
                 <separator />
                 <column width="300" gap="8" padding="10" background="surface">
                   <row gap="6" cross="center">
+                    <icon name="send" width="14" height="14" foreground="text_muted" />
                     <text grow="1">Agent</text>
-                    <button size="sm" variant="ghost" on-press="toggle_agent_panel">Close</button>
+                    <button size="sm" variant="ghost" icon="x" on-press="toggle_agent_panel" label="Close agent panel" />
                   </row>
                   <text-field text="{agentPrompt}" placeholder="Ask the agent..." on-input="update_agent_prompt" on-submit="create_agent_task" label="Agent prompt" />
-                  <button size="sm" variant="primary" on-press="create_agent_task">Run</button>
-                  <separator />
+                  <button size="sm" variant="primary" icon="send" on-press="create_agent_task">Run</button>
                   <scroll grow="1" label="Agent tasks">
                     <column gap="6">
                       <for each="tasks" key="id" as="task">
@@ -307,23 +304,23 @@
               <separator />
               <column height="280" gap="5" padding="8" background="surface">
                 <row gap="4" cross="center">
-                  <button size="sm" variant="ghost" selected="{showBottomTerminal}" on-press="select_bottom_tab:{bottom_tab_terminal}">Terminal · {terminalStatus}</button>
-                  <button size="sm" variant="ghost" selected="{showBottomOutput}" on-press="select_bottom_tab:{bottom_tab_output}">Output · {output_count}</button>
-                  <button size="sm" variant="ghost" selected="{showBottomProblems}" on-press="select_bottom_tab:{bottom_tab_problems}">Problems · {problemsStatus}</button>
+                  <button size="sm" variant="ghost" icon="terminal" selected="{showBottomTerminal}" on-press="select_bottom_tab:{bottom_tab_terminal}">Terminal · {terminalStatus}</button>
+                  <button size="sm" variant="ghost" icon="file-text" selected="{showBottomOutput}" on-press="select_bottom_tab:{bottom_tab_output}">Output · {output_count}</button>
+                  <button size="sm" variant="ghost" icon="alert" selected="{showBottomProblems}" on-press="select_bottom_tab:{bottom_tab_problems}">Problems · {problemsStatus}</button>
                   <spacer grow="1" />
                   <badge variant="secondary">Tests: {test_status_label}</badge>
                   <if test="{showBottomTerminal}">
                     <badge variant="secondary">{terminalStatus}</badge>
-                    <button size="sm" variant="ghost" on-press="stop_terminal_task" label="Stop Terminal/Task">Stop Terminal/Task/Launch</button>
-                    <button size="sm" variant="ghost" on-press="clear_terminal">Clear</button>
+                    <button size="sm" variant="ghost" icon="x-circle" on-press="stop_terminal_task" label="Stop Terminal/Task">Stop</button>
+                    <button size="sm" variant="ghost" icon="trash" on-press="clear_terminal" label="Clear terminal output" />
                   </if>
                   <if test="{showBottomOutput}">
-                    <button size="sm" variant="ghost" on-press="clear_output">Clear</button>
+                    <button size="sm" variant="ghost" icon="trash" on-press="clear_output" label="Clear output" />
                   </if>
                   <if test="{showBottomProblems}">
                     <badge variant="secondary">{problemsStatus}</badge>
                   </if>
-                  <button size="sm" variant="ghost" on-press="toggle_bottom_panel">Close</button>
+                  <button size="sm" variant="ghost" icon="x" on-press="toggle_bottom_panel" label="Close panel" />
                 </row>
                 <if test="{showBottomTerminal}">
                   <row gap="4" cross="center" label="Terminal and run profiles">
@@ -333,17 +330,17 @@
                       <button size="sm" variant="ghost" selected="{profile.id == selected_launch_profile_id}" on-press="select_launch_profile:{profile.id}" label="{profile.command}">{profile.name}</button>
                     </for>
                     <spacer grow="1" />
-                    <button size="sm" variant="ghost" on-press="refresh_launch_profiles" label="Refresh command run profiles from .velocity/launch.json">Refresh Profiles</button>
-                    <button size="sm" variant="primary" on-press="run_launch_profile" label="Run selected command profile">Run Profile</button>
+                    <button size="sm" variant="ghost" icon="refresh-cw" on-press="refresh_launch_profiles" label="Refresh command run profiles from .velocity/launch.json">Refresh Profiles</button>
+                    <button size="sm" variant="primary" icon="play" on-press="run_launch_profile" label="Run selected command profile">Run Profile</button>
                   </row>
                   <row gap="4" cross="center">
                     <text>Workspace Tasks</text>
                     <badge variant="secondary">{taskStatus}</badge>
                     <spacer grow="1" />
-                    <button size="sm" variant="primary" on-press="run_workspace_tests" label="Run workspace tests using the test or first test colon task">Run Workspace Tests</button>
-                    <button size="sm" variant="ghost" on-press="rerun_workspace_tests" label="Rerun the last workspace test task">Rerun Tests</button>
-                    <button size="sm" variant="ghost" on-press="refresh_tasks">Refresh Tasks</button>
-                    <button size="sm" variant="primary" on-press="run_selected_task">Run Selected Task</button>
+                    <button size="sm" variant="primary" icon="play" on-press="run_workspace_tests" label="Run workspace tests using the test or first test colon task">Run Workspace Tests</button>
+                    <button size="sm" variant="ghost" icon="repeat" on-press="rerun_workspace_tests" label="Rerun the last workspace test task">Rerun Tests</button>
+                    <button size="sm" variant="ghost" icon="refresh-cw" on-press="refresh_tasks">Refresh Tasks</button>
+                    <button size="sm" variant="primary" icon="play" on-press="run_selected_task">Run Selected Task</button>
                   </row>
                   <scroll height="92" label="Detected workspace tasks">
                     <column gap="2">
@@ -354,9 +351,9 @@
                   </scroll>
                   <row gap="4" cross="center">
                     <text-field text="{terminalCommandText}" placeholder="echo hello" on-input="update_terminal_command" on-submit="run_terminal_command" grow="1" label="Terminal command" />
-                    <button size="sm" variant="ghost" on-press="terminal_history_older">Prev</button>
-                    <button size="sm" variant="ghost" on-press="terminal_history_newer">Next</button>
-                    <button size="sm" variant="primary" on-press="run_terminal_command">Run</button>
+                    <button size="sm" variant="ghost" icon="chevron-up" on-press="terminal_history_older" label="Older command" />
+                    <button size="sm" variant="ghost" icon="chevron-down" on-press="terminal_history_newer" label="Newer command" />
+                    <button size="sm" variant="primary" icon="play" on-press="run_terminal_command">Run</button>
                   </row>
                   <scroll grow="1" label="Terminal output">
                     <column gap="1">
@@ -488,14 +485,20 @@
                 <column gap="14">
                   <if test="{showSettingsAppearance}">
                     <column gap="6" padding="10" background="surface_subtle">
-                      <text>Appearance</text>
+                      <row gap="6" cross="center">
+                        <icon name="sun" width="14" height="14" foreground="text_muted" />
+                        <text>Appearance</text>
+                      </row>
                       <button variant="secondary" on-press="switch_theme" label="Change color theme">Color theme: {themeLabel}</button>
                       <text size="sm" foreground="text_muted">Window: {windowStatusLabel}</text>
                     </column>
                   </if>
                   <if test="{showSettingsEditor}">
                     <column gap="6" padding="10" background="surface_subtle">
-                      <text>Editor</text>
+                      <row gap="6" cross="center">
+                        <icon name="edit" width="14" height="14" foreground="text_muted" />
+                        <text>Editor</text>
+                      </row>
                       <button variant="ghost" on-press="toggle_find_case" label="Toggle case-sensitive find">{findCaseLabel}</button>
                       <button variant="ghost" on-press="toggle_trim_trailing" label="Toggle trimming trailing whitespace">{trimTrailingLabel}</button>
                       <button variant="ghost" on-press="toggle_final_newline" label="Toggle final newline insertion">{finalNewlineLabel}</button>
@@ -505,7 +508,10 @@
                   </if>
                   <if test="{showSettingsWorkspace}">
                     <column gap="6" padding="10" background="surface_subtle">
-                      <text>Workspace</text>
+                      <row gap="6" cross="center">
+                        <icon name="folder" width="14" height="14" foreground="text_muted" />
+                        <text>Workspace</text>
+                      </row>
                       <button variant="ghost" on-press="toggle_terminal" label="Toggle integrated terminal panel">{terminalPanelLabel}</button>
                       <button variant="ghost" on-press="toggle_agent_panel" label="Toggle AI agent panel">{agentPanelLabel}</button>
                       <button variant="ghost" on-press="toggle_auto_save" label="Toggle automatic file saving">{autoSaveLabel}</button>
@@ -519,7 +525,10 @@
                   </if>
                   <if test="{showSettingsAccessibility}">
                     <column gap="6" padding="10" background="surface_subtle">
-                      <text>Accessibility</text>
+                      <row gap="6" cross="center">
+                        <icon name="eye" width="14" height="14" foreground="text_muted" />
+                        <text>Accessibility</text>
+                      </row>
                       <text size="sm" foreground="text_muted">{systemHighContrastLabel}</text>
                       <text size="sm" foreground="text_muted">{systemReduceMotionLabel}</text>
                       <button variant="ghost" on-press="toggle_shortcuts_help" label="Open keyboard shortcuts help">Keyboard Shortcuts</button>
@@ -528,7 +537,10 @@
                   </if>
                   <if test="{showSettingsFeatures}">
                     <column gap="6" padding="10" background="surface_subtle">
-                      <text>Features</text>
+                      <row gap="6" cross="center">
+                        <icon name="wrench" width="14" height="14" foreground="text_muted" />
+                        <text>Features</text>
+                      </row>
                       <button variant="ghost" on-press="open_feature_matrix">Feature Toggle Matrix</button>
                       <button variant="ghost" on-press="open_process_governor">Process Governor</button>
                       <button variant="ghost" on-press="open_plugin_registry">Plugins</button>
@@ -537,7 +549,10 @@
                   </if>
                   <if test="{showSettingsAbout}">
                     <column gap="6" padding="10" background="surface_subtle">
-                      <text>About</text>
+                      <row gap="6" cross="center">
+                        <icon name="info" width="14" height="14" foreground="text_muted" />
+                        <text>About</text>
+                      </row>
                       <text size="sm" foreground="text_muted">Telemetry off | Surveys off | Plugins locked</text>
                       <text size="sm" foreground="text_muted">{app_version_label}</text>
                       <button variant="secondary" on-press="check_for_updates">Check for Updates</button>
@@ -581,17 +596,18 @@
       </row>
     </if>
 
-    <separator />
     <if test="{hasUpdateBanner}">
       <row gap="8" padding="6" background="surface_subtle" cross="center" label="Update banner">
+        <icon name="download" width="14" height="14" foreground="text_muted" />
         <text size="sm" grow="1" wrap="true">{updateBannerText}</text>
-        <button size="sm" variant="ghost" on-press="dismiss_update_banner">Dismiss</button>
+        <button size="sm" variant="ghost" icon="x" on-press="dismiss_update_banner" label="Dismiss update banner" />
       </row>
     </if>
     <if test="{hasToast}">
       <row gap="8" padding="6" background="surface" cross="center" label="Notification toast">
+        <icon name="info" width="14" height="14" foreground="text_muted" />
         <text size="sm" grow="1" wrap="true">{toast}</text>
-        <button size="sm" variant="ghost" on-press="clear_toast">Dismiss</button>
+        <button size="sm" variant="ghost" icon="x" on-press="clear_toast" label="Dismiss toast" />
       </row>
     </if>
     <status-bar>{project_branch}  |  {status_language}  |  {documentStats}  |  {dirtyLabel}</status-bar>
@@ -601,10 +617,11 @@
     <column grow="1" main="start" cross="end" padding="20" background="scrim">
       <column width="760" gap="8" padding="12" background="surface">
         <row gap="8" cross="center">
+          <icon name="info" width="14" height="14" foreground="text_muted" />
           <text grow="1">Notifications</text>
           <badge variant="secondary">{notification_count}</badge>
-          <button size="sm" variant="ghost" on-press="clear_notifications" label="Clear all notifications">Clear</button>
-          <button size="sm" variant="ghost" on-press="toggle_notifications_panel">Close</button>
+          <button size="sm" variant="ghost" icon="trash" on-press="clear_notifications" label="Clear all notifications" />
+          <button size="sm" variant="ghost" icon="x" on-press="toggle_notifications_panel" label="Close notifications" />
         </row>
         <row gap="3" cross="center" label="Notification severity filters">
           <text size="sm">Severity</text>
@@ -650,8 +667,8 @@
         <row gap="8" cross="center">
           <text grow="1">{diff_review_title}</text>
           <badge variant="secondary">Read-only</badge>
-          <button size="sm" variant="ghost" on-press="copy_diff_internal" label="Copy diff to the application internal buffer">Copy Internally</button>
-          <button size="sm" variant="ghost" on-press="close_diff_review" label="Close Diff Review">Close</button>
+          <button size="sm" variant="ghost" icon="copy" on-press="copy_diff_internal" label="Copy diff to the application internal buffer">Copy Internally</button>
+          <button size="sm" variant="ghost" icon="x" on-press="close_diff_review" label="Close Diff Review" />
         </row>
         <row gap="6" cross="center">
           <text size="sm" foreground="text_muted" grow="1">{diff_review_status}</text>
@@ -684,8 +701,8 @@
       <column width="620" height="440" gap="8" padding="12" background="background" label="Append Snippet picker">
         <row gap="8" cross="center">
           <text grow="1">Append Snippet</text>
-          <button size="sm" variant="ghost" on-press="reload_snippets" label="Reload workspace and user snippets">Reload</button>
-          <button size="sm" variant="ghost" on-press="close_snippet_picker" label="Close Append Snippet picker">Close</button>
+          <button size="sm" variant="ghost" icon="refresh-cw" on-press="reload_snippets" label="Reload workspace and user snippets" />
+          <button size="sm" variant="ghost" icon="x" on-press="close_snippet_picker" label="Close Append Snippet picker" />
         </row>
         <text size="sm" foreground="text_muted" wrap="true">Bodies are appended literally at the end of the document. Caret insertion is unavailable.</text>
         <search-field text="{snippetQueryText}" placeholder="Search prefix or description..." on-input="update_snippet_query" label="Snippet search" />
@@ -744,7 +761,7 @@
         <row gap="6" cross="center">
           <text grow="1">Go to Symbol</text>
           <badge variant="secondary">{outlineStatus}</badge>
-          <button size="sm" variant="ghost" on-press="close_symbol_palette">Close</button>
+          <button size="sm" variant="ghost" icon="x" on-press="close_symbol_palette" label="Close symbol palette" />
         </row>
         <search-field text="{symbolQueryText}" placeholder="Filter symbols..." on-input="update_symbol_query" label="Symbol search" />
         <scroll height="280" label="Symbol results">

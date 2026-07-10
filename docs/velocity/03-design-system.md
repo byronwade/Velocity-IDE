@@ -34,6 +34,15 @@ Implemented in `apps/native-shell/src/theme/tokens.zig` mapping to Native SDK `C
 
 Radii soften to `sm 4 · md 7 · lg 11 · xl 15` for a modern, calm chrome that stays dense.
 
+## Iconography
+
+Built-in Native SDK stroke icons only (`<icon name>` / `icon=` attributes) — a
+closed, compile-checked set, tinted through the color tokens. The activity
+rail is icon-only with full accessible labels; icon-only controls always
+carry a `label`. Explorer folder chevrons bind icon names
+(`chevron-right` / `chevron-down`) from the projection. No emoji, no
+third-party icon fonts, no copied brand glyphs.
+
 ## Typography
 
 System stacks only — no vendored proprietary font files. Optional: SDK-bundled Geist faces if used via official registration APIs.

@@ -22,7 +22,7 @@ pub const FileNode = struct {
     indent: []const u8 = "",
     /// Folder/file marker retained for non-interactive/mock projections.
     kind_mark: []const u8 = "",
-    /// Interactive folder disclosure mark and its accessible action label.
+    /// Interactive folder disclosure icon name and its accessible action label.
     chevron: []const u8 = "",
     chevron_label: []const u8 = "",
     /// Git porcelain decoration computed once when the projection refreshes.
