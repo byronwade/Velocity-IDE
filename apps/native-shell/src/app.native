@@ -14,27 +14,28 @@
 
     <!-- Launch screen -->
     <if test="{isLaunch}">
-      <column grow="1" gap="20" padding="40" main="center" cross="center">
-        <column gap="6" cross="center" width="440">
+      <column grow="1" gap="28" padding="48" main="center" cross="center">
+        <column gap="12" cross="center" width="480">
+          <badge variant="secondary">Native · Local-first · Fast</badge>
           <text size="lg">Velocity</text>
-          <text foreground="text_muted" wrap="true">Native IDE for fast software creation</text>
+          <text foreground="text_muted" wrap="true">A native IDE built for fast, focused software creation.</text>
         </column>
         <row gap="8" main="center">
           <button variant="primary" on-press="open_project:{project_acme}">Open Folder</button>
           <button variant="secondary" on-press="reopen_last_workspace">Reopen Last</button>
         </row>
-        <column gap="6" width="440" padding="12" background="surface_subtle">
-          <text size="sm">RECENT PROJECTS</text>
+        <column gap="8" width="480" padding="16" background="surface_subtle">
+          <text size="sm" foreground="text_muted">RECENT PROJECTS</text>
           <for each="recent" as="p">
-            <list-item on-press="open_project:{p.path}" padding="8" gap="8" cross="center" label="{p.name}">
-              <column gap="2" grow="1">
+            <list-item on-press="open_project:{p.path}" padding="10" gap="10" cross="center" label="{p.name}">
+              <column gap="3" grow="1">
                 <text wrap="false">{p.name}</text>
                 <text size="sm" foreground="text_muted" wrap="false">{p.path}</text>
               </column>
             </list-item>
           </for>
         </column>
-        <text size="sm" foreground="text_muted">Cmd+K for commands | path open via palette</text>
+        <text size="sm" foreground="text_muted">Press Cmd+K for the command palette · open any path from there</text>
       </column>
     </if>
 
