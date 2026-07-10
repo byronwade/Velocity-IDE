@@ -15,7 +15,6 @@
     <if test="{isLaunch}">
       <column grow="1" gap="28" padding="48" main="center" cross="center">
         <column gap="12" cross="center" width="480">
-          <badge variant="secondary">Native · Local-first · Fast</badge>
           <text size="lg">Velocity</text>
           <text foreground="text_muted" wrap="true">A native IDE built for fast, focused software creation.</text>
         </column>
@@ -94,7 +93,7 @@
 
             <if test="{isSearch}">
               <row gap="6" cross="center">
-                <text grow="1">Search</text>
+                <text size="sm" foreground="text_muted" grow="1">Search</text>
                 <badge variant="secondary">{searchStatus}</badge>
               </row>
               <text-field text="{searchQueryText}" placeholder="Search workspace..." on-input="update_search_query" on-submit="run_search" label="Search query" />
@@ -107,7 +106,7 @@
               </row>
               <text size="sm" foreground="text_muted" wrap="true">Path scopes are comma-separated. * matches any characters; patterns without * match a path prefix or suffix.</text>
               <separator />
-              <text>Replace Across Workspace</text>
+              <text size="sm" foreground="text_muted">Replace Across Workspace</text>
               <text-field text="{replaceText}" placeholder="Replacement text..." on-input="update_replace_text" label="Workspace replacement text" />
               <row gap="4">
                 <button size="sm" variant="secondary" on-press="preview_workspace_replace">Preview Changes</button>
@@ -140,7 +139,7 @@
 
             <if test="{isScm}">
               <row gap="6" cross="center">
-                <text size="lg" grow="1">Source Control</text>
+                <text size="sm" foreground="text_muted" grow="1">Source Control</text>
                 <button size="sm" variant="ghost" icon="refresh-cw" on-press="refresh_git" label="Refresh Git status" />
               </row>
               <text size="sm" foreground="text_muted">{git_summary}</text>
@@ -178,7 +177,7 @@
 
             <if test="{showSidebarOutline}">
               <row gap="6" cross="center">
-                <text grow="1">Outline</text>
+                <text size="sm" foreground="text_muted" grow="1">Outline</text>
                 <badge variant="secondary">{outlineStatus}</badge>
               </row>
               <scroll grow="1" label="Document outline">
@@ -521,7 +520,7 @@
                       <text size="sm" foreground="text_muted">Appearance</text>
                       <row cross="center" gap="8">
                         <text grow="1">Color theme</text>
-                        <select text="{themeLabel}" on-press="switch_theme" label="Change color theme" />
+                        <button size="sm" variant="secondary" on-press="switch_theme" label="Change color theme">{themeLabel}</button>
                       </row>
                       <row cross="center" gap="8">
                         <text grow="1">Window</text>
@@ -547,7 +546,7 @@
                       </row>
                       <row cross="center" gap="8">
                         <text grow="1">Editor indentation</text>
-                        <select text="{indentSizeValue}" on-press="cycle_indent_size" label="Change editor indentation size" />
+                        <button size="sm" variant="secondary" on-press="cycle_indent_size" label="Change editor indentation size">{indentSizeValue}</button>
                       </row>
                       <row cross="center" gap="8">
                         <text grow="1">Word wrap</text>
@@ -573,7 +572,7 @@
                       </row>
                       <row cross="center" gap="8">
                         <text grow="1">Disk poll interval</text>
-                        <select text="{diskPollValue}" on-press="cycle_disk_poll_interval" label="Files: Cycle Disk Poll Interval" />
+                        <button size="sm" variant="secondary" on-press="cycle_disk_poll_interval" label="Files: Cycle Disk Poll Interval">{diskPollValue}</button>
                       </row>
                       <row cross="center" gap="8">
                         <text grow="1">Workspace sidebar</text>
