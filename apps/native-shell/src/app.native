@@ -148,6 +148,19 @@
                 <button size="sm" variant="ghost" icon="refresh-cw" on-press="refresh_git" label="Refresh Git status" />
               </row>
               <text size="sm" foreground="text_muted">{git_summary}</text>
+              <column gap="2" label="Branches">
+                <for each="git_branches" key="id" as="branch">
+                  <list-item on-press="switch_git_branch:{branch.id}" selected="{branch.current}" padding="4" gap="6" cross="center" label="Switch to branch {branch.name}">
+                    <text size="sm" foreground="accent" width="14">{branch.marker}</text>
+                    <text size="sm" grow="1" wrap="false" overflow="ellipsis">{branch.name}</text>
+                  </list-item>
+                </for>
+              </column>
+              <row gap="4" cross="center">
+                <text-field grow="1" text="{newBranchText}" placeholder="New branch name..." on-input="update_new_branch_name" on-submit="create_git_branch" label="New branch name" />
+                <button size="sm" variant="secondary" icon="git-branch" on-press="create_git_branch" label="Create and switch to branch">Create</button>
+              </row>
+              <separator />
               <text-field text="{commitMessageText}" placeholder="Commit message..." on-input="update_commit_message" on-submit="commit_changes" label="Commit message" />
               <row gap="4">
                 <button size="sm" variant="ghost" on-press="stage_all">Stage</button>

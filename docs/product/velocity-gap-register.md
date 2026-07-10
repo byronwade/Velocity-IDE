@@ -77,3 +77,51 @@ Ordered by severity = (market value × frequency) vs current status.
    against the catalog.
 3. **Perf claims discipline is good** (measured-or-n/a) — keep it; it is a
    credibility differentiator vs benchmark-marketing competitors.
+
+## Catalog reconciliation (2026-07-10)
+
+Each §A claim was verified against implementing code, tests (`apps/native-shell/src/tests.zig`
+or module test blocks), and smoke scripts — not against docs/14 or docs/18 (both carry
+their own drift: the matrix still lists command-palette, recent-projects, auto-save,
+git-status, and performance-hud as stub). Vocabulary note: the generator
+(`tools/generate_feature_registry.py`, `STATUSES = {stub, prototype, working, optimized}`)
+does NOT accept `partial`; every §A "partial" suggestion is recorded as `prototype`
+(real-but-incomplete). Bar for `working`: end-to-end user-reachable path + tests covering
+the important logic + failure states represented + no critical mock.
+
+Post-reconciliation tallies: 27 working / 20 prototype / 153 stub (was 18/4/178).
+
+feature.dirty-state | stub -> working | tests.zig: "dirty tab title gets marker", "save all preserves conflicts while saving unaffected dirty tabs"; workspace/undo_stack.zig (9 tests)
+feature.search-results | stub -> working | tests.zig: "open search hit jumps to line toast", "search and line jumps populate back forward navigation and branch", "search status reports hit count"
+feature.hot-exit | stub -> working | workspace/hot_exit_store.zig; tests.zig: "close persists hot exit and matching workspace restores dirty session", "hot exit refuses dirty unloaded payload and surfaces persistence failure"
+feature.backups | stub -> working | workspace/backup_store.zig (6 tests); tests.zig: "forced overwrite creates backup and refreshes disk baseline", "active backup restore previews confirms and refuses unsafe states"
+feature.problem-matchers | stub -> working | workspace/problem_matchers.zig tests: TypeScript, Zig/GCC+ANSI, Vitest/Jest with framework-stack rejection; scripts/diagnostics-smoke.sh
+feature.test-core | stub -> working | tests.zig: "workspace tests pass and mirror bounded labeled output", "workspace test cancellation shares the governed Stop lifecycle", "failed workspace test creates one assertion problem and opens Problems"; scripts/test-smoke.sh (pass+fail modes)
+feature.test-output | stub -> working | tests.zig: labeled bounded Output mirror + assertion Problems assertions in the three workspace-test tests above
+feature.auto-save | stub -> working | app_model.zig:toggleAutoSave/saveActiveDocument-on-edit; tests.zig: "auto save toggle persists preference", "autosave writes backups refreshes fingerprints and preserves external conflicts"
+feature.git-status | stub -> working | scm/git_status.zig module tests run real git repos (porcelain/NUL parse, per-path stage/unstage/restore, traversal rejection); tests.zig: "git status refresh on scm activity" (graceful non-repo)
+feature.test-discovery | stub -> prototype | task-name discovery only (workspace/task_detector.zig; tests.zig: "fixture task discovery preserves npm precedence and labels every source"); no per-test tree — matrix itself says partial
+feature.command-palette | stub -> prototype | tests.zig: "command palette filters by query", "palette projection hides no-op and labels limited commands"; real and tested, but docs/17 scopes it to "working for implemented commands" — §A itself only claims partial
+feature.find-replace | stub -> prototype | workspace/find_in_doc.zig, replace.zig; tests.zig: "replace once and all in document", case/whole-word/clear-find tests; no caret-anchored find
+feature.outline | stub -> prototype | workspace/outline.zig ("heuristic symbol extraction (no LSP)"); tests.zig: "outline sidebar and symbol palette"
+feature.symbols | stub -> prototype | same heuristic source feeds Go to Symbol palette (tests.zig: "outline sidebar and symbol palette", symbol_palette_open)
+feature.go-to-definition | stub -> prototype | workspace/go_to_def.zig bounded text search; tests.zig:1490 "go to definition finds symbol in workspace" (assertion is disjunctive/weak — heuristic, not LSP)
+feature.recent-projects | stub -> prototype | REJECTED §A's "working": app_model.zig:3169 syncRecentFromPrefs falls back to the static mock `recent_projects` array (fake `~/src/...` paths) whenever prefs are empty — a user-reachable mock on first run fails the no-critical-mock bar. Prefs-backed path is real (tests.zig: "recent projects sync from prefs", "reopen last workspace from prefs")
+feature.status-bar | stub -> prototype | doc stats/EOL/file-count tests ("document stats update on edit", "doc stats include eol", "workspace file count label after open"); limited fixed segments
+feature.sidebar | stub -> prototype | tests.zig: "sidebar toggle and search case and timestamp", "sidebar keeps editor for search scm problems"; toggle + view switching only
+feature.panel | stub -> prototype | tests.zig: "bottom panel tabs terminal output problems", "palette terminal command uses bottom panel state"
+feature.tabs | stub -> prototype | tests.zig: "pin blocks close until unpinned", "cycle tabs next and prev", "reopen closed tab restores file", "close all and close other use explicit dirty confirmation flags"; no reorder/preview tabs
+feature.themes | stub -> prototype | theme/tokens.zig + prefs.setTheme; tests.zig: "prefs persist theme"; fixed built-in token set only
+feature.formatting | stub -> prototype | app_model.zig:formatDocument (trim + final newline + hard wrap; tests.zig: "save hygiene trims trailing whitespace", "format hard wrap copy document go to symbol"); not a real formatter
+feature.performance-hud | stub -> prototype | tests.zig: "performance refresh reports measured zeros and unavailable fields honestly" (rss_bytes and external launch latency genuinely unavailable); scripts/perf-smoke.sh
+feature.scm-core | stub -> prototype | functional SCM panel end-to-end (tests.zig: "model SCM stages literal path and restore reloads clean open tab", "Git discard refuses an unsaved open tab before confirmation", "open git entry missing is graceful") but git-only; no provider-agnostic SCM core
+feature.git-provider | stub -> prototype | real governed argv-git execution lives in scm/git_status.zig and backs the working git-diff/git-stage-commit; no provider process, watching, or refresh daemon
+
+Verified-and-kept (no change):
+feature.workspace-search | working (kept) | dual-engine state is honestly covered: tests.zig:464 "ripgrep engine toggle searches or falls back honestly" plus scope/whole-word and incremental one-shot-timer tests — still accurate
+feature.git-branches | stub (kept) | only branch-name display + copy_git_branch command exist (app_model.zig:2068, git_status.zig branch buffer); no list/switch/create — display belongs to git-status
+feature.ripgrep-adapter | working (kept) | per orchestrator instruction, already updated this cycle
+
+Rejected §A claims:
+1. `feature.recent-projects` -> working: rejected (downgraded suggestion to prototype) — static mock fallback on empty prefs, see line above.
+2. `partial` as a status value: rejected — generator whitelist has no `partial`; recorded as `prototype` throughout. §A's recommendation to add a formal `partial` status remains open as a schema change (out of scope here).

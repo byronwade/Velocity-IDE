@@ -57,6 +57,7 @@ pub const max_replace = workspace_replace.max_replacement_len;
 pub const max_commit_message = 120;
 pub const SearchHit = workspace_search.SearchHit;
 pub const GitEntry = git_status.GitEntry;
+pub const GitBranch = git_status.BranchEntry;
 pub const DocMatch = find_in_doc.DocMatch;
 pub const QuickItem = quick_open.QuickItem;
 pub const Problem = problems_mod.Problem;
@@ -178,6 +179,9 @@ pub const Msg = union(enum) {
     preview_workspace_replace,
     apply_workspace_replace,
     refresh_git,
+    switch_git_branch: u32,
+    update_new_branch_name: canvas.TextInputEvent,
+    create_git_branch,
     open_git_entry: u32,
     select_git_entry: u32,
     stage_git_entry: u32,
@@ -567,6 +571,9 @@ pub const Model = struct {
     active_launch_name: []const u8 = "",
     replace_status_buf: [128]u8 = undefined,
     git_entries: []const GitEntry = &.{},
+    git_branches: []const GitBranch = &.{},
+    git_branch_status: []const u8 = "",
+    git_new_branch: canvas.TextBuffer(git_status.max_branch_name) = .{},
     git_summary: []const u8 = "not loaded",
     git_branch: []const u8 = "unknown",
     new_file_path: canvas.TextBuffer(max_new_file_path) = .{},
@@ -834,6 +841,7 @@ pub const Model = struct {
         "terminal",
         "search_bufs",
         "rg_probe",
+        "git_branch_status",
         "rg_results",
         "git_bufs",
         "task_bufs",
@@ -916,6 +924,7 @@ pub const Model = struct {
         "goto_line_label",
         "replace_text",
         "git_commit_message",
+        "git_new_branch",
         "doc_stats",
         "doc_stats_buf",
         "path_toast",
@@ -1241,6 +1250,10 @@ pub const Model = struct {
 
     pub fn commitMessageText(model: *const Model) []const u8 {
         return model.git_commit_message.text();
+    }
+
+    pub fn newBranchText(model: *const Model) []const u8 {
+        return model.git_new_branch.text();
     }
 
     pub fn documentStats(model: *const Model) []const u8 {
@@ -2445,6 +2458,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .preview_workspace_replace => previewWorkspaceReplace(model),
         .apply_workspace_replace => applyWorkspaceReplace(model),
         .refresh_git => refreshGitStatus(model),
+        .switch_git_branch => |id| switchGitBranch(model, id),
+        .update_new_branch_name => |edit| model.git_new_branch.apply(edit),
+        .create_git_branch => createGitBranch(model),
         .update_commit_message => |edit| model.git_commit_message.apply(edit),
         .stage_all => stageAllChanges(model),
         .unstage_all => unstageAllChanges(model),
@@ -4888,6 +4904,7 @@ fn gitEntryById(model: *Model, entry_id: u32) ?GitEntry {
 
 fn syncGitModel(model: *Model, bufs: *git_status.GitBuffers) void {
     model.git_entries = bufs.entriesSlice();
+    model.git_branches = bufs.branchesSlice();
     model.git_summary = bufs.summary;
     model.git_branch = bufs.branch();
     model.git_diff_text = bufs.diffText();
@@ -6939,6 +6956,77 @@ fn persistPrefs(model: *Model) void {
     model.prefs.save(modelIo(model));
 }
 
+fn anyDirtyTab(model: *const Model) bool {
+    for (model.open_tabs) |tab| {
+        if (tab.dirty) return true;
+    }
+    return model.document_dirty;
+}
+
+/// Branch mutations share one gate: never with unsaved editors (the switch
+/// rewrites the working tree under them), always against the live list, and
+/// always followed by a git resync plus a tab-preserving workspace rescan.
+fn switchGitBranch(model: *Model, branch_id: u32) void {
+    const bufs = model.git_bufs orelse {
+        model.toast = "Refresh git first";
+        return;
+    };
+    var name_buf: [git_status.max_branch_name]u8 = undefined;
+    var name_len: usize = 0;
+    for (bufs.branchesSlice()) |entry| {
+        if (entry.id != branch_id) continue;
+        if (entry.current) {
+            model.toast = "Already on that branch";
+            return;
+        }
+        name_len = @min(entry.name.len, name_buf.len);
+        @memcpy(name_buf[0..name_len], entry.name[0..name_len]);
+    }
+    if (name_len == 0) {
+        model.toast = "Branch is no longer listed; refresh git";
+        return;
+    }
+    if (anyDirtyTab(model)) {
+        model.toast = "Save or close unsaved tabs before switching branches";
+        return;
+    }
+    const status = bufs.switchBranch(modelIo(model), model.project_path, name_buf[0..name_len]);
+    model.git_branch_status = status;
+    finishBranchMutation(model, bufs, status, "switched");
+}
+
+fn createGitBranch(model: *Model) void {
+    const name = std.mem.trim(u8, model.git_new_branch.text(), " \t");
+    if (name.len == 0) {
+        model.toast = "Type a branch name first";
+        return;
+    }
+    if (anyDirtyTab(model)) {
+        model.toast = "Save or close unsaved tabs before switching branches";
+        return;
+    }
+    const bufs = ensureGitBuffers(model) catch {
+        model.toast = "Git alloc failed";
+        return;
+    };
+    const status = bufs.createBranch(modelIo(model), model.project_path, name);
+    model.git_branch_status = status;
+    if (std.mem.eql(u8, status, "branch created")) model.git_new_branch.clear();
+    finishBranchMutation(model, bufs, status, "branch created");
+}
+
+fn finishBranchMutation(
+    model: *Model,
+    bufs: *git_status.GitBuffers,
+    status: []const u8,
+    ok_status: []const u8,
+) void {
+    syncGitModel(model, bufs);
+    if (bufs.branch_len > 0) model.project_branch = bufs.branch();
+    model.toast = status;
+    if (std.mem.eql(u8, status, ok_status)) refreshExplorer(model);
+}
+
 fn refreshGitStatus(model: *Model) void {
     if (!model.workspace_from_disk) {
         if (model.git_bufs) |bufs| bufs.clear();
@@ -6954,6 +7042,7 @@ fn refreshGitStatus(model: *Model) void {
     };
     _ = model.governor.spawn("feature.scm", "git status") catch {};
     bufs.refresh(modelIo(model), model.project_path);
+    _ = bufs.listBranches(modelIo(model), model.project_path);
     syncGitModel(model, bufs);
     if (bufs.branch_len > 0) model.project_branch = bufs.branch();
     model.governor.killFeature("feature.scm");

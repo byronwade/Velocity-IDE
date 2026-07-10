@@ -26,6 +26,18 @@ pub const GitEntry = struct {
     path: []const u8 = "",
 };
 
+pub const max_branches: usize = 32;
+pub const max_branch_name: usize = 64;
+
+pub const BranchEntry = struct {
+    id: u32 = 0,
+    name: []const u8 = "",
+    current: bool = false,
+    /// Row marker glyph the SCM panel renders ("*" on the current branch,
+    /// empty otherwise) - markup renders data, not conditionals.
+    marker: []const u8 = "",
+};
+
 pub const GitBuffers = struct {
     entries: [max_entries]GitEntry = [_]GitEntry{.{}} ** max_entries,
     entry_count: u32 = 0,
@@ -35,6 +47,11 @@ pub const GitBuffers = struct {
     path_lens: [max_entries]usize = [_]usize{0} ** max_entries,
     branch_buf: [64]u8 = undefined,
     branch_len: usize = 0,
+    branches: [max_branches]BranchEntry = [_]BranchEntry{.{}} ** max_branches,
+    branch_count: u32 = 0,
+    branch_name_pool: [max_branches][max_branch_name]u8 = undefined,
+    branch_name_lens: [max_branches]usize = [_]usize{0} ** max_branches,
+    branches_truncated: bool = false,
     summary: []const u8 = "not loaded",
     available: bool = false,
     diff_buf: [max_diff_bytes]u8 = undefined,
@@ -57,9 +74,15 @@ pub const GitBuffers = struct {
         return self.branch_buf[0..self.branch_len];
     }
 
+    pub fn branchesSlice(self: *const GitBuffers) []const BranchEntry {
+        return self.branches[0..self.branch_count];
+    }
+
     pub fn clear(self: *GitBuffers) void {
         self.entry_count = 0;
         self.branch_len = 0;
+        self.branch_count = 0;
+        self.branches_truncated = false;
         self.summary = "not loaded";
         self.available = false;
         self.diff_len = 0;
@@ -319,6 +342,123 @@ pub const GitBuffers = struct {
             else => {},
         }
         return "unstage failed";
+    }
+
+    /// Conservative local branch-name gate. Names are always passed as a
+    /// distinct argv value, so this guards git semantics (option injection
+    /// via a leading '-', refname corner cases), not shell quoting.
+    fn isSafeBranchName(name: []const u8) bool {
+        if (name.len == 0 or name.len > max_branch_name) return false;
+        if (name[0] == '-' or name[0] == '.' or name[0] == '/') return false;
+        if (name[name.len - 1] == '/' or name[name.len - 1] == '.') return false;
+        if (std.mem.indexOf(u8, name, "..") != null) return false;
+        if (std.mem.indexOf(u8, name, "@{") != null) return false;
+        for (name) |byte| {
+            const ok = std.ascii.isAlphanumeric(byte) or byte == '.' or
+                byte == '_' or byte == '-' or byte == '/';
+            if (!ok) return false;
+        }
+        return true;
+    }
+
+    /// Refresh the bounded local branch list (`for-each-ref`, alphabetical).
+    pub fn listBranches(self: *GitBuffers, io: std.Io, cwd: []const u8) []const u8 {
+        self.branch_count = 0;
+        self.branches_truncated = false;
+        if (cwd.len == 0) return "no workspace";
+        if (!isGitRoot(io, cwd)) return "not a git root";
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+        const result = std.process.run(gpa, io, .{
+            .argv = &.{ "git", "for-each-ref", "--format=%(HEAD)%(refname:short)", "refs/heads" },
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(16 * 1024),
+            .stderr_limit = .limited(1024),
+        }) catch return "branch list failed";
+        defer {
+            gpa.free(result.stdout);
+            gpa.free(result.stderr);
+        }
+        switch (result.term) {
+            .exited => |code| if (code != 0) return "branch list failed",
+            else => return "branch list failed",
+        }
+        var lines = std.mem.splitScalar(u8, result.stdout, '\n');
+        while (lines.next()) |line| {
+            if (line.len < 2) continue;
+            if (self.branch_count >= max_branches) {
+                self.branches_truncated = true;
+                break;
+            }
+            const current = line[0] == '*';
+            const name = std.mem.trim(u8, line[1..], " \t\r");
+            if (name.len == 0) continue;
+            const idx = self.branch_count;
+            const n = @min(name.len, self.branch_name_pool[idx].len);
+            @memcpy(self.branch_name_pool[idx][0..n], name[0..n]);
+            self.branch_name_lens[idx] = n;
+            self.branches[idx] = .{
+                .id = idx + 1,
+                .name = self.branch_name_pool[idx][0..n],
+                .current = current,
+                .marker = if (current) "*" else "",
+            };
+            self.branch_count += 1;
+        }
+        if (self.branch_count == 0) return "no branches";
+        return "branches listed";
+    }
+
+    /// Switch to an existing local branch (`git switch` - branch-only
+    /// semantics, never path checkout). The caller is responsible for
+    /// refusing the switch while editors hold unsaved changes.
+    pub fn switchBranch(self: *GitBuffers, io: std.Io, cwd: []const u8, name: []const u8) []const u8 {
+        return self.runBranchCommand(io, cwd, name, &.{ "git", "switch", name }, "switched");
+    }
+
+    /// Create and switch to a new local branch (`git switch -c`).
+    pub fn createBranch(self: *GitBuffers, io: std.Io, cwd: []const u8, name: []const u8) []const u8 {
+        return self.runBranchCommand(io, cwd, name, &.{ "git", "switch", "-c", name }, "branch created");
+    }
+
+    fn runBranchCommand(
+        self: *GitBuffers,
+        io: std.Io,
+        cwd: []const u8,
+        name: []const u8,
+        argv: []const []const u8,
+        ok_status: []const u8,
+    ) []const u8 {
+        if (cwd.len == 0) return "no workspace";
+        if (!isSafeBranchName(name)) return "invalid branch name";
+        if (!isGitRoot(io, cwd)) return "not a git root";
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+        const result = std.process.run(gpa, io, .{
+            .argv = argv,
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(4 * 1024),
+            .stderr_limit = .limited(4 * 1024),
+        }) catch return "branch command failed";
+        defer {
+            gpa.free(result.stdout);
+            gpa.free(result.stderr);
+        }
+        switch (result.term) {
+            .exited => |code| {
+                if (code == 0) {
+                    self.refresh(io, cwd);
+                    _ = self.listBranches(io, cwd);
+                    return ok_status;
+                }
+            },
+            else => {},
+        }
+        // git refuses switches that would clobber local changes; surface
+        // that as the likely cause without parsing localized stderr.
+        return "branch command failed (conflicting local changes?)";
     }
 
     /// Restore one tracked path from the index. Untracked paths are never removed or overwritten.
@@ -689,6 +829,60 @@ test "restore path restores tracked file and refuses untracked file" {
     try std.testing.expectEqualStrings("original\n", tracked);
     const untracked = try tmp.dir.readFile(std.testing.io, "untracked.txt", &out);
     try std.testing.expectEqualStrings("keep\n", untracked);
+}
+
+test "branch list switch and create round-trip with dirty-refusal semantics" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [128]u8 = undefined;
+    const cwd = try initTestRepo(&tmp, &path_buf);
+
+    var g: GitBuffers = .{};
+    try std.testing.expectEqualStrings("branches listed", g.listBranches(std.testing.io, cwd));
+    try std.testing.expectEqual(@as(u32, 1), g.branch_count);
+    try std.testing.expect(g.branches[0].current);
+
+    try std.testing.expectEqualStrings("branch created", g.createBranch(std.testing.io, cwd, "feature/one"));
+    try std.testing.expectEqual(@as(u32, 2), g.branch_count);
+
+    // Switch back to the original branch by its listed name.
+    var original: []const u8 = "";
+    for (g.branchesSlice()) |entry| {
+        if (!entry.current) original = entry.name;
+    }
+    try std.testing.expect(original.len > 0);
+    try std.testing.expectEqualStrings("switched", g.switchBranch(std.testing.io, cwd, original));
+    for (g.branchesSlice()) |entry| {
+        if (entry.current) try std.testing.expectEqualStrings(original, entry.name);
+        if (entry.current) try std.testing.expectEqualStrings("*", entry.marker);
+    }
+
+    // git itself refuses a switch that would clobber a conflicting change:
+    // diverge tracked.txt on feature/one, dirty it locally, then try to switch.
+    try std.testing.expectEqualStrings("switched", g.switchBranch(std.testing.io, cwd, "feature/one"));
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "tracked.txt", .data = "on feature\n" });
+    _ = g.stageAll(std.testing.io, cwd);
+    _ = g.commitWithMessage(std.testing.io, cwd, "diverge tracked");
+    try std.testing.expectEqualStrings("switched", g.switchBranch(std.testing.io, cwd, original));
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "tracked.txt", .data = "dirty local\n" });
+    try std.testing.expectEqualStrings(
+        "branch command failed (conflicting local changes?)",
+        g.switchBranch(std.testing.io, cwd, "feature/one"),
+    );
+    var out: [32]u8 = undefined;
+    const kept = try tmp.dir.readFile(std.testing.io, "tracked.txt", &out);
+    try std.testing.expectEqualStrings("dirty local\n", kept);
+}
+
+test "branch names that could inject options or break refs are rejected" {
+    var g: GitBuffers = .{};
+    try std.testing.expectEqualStrings("invalid branch name", g.switchBranch(std.testing.io, "/unused", "-f"));
+    try std.testing.expectEqualStrings("invalid branch name", g.switchBranch(std.testing.io, "/unused", "--force"));
+    try std.testing.expectEqualStrings("invalid branch name", g.createBranch(std.testing.io, "/unused", "a..b"));
+    try std.testing.expectEqualStrings("invalid branch name", g.createBranch(std.testing.io, "/unused", ".hidden"));
+    try std.testing.expectEqualStrings("invalid branch name", g.createBranch(std.testing.io, "/unused", "has space"));
+    try std.testing.expectEqualStrings("invalid branch name", g.createBranch(std.testing.io, "/unused", "a@{b}"));
+    try std.testing.expectEqualStrings("invalid branch name", g.createBranch(std.testing.io, "/unused", ""));
 }
 
 test "per-path operations reject absolute traversal and git metadata paths" {
