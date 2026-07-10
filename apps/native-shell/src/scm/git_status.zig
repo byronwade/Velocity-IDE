@@ -2,6 +2,7 @@
 //! Runs `git status --porcelain` via Process Governor bookkeeping + process.run.
 
 const std = @import("std");
+const hunk_patch = @import("hunk_patch.zig");
 
 pub const max_entries: usize = 64;
 pub const max_path: usize = 240;
@@ -619,6 +620,77 @@ pub const GitBuffers = struct {
         return "stash command failed (conflicting local changes?)";
     }
 
+    /// Apply one hunk of the CURRENTLY LOADED diff to the index or working
+    /// tree. The caller guarantees the loaded diff matches the operation
+    /// direction (stage/discard from the unstaged diff, unstage from the
+    /// staged diff) and confirms destructive discards. The patch is written
+    /// atomically inside the workspace's .velocity scratch and removed on
+    /// every path.
+    pub fn applyHunk(
+        self: *GitBuffers,
+        io: std.Io,
+        cwd: []const u8,
+        op: hunk_patch.HunkOp,
+        hunk_ordinal: usize,
+    ) []const u8 {
+        if (cwd.len == 0) return "no workspace";
+        if (!isGitRoot(io, cwd)) return "not a git root";
+        const index = hunk_patch.parseHunks(self.diffText(), self.diff_truncated);
+        var patch_buf: [max_diff_bytes]u8 = undefined;
+        const patch = hunk_patch.buildHunkPatch(self.diffText(), &index, hunk_ordinal, &patch_buf) catch |err| {
+            return switch (err) {
+                error.HunkUnusable => "hunk is truncated or malformed; refusing",
+                error.RenameUnsupported => "renames need whole-file staging",
+                else => "hunk patch build failed",
+            };
+        };
+        const scratch_rel = ".velocity/hunk.patch";
+        writeScratchFile(io, cwd, scratch_rel, patch) catch return "hunk patch write failed";
+        defer deleteScratchFile(io, cwd, scratch_rel);
+
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+        const argv = hunk_patch.applyArgv(op, scratch_rel);
+        const result = std.process.run(gpa, io, .{
+            .argv = argv.slice(),
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(4 * 1024),
+            .stderr_limit = .limited(4 * 1024),
+        }) catch return "hunk apply failed";
+        defer {
+            gpa.free(result.stdout);
+            gpa.free(result.stderr);
+        }
+        switch (result.term) {
+            .exited => |code| {
+                if (code == 0) {
+                    self.refresh(io, cwd);
+                    return switch (op) {
+                        .stage => "hunk staged",
+                        .unstage => "hunk unstaged",
+                        .discard => "hunk discarded",
+                    };
+                }
+            },
+            else => {},
+        }
+        return "hunk apply failed (diff no longer matches?)";
+    }
+
+    fn writeScratchFile(io: std.Io, cwd: []const u8, rel: []const u8, data: []const u8) !void {
+        var root = try std.Io.Dir.cwd().openDir(io, cwd, .{});
+        defer root.close(io);
+        root.createDirPath(io, ".velocity") catch {};
+        try root.writeFile(io, .{ .sub_path = rel, .data = data });
+    }
+
+    fn deleteScratchFile(io: std.Io, cwd: []const u8, rel: []const u8) void {
+        var root = std.Io.Dir.cwd().openDir(io, cwd, .{}) catch return;
+        defer root.close(io);
+        root.deleteFile(io, rel) catch {};
+    }
+
     /// `git add -A` in the workspace. Returns a short status string.
     pub fn stageAll(self: *GitBuffers, io: std.Io, cwd: []const u8) []const u8 {
         if (cwd.len == 0) return "no workspace";
@@ -1039,6 +1111,54 @@ test "stash push list apply pop drop round-trip on a real repo" {
     try std.testing.expectEqual(@as(u32, 0), g.stash_count);
     const dropped = try tmp.dir.readFile(std.testing.io, "tracked.txt", &out);
     try std.testing.expectEqualStrings("original\n", dropped);
+}
+
+test "applyHunk stages exactly one hunk of the loaded unstaged diff" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [128]u8 = undefined;
+    const cwd = try initTestRepo(&tmp, &path_buf);
+
+    // Three well-separated modified regions so git emits three hunks.
+    var base_buf: [4096]u8 = undefined;
+    var mod_buf: [4096]u8 = undefined;
+    var base_len: usize = 0;
+    var mod_len: usize = 0;
+    for (0..60) |i| {
+        const keep = "filler line stays the same\n";
+        base_len += (std.fmt.bufPrint(base_buf[base_len..], "{s}", .{keep}) catch unreachable).len;
+        const mod_line = if (i == 5 or i == 30 or i == 55) "CHANGED HERE\n" else keep;
+        mod_len += (std.fmt.bufPrint(mod_buf[mod_len..], "{s}", .{mod_line}) catch unreachable).len;
+    }
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "multi.txt", .data = base_buf[0..base_len] });
+    var g: GitBuffers = .{};
+    _ = g.stagePath(std.testing.io, cwd, "multi.txt");
+    _ = g.commitWithMessage(std.testing.io, cwd, "add multi");
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "multi.txt", .data = mod_buf[0..mod_len] });
+
+    g.refresh(std.testing.io, cwd);
+    var target_id: u32 = 0;
+    for (g.entriesSlice()) |entry| {
+        if (std.mem.eql(u8, entry.path, "multi.txt")) target_id = entry.id;
+    }
+    try std.testing.expect(target_id != 0);
+    g.loadDiff(std.testing.io, cwd, target_id, .unstaged);
+    const index = hunk_patch.parseHunks(g.diffText(), g.diff_truncated);
+    try std.testing.expectEqual(@as(usize, 3), index.hunk_count);
+
+    // Stage only the middle hunk; afterwards the staged diff holds exactly
+    // one CHANGED line and the unstaged diff still holds the other two.
+    try std.testing.expectEqualStrings("hunk staged", g.applyHunk(std.testing.io, cwd, .stage, 1));
+    for (g.entriesSlice()) |entry| {
+        if (std.mem.eql(u8, entry.path, "multi.txt")) target_id = entry.id;
+    }
+    g.loadDiff(std.testing.io, cwd, target_id, .staged);
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, g.diffText(), "+CHANGED HERE"));
+    g.loadDiff(std.testing.io, cwd, target_id, .unstaged);
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, g.diffText(), "+CHANGED HERE"));
+
+    // Scratch patch file must not linger.
+    try std.testing.expectError(error.FileNotFound, tmp.dir.openFile(std.testing.io, ".velocity/hunk.patch", .{}));
 }
 
 test "branch names that could inject options or break refs are rejected" {

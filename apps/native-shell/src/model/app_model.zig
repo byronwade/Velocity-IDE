@@ -27,6 +27,7 @@ const process_governor = @import("../processes/process_governor.zig");
 const lsp_session = @import("../lsp/lsp_session.zig");
 const broker_transport = @import("../lsp/broker_transport.zig");
 const git_status = @import("../scm/git_status.zig");
+const hunk_patch = @import("../scm/hunk_patch.zig");
 const prefs_mod = @import("../core/prefs.zig");
 const undo_stack = @import("../workspace/undo_stack.zig");
 const tab_history = @import("../workspace/tab_history.zig");
@@ -62,6 +63,15 @@ pub const SearchHit = workspace_search.SearchHit;
 pub const GitEntry = git_status.GitEntry;
 pub const GitBranch = git_status.BranchEntry;
 pub const GitStash = git_status.StashEntry;
+
+pub const GitHunkRow = struct {
+    id: u32 = 0,
+    label: []const u8 = "",
+    can_stage: bool = false,
+    can_unstage: bool = false,
+    can_discard: bool = false,
+};
+pub const max_hunk_label = 48;
 pub const DocMatch = find_in_doc.DocMatch;
 pub const QuickItem = quick_open.QuickItem;
 pub const Problem = problems_mod.Problem;
@@ -187,6 +197,9 @@ pub const Msg = union(enum) {
     update_new_branch_name: canvas.TextInputEvent,
     create_git_branch,
     stash_push,
+    stage_git_hunk: u32,
+    unstage_git_hunk: u32,
+    discard_git_hunk: u32,
     apply_git_stash: u32,
     pop_git_stash: u32,
     drop_git_stash: u32,
@@ -618,6 +631,10 @@ pub const Model = struct {
     git_entries: []const GitEntry = &.{},
     git_branches: []const GitBranch = &.{},
     git_stashes: []const GitStash = &.{},
+    git_hunks: []const GitHunkRow = &.{},
+    git_hunk_rows: [hunk_patch.max_hunks]GitHunkRow = [_]GitHunkRow{.{}} ** hunk_patch.max_hunks,
+    git_hunk_labels: [hunk_patch.max_hunks][max_hunk_label]u8 = undefined,
+    git_hunk_discard_pending: u32 = 0,
     git_branch_status: []const u8 = "",
     git_new_branch: canvas.TextBuffer(git_status.max_branch_name) = .{},
     git_summary: []const u8 = "not loaded",
@@ -915,6 +932,9 @@ pub const Model = struct {
         "search_bufs",
         "rg_probe",
         "git_branch_status",
+        "git_hunk_rows",
+        "git_hunk_labels",
+        "git_hunk_discard_pending",
         "rg_results",
         "git_bufs",
         "task_bufs",
@@ -3484,6 +3504,9 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .refresh_git => refreshGitStatus(model),
         .switch_git_branch => |id| switchGitBranch(model, id),
         .stash_push => runGitStashOp(model, .push, 0),
+        .stage_git_hunk => |id| runGitHunkOp(model, .stage, id),
+        .unstage_git_hunk => |id| runGitHunkOp(model, .unstage, id),
+        .discard_git_hunk => |id| runGitHunkOp(model, .discard, id),
         .apply_git_stash => |id| runGitStashOp(model, .apply, id),
         .pop_git_stash => |id| runGitStashOp(model, .pop, id),
         .drop_git_stash => |id| runGitStashOp(model, .drop, id),
@@ -5963,6 +5986,17 @@ fn selectGitEntry(model: *Model, entry_id: u32) void {
             "Selected · staged changes"
         else
             "Selected · unstaged changes";
+        // Load the default-direction diff so the panel's per-hunk rows are
+        // live for the selection (stage/discard rows from the unstaged diff,
+        // unstage rows when only staged changes exist).
+        const mode: git_status.DiffMode = if (model.diff_unstaged_available) .unstaged else .staged;
+        if (bufs.supportsMode(entry_id, mode)) {
+            bufs.loadDiff(modelIo(model), model.project_path, entry_id, mode);
+            model.git_diff_text = bufs.diffText();
+            syncGitHunks(model, bufs);
+        } else {
+            model.git_hunks = &.{};
+        }
         model.toast = "Git entry selected";
         return;
     }
@@ -8032,6 +8066,79 @@ fn persistPrefs(model: *Model) void {
     model.prefs.insert_final_newline = model.insert_final_newline;
     model.prefs.indent_size = model.indent_size;
     model.prefs.save(modelIo(model));
+}
+
+/// Rebuild the per-hunk action rows from the currently loaded diff. Stage
+/// and discard act on the unstaged diff; unstage acts on the staged diff -
+/// the rows carry exactly the actions valid for the loaded mode.
+fn syncGitHunks(model: *Model, bufs: *git_status.GitBuffers) void {
+    const index = hunk_patch.parseHunks(bufs.diffText(), bufs.diff_truncated);
+    const unstaged = bufs.diff_mode == .unstaged;
+    var count: usize = 0;
+    for (index.hunksSlice(), 0..) |hunk, ordinal| {
+        if (count >= model.git_hunk_rows.len) break;
+        const label = std.fmt.bufPrint(
+            &model.git_hunk_labels[count],
+            "@@ -{d},{d} +{d},{d}",
+            .{ hunk.old_start, hunk.old_count, hunk.new_start, hunk.new_count },
+        ) catch continue;
+        model.git_hunk_rows[count] = .{
+            .id = @intCast(ordinal + 1),
+            .label = label,
+            .can_stage = hunk.usable and unstaged,
+            .can_discard = hunk.usable and unstaged,
+            .can_unstage = hunk.usable and !unstaged,
+        };
+        count += 1;
+    }
+    model.git_hunks = model.git_hunk_rows[0..count];
+    model.git_hunk_discard_pending = 0;
+}
+
+const GitHunkOp = enum { stage, unstage, discard };
+
+fn runGitHunkOp(model: *Model, op: GitHunkOp, hunk_id: u32) void {
+    const bufs = model.git_bufs orelse {
+        model.toast = "Refresh git first";
+        return;
+    };
+    if (hunk_id == 0) return;
+    if (op == .discard) {
+        if (anyDirtyTab(model)) {
+            model.toast = "Save or close unsaved tabs before discarding a hunk";
+            return;
+        }
+        // Destructive: require a second press on the same hunk.
+        if (model.git_hunk_discard_pending != hunk_id) {
+            model.git_hunk_discard_pending = hunk_id;
+            model.toast = "Discard removes this hunk from the file; press Discard again to confirm";
+            return;
+        }
+        model.git_hunk_discard_pending = 0;
+    }
+    const engine_op: hunk_patch.HunkOp = switch (op) {
+        .stage => .stage,
+        .unstage => .unstage,
+        .discard => .discard,
+    };
+    const entry_id = bufs.selected_entry_id;
+    const status = bufs.applyHunk(modelIo(model), model.project_path, engine_op, hunk_id - 1);
+    model.toast = status;
+    syncGitModel(model, bufs);
+    // Reload the same-direction diff for the surviving entry (ids shift as
+    // the status list changes; re-resolve by the remembered id first).
+    const mode: git_status.DiffMode = if (op == .unstage) .staged else .unstaged;
+    if (bufs.supportsMode(entry_id, mode)) {
+        bufs.loadDiff(modelIo(model), model.project_path, entry_id, mode);
+        model.git_diff_text = bufs.diffText();
+        model.git_diff_status = bufs.diff_status;
+        syncGitHunks(model, bufs);
+    } else {
+        model.git_hunks = &.{};
+    }
+    if (op == .discard and std.mem.eql(u8, status, "hunk discarded")) {
+        refreshExplorer(model);
+    }
 }
 
 const GitStashOp = enum { push, apply, pop, drop };

@@ -203,6 +203,20 @@
               </scroll>
               <column gap="4" padding="6" background="surface_subtle">
                 <text size="sm" foreground="text_muted">{git_diff_status}</text>
+                <for each="git_hunks" key="id" as="hunk">
+                  <row gap="3" padding="2" cross="center">
+                    <text size="sm" foreground="text_muted" grow="1" wrap="false" overflow="ellipsis">{hunk.label}</text>
+                    <if test="{hunk.can_stage}">
+                      <button size="sm" variant="ghost" on-press="stage_git_hunk:{hunk.id}" label="Stage this hunk">Stage</button>
+                    </if>
+                    <if test="{hunk.can_unstage}">
+                      <button size="sm" variant="ghost" on-press="unstage_git_hunk:{hunk.id}" label="Unstage this hunk">Unstage</button>
+                    </if>
+                    <if test="{hunk.can_discard}">
+                      <button size="sm" variant="ghost" on-press="discard_git_hunk:{hunk.id}" label="Discard this hunk from the file (press twice)">Discard</button>
+                    </if>
+                  </row>
+                </for>
                 <button size="sm" variant="secondary" icon="eye" on-press="open_scm_diff" label="Open selected source control diff in read-only review">Open SCM Diff</button>
               </column>
             </if>
