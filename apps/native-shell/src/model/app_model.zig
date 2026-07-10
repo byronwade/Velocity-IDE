@@ -2121,6 +2121,8 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
                 commitChanges(model);
             } else if (std.mem.eql(u8, id, "trim_blank_lines")) {
                 trimBlankLines(model);
+            } else if (std.mem.eql(u8, id, "delete_duplicate_lines")) {
+                deleteDuplicateLinesTransform(model);
             } else if (std.mem.eql(u8, id, "refresh_explorer")) {
                 refreshExplorer(model);
             } else if (std.mem.eql(u8, id, "collapse_all_explorer")) {
@@ -6271,6 +6273,15 @@ fn trimBlankLines(model: *Model) void {
         return;
     };
     applyDocumentTransform(model, out[0..n], "Trimmed blank lines");
+}
+
+fn deleteDuplicateLinesTransform(model: *Model) void {
+    var out: [edit_transforms.max_out]u8 = undefined;
+    const n = edit_transforms.deleteDuplicateLines(model.document.text(), &out) orelse {
+        model.toast = "Delete duplicate lines failed";
+        return;
+    };
+    applyDocumentTransform(model, out[0..n], "Deleted duplicate lines");
 }
 
 fn stageAllChanges(model: *Model) void {

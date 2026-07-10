@@ -593,6 +593,54 @@ pub fn removeBlankLines(text: []const u8, out: []u8) ?usize {
     return dst;
 }
 
+fn lineSeenBefore(text: []const u8, start: usize, line: []const u8) bool {
+    var s: usize = 0;
+    var j: usize = 0;
+    while (j < start) : (j += 1) {
+        if (text[j] == '\n') {
+            if (std.mem.eql(u8, text[s..j], line)) return true;
+            s = j + 1;
+        }
+    }
+    return false;
+}
+
+/// Delete duplicate lines, keeping the first occurrence and preserving order
+/// (VS Code "Delete Duplicate Lines"). O(n^2) over lines but bounded by the
+/// 16 KB document cap.
+pub fn deleteDuplicateLines(text: []const u8, out: []u8) ?usize {
+    var dst: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    var wrote_any = false;
+    const has_trailing_nl = text.len > 0 and text[text.len - 1] == '\n';
+    while (i <= text.len) : (i += 1) {
+        if (i == text.len or text[i] == '\n') {
+            if (i == text.len and has_trailing_nl and start == text.len) break;
+            const line = text[start..i];
+            if (!lineSeenBefore(text, start, line)) {
+                if (wrote_any) {
+                    if (dst + 1 > out.len) return null;
+                    out[dst] = '\n';
+                    dst += 1;
+                }
+                if (dst + line.len > out.len) return null;
+                @memcpy(out[dst..][0..line.len], line);
+                dst += line.len;
+                wrote_any = true;
+            }
+            start = i + 1;
+            if (i == text.len) break;
+        }
+    }
+    if (wrote_any and has_trailing_nl) {
+        if (dst + 1 > out.len) return null;
+        out[dst] = '\n';
+        dst += 1;
+    }
+    return dst;
+}
+
 pub fn insertBlankLineAtEnd(text: []const u8, out: []u8) ?usize {
     if (text.len + 1 > out.len) return null;
     @memcpy(out[0..text.len], text);
@@ -1081,6 +1129,8 @@ test "tabs spaces unique sort encoding" {
     try std.testing.expectEqualStrings("\ta\n  b", out[0..t]);
     const u = sortUniqueLines("b\na\nb\nc\n", &out).?;
     try std.testing.expectEqualStrings("a\nb\nc\n", out[0..u]);
+    const d = deleteDuplicateLines("a\nb\na\nc\nb\n", &out).?;
+    try std.testing.expectEqualStrings("a\nb\nc\n", out[0..d]);
     try std.testing.expectEqualStrings("ASCII", encodingLabel("hi"));
 }
 

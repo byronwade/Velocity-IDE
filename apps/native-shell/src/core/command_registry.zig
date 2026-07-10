@@ -134,6 +134,8 @@ pub const catalog = [_]Command{
     .{ .id = "discard_changes", .title = "Git: Discard Working Tree", .feature_id = "feature.git-stage-commit" },
     .{ .id = "commit_changes", .title = "Git: Commit", .feature_id = "feature.git-stage-commit" },
     .{ .id = "trim_blank_lines", .title = "Trim Leading/Trailing Blank Lines" },
+    .{ .id = "delete_duplicate_lines", .title = "Delete Duplicate Lines" },
+    .{ .id = "toggle_editor_edit", .title = "View: Toggle Editor Edit Mode" },
     .{ .id = "refresh_explorer", .title = "Refresh Explorer", .feature_id = "feature.file-explorer" },
     .{ .id = "collapse_all_explorer", .title = "Collapse All Explorer Folders", .feature_id = "feature.file-explorer" },
     .{ .id = "expand_all_explorer", .title = "Expand All Explorer Folders", .feature_id = "feature.file-explorer" },
