@@ -60,6 +60,7 @@ pub const max_commit_message = 120;
 pub const SearchHit = workspace_search.SearchHit;
 pub const GitEntry = git_status.GitEntry;
 pub const GitBranch = git_status.BranchEntry;
+pub const GitStash = git_status.StashEntry;
 pub const DocMatch = find_in_doc.DocMatch;
 pub const QuickItem = quick_open.QuickItem;
 pub const Problem = problems_mod.Problem;
@@ -184,6 +185,10 @@ pub const Msg = union(enum) {
     switch_git_branch: u32,
     update_new_branch_name: canvas.TextInputEvent,
     create_git_branch,
+    stash_push,
+    apply_git_stash: u32,
+    pop_git_stash: u32,
+    drop_git_stash: u32,
     open_git_entry: u32,
     select_git_entry: u32,
     stage_git_entry: u32,
@@ -592,6 +597,7 @@ pub const Model = struct {
     replace_status_buf: [128]u8 = undefined,
     git_entries: []const GitEntry = &.{},
     git_branches: []const GitBranch = &.{},
+    git_stashes: []const GitStash = &.{},
     git_branch_status: []const u8 = "",
     git_new_branch: canvas.TextBuffer(git_status.max_branch_name) = .{},
     git_summary: []const u8 = "not loaded",
@@ -3061,6 +3067,10 @@ fn updateInner(model: *Model, msg: Msg, fx: ?*Effects) void {
         .apply_workspace_replace => applyWorkspaceReplace(model),
         .refresh_git => refreshGitStatus(model),
         .switch_git_branch => |id| switchGitBranch(model, id),
+        .stash_push => runGitStashOp(model, .push, 0),
+        .apply_git_stash => |id| runGitStashOp(model, .apply, id),
+        .pop_git_stash => |id| runGitStashOp(model, .pop, id),
+        .drop_git_stash => |id| runGitStashOp(model, .drop, id),
         .update_new_branch_name => |edit| model.git_new_branch.apply(edit),
         .create_git_branch => createGitBranch(model),
         .update_commit_message => |edit| model.git_commit_message.apply(edit),
@@ -5524,6 +5534,7 @@ fn gitEntryById(model: *Model, entry_id: u32) ?GitEntry {
 fn syncGitModel(model: *Model, bufs: *git_status.GitBuffers) void {
     model.git_entries = bufs.entriesSlice();
     model.git_branches = bufs.branchesSlice();
+    model.git_stashes = bufs.stashesSlice();
     model.git_summary = bufs.summary;
     model.git_branch = bufs.branch();
     model.git_diff_text = bufs.diffText();
@@ -7577,6 +7588,38 @@ fn persistPrefs(model: *Model) void {
     model.prefs.save(modelIo(model));
 }
 
+const GitStashOp = enum { push, apply, pop, drop };
+
+/// Stash mutations share the branch-switch gate: never with unsaved editors
+/// (push/apply/pop rewrite the working tree), always resynced + rescanned.
+fn runGitStashOp(model: *Model, op: GitStashOp, id: u32) void {
+    if (op != .drop and anyDirtyTab(model)) {
+        model.toast = "Save or close unsaved tabs before stashing";
+        return;
+    }
+    const bufs = ensureGitBuffers(model) catch {
+        model.toast = "Git alloc failed";
+        return;
+    };
+    const index: u32 = if (id == 0) 0 else id - 1;
+    const status = switch (op) {
+        .push => bufs.stashPush(modelIo(model), model.project_path),
+        .apply => bufs.stashApply(modelIo(model), model.project_path, index),
+        .pop => bufs.stashPop(modelIo(model), model.project_path, index),
+        .drop => bufs.stashDrop(modelIo(model), model.project_path, index),
+    };
+    const ok = switch (op) {
+        .push => std.mem.eql(u8, status, "stashed"),
+        .apply => std.mem.eql(u8, status, "stash applied"),
+        .pop => std.mem.eql(u8, status, "stash popped"),
+        .drop => std.mem.eql(u8, status, "stash dropped"),
+    };
+    syncGitModel(model, bufs);
+    model.toast = status;
+    // Drop never touches the working tree; everything else changed files.
+    if (ok and op != .drop) refreshExplorer(model);
+}
+
 fn anyDirtyTab(model: *const Model) bool {
     for (model.open_tabs) |tab| {
         if (tab.dirty) return true;
@@ -7664,6 +7707,7 @@ fn refreshGitStatus(model: *Model) void {
     _ = model.governor.spawn("feature.scm", "git status") catch {};
     bufs.refresh(modelIo(model), model.project_path);
     _ = bufs.listBranches(modelIo(model), model.project_path);
+    _ = bufs.listStashes(modelIo(model), model.project_path);
     syncGitModel(model, bufs);
     if (bufs.branch_len > 0) model.project_branch = bufs.branch();
     model.governor.killFeature("feature.scm");

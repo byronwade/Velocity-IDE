@@ -28,6 +28,13 @@ pub const GitEntry = struct {
 
 pub const max_branches: usize = 32;
 pub const max_branch_name: usize = 64;
+pub const max_stashes: usize = 16;
+pub const max_stash_subject: usize = 96;
+
+pub const StashEntry = struct {
+    id: u32 = 0,
+    subject: []const u8 = "",
+};
 
 pub const BranchEntry = struct {
     id: u32 = 0,
@@ -52,6 +59,11 @@ pub const GitBuffers = struct {
     branch_name_pool: [max_branches][max_branch_name]u8 = undefined,
     branch_name_lens: [max_branches]usize = [_]usize{0} ** max_branches,
     branches_truncated: bool = false,
+    stashes: [max_stashes]StashEntry = [_]StashEntry{.{}} ** max_stashes,
+    stash_count: u32 = 0,
+    stash_subject_pool: [max_stashes][max_stash_subject]u8 = undefined,
+    stash_subject_lens: [max_stashes]usize = [_]usize{0} ** max_stashes,
+    stashes_truncated: bool = false,
     summary: []const u8 = "not loaded",
     available: bool = false,
     diff_buf: [max_diff_bytes]u8 = undefined,
@@ -78,11 +90,17 @@ pub const GitBuffers = struct {
         return self.branches[0..self.branch_count];
     }
 
+    pub fn stashesSlice(self: *const GitBuffers) []const StashEntry {
+        return self.stashes[0..self.stash_count];
+    }
+
     pub fn clear(self: *GitBuffers) void {
         self.entry_count = 0;
         self.branch_len = 0;
         self.branch_count = 0;
         self.branches_truncated = false;
+        self.stash_count = 0;
+        self.stashes_truncated = false;
         self.summary = "not loaded";
         self.available = false;
         self.diff_len = 0;
@@ -492,6 +510,115 @@ pub const GitBuffers = struct {
         return "restore failed";
     }
 
+    /// Refresh the bounded stash list (`git stash list`, newest first).
+    pub fn listStashes(self: *GitBuffers, io: std.Io, cwd: []const u8) []const u8 {
+        self.stash_count = 0;
+        self.stashes_truncated = false;
+        if (cwd.len == 0) return "no workspace";
+        if (!isGitRoot(io, cwd)) return "not a git root";
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+        const result = std.process.run(gpa, io, .{
+            .argv = &.{ "git", "stash", "list", "--format=%gd\x1f%gs" },
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(16 * 1024),
+            .stderr_limit = .limited(1024),
+        }) catch return "stash list failed";
+        defer {
+            gpa.free(result.stdout);
+            gpa.free(result.stderr);
+        }
+        switch (result.term) {
+            .exited => |code| if (code != 0) return "stash list failed",
+            else => return "stash list failed",
+        }
+        var lines = std.mem.splitScalar(u8, result.stdout, '\n');
+        while (lines.next()) |line| {
+            if (line.len == 0) continue;
+            if (self.stash_count >= max_stashes) {
+                self.stashes_truncated = true;
+                break;
+            }
+            const sep = std.mem.indexOfScalar(u8, line, 0x1f) orelse continue;
+            const idx = self.stash_count;
+            const subject = std.mem.trim(u8, line[sep + 1 ..], " \t\r");
+            const n = @min(subject.len, self.stash_subject_pool[idx].len);
+            @memcpy(self.stash_subject_pool[idx][0..n], subject[0..n]);
+            self.stash_subject_lens[idx] = n;
+            self.stashes[idx] = .{
+                .id = idx + 1,
+                .subject = self.stash_subject_pool[idx][0..n],
+            };
+            self.stash_count += 1;
+        }
+        if (self.stash_count == 0) return "no stashes";
+        return "stashes listed";
+    }
+
+    /// Stash the working tree (`git stash push`). The caller must refuse
+    /// this while editors hold unsaved changes (the push rewrites the tree).
+    pub fn stashPush(self: *GitBuffers, io: std.Io, cwd: []const u8) []const u8 {
+        return self.runStashCommand(io, cwd, &.{ "git", "stash", "push", "--include-untracked" }, "stashed");
+    }
+
+    /// Apply a listed stash by index without dropping it.
+    pub fn stashApply(self: *GitBuffers, io: std.Io, cwd: []const u8, index: u32) []const u8 {
+        var ref_buf: [24]u8 = undefined;
+        const ref = std.fmt.bufPrint(&ref_buf, "stash@{{{d}}}", .{index}) catch return "stash apply failed";
+        return self.runStashCommand(io, cwd, &.{ "git", "stash", "apply", "--index", ref }, "stash applied");
+    }
+
+    /// Apply and drop a listed stash by index.
+    pub fn stashPop(self: *GitBuffers, io: std.Io, cwd: []const u8, index: u32) []const u8 {
+        var ref_buf: [24]u8 = undefined;
+        const ref = std.fmt.bufPrint(&ref_buf, "stash@{{{d}}}", .{index}) catch return "stash pop failed";
+        return self.runStashCommand(io, cwd, &.{ "git", "stash", "pop", "--index", ref }, "stash popped");
+    }
+
+    /// Drop a listed stash by index without applying it.
+    pub fn stashDrop(self: *GitBuffers, io: std.Io, cwd: []const u8, index: u32) []const u8 {
+        var ref_buf: [24]u8 = undefined;
+        const ref = std.fmt.bufPrint(&ref_buf, "stash@{{{d}}}", .{index}) catch return "stash drop failed";
+        return self.runStashCommand(io, cwd, &.{ "git", "stash", "drop", ref }, "stash dropped");
+    }
+
+    fn runStashCommand(
+        self: *GitBuffers,
+        io: std.Io,
+        cwd: []const u8,
+        argv: []const []const u8,
+        ok_status: []const u8,
+    ) []const u8 {
+        if (cwd.len == 0) return "no workspace";
+        if (!isGitRoot(io, cwd)) return "not a git root";
+        var gpa_state: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = gpa_state.deinit();
+        const gpa = gpa_state.allocator();
+        const result = std.process.run(gpa, io, .{
+            .argv = argv,
+            .cwd = .{ .path = cwd },
+            .stdout_limit = .limited(8 * 1024),
+            .stderr_limit = .limited(4 * 1024),
+        }) catch return "stash command failed";
+        defer {
+            gpa.free(result.stdout);
+            gpa.free(result.stderr);
+        }
+        switch (result.term) {
+            .exited => |code| {
+                if (code == 0) {
+                    self.refresh(io, cwd);
+                    _ = self.listStashes(io, cwd);
+                    return ok_status;
+                }
+            },
+            else => {},
+        }
+        // git refuses pops/applies that would clobber local changes.
+        return "stash command failed (conflicting local changes?)";
+    }
+
     /// `git add -A` in the workspace. Returns a short status string.
     pub fn stageAll(self: *GitBuffers, io: std.Io, cwd: []const u8) []const u8 {
         if (cwd.len == 0) return "no workspace";
@@ -872,6 +999,46 @@ test "branch list switch and create round-trip with dirty-refusal semantics" {
     var out: [32]u8 = undefined;
     const kept = try tmp.dir.readFile(std.testing.io, "tracked.txt", &out);
     try std.testing.expectEqualStrings("dirty local\n", kept);
+}
+
+test "stash push list apply pop drop round-trip on a real repo" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [128]u8 = undefined;
+    const cwd = try initTestRepo(&tmp, &path_buf);
+
+    var g: GitBuffers = .{};
+    try std.testing.expectEqualStrings("no stashes", g.listStashes(std.testing.io, cwd));
+
+    // Dirty the tracked file, stash it, and the tree is clean again.
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "tracked.txt", .data = "stash me\n" });
+    try std.testing.expectEqualStrings("stashed", g.stashPush(std.testing.io, cwd));
+    try std.testing.expectEqual(@as(u32, 1), g.stash_count);
+    var out: [32]u8 = undefined;
+    const clean = try tmp.dir.readFile(std.testing.io, "tracked.txt", &out);
+    try std.testing.expectEqualStrings("original\n", clean);
+
+    // Apply keeps the stash; the change is back in the tree.
+    try std.testing.expectEqualStrings("stash applied", g.stashApply(std.testing.io, cwd, 0));
+    try std.testing.expectEqual(@as(u32, 1), g.stash_count);
+    const applied = try tmp.dir.readFile(std.testing.io, "tracked.txt", &out);
+    try std.testing.expectEqualStrings("stash me\n", applied);
+
+    // Restore the tree, then pop: change returns and the stash is gone.
+    try std.testing.expectEqualStrings("restored", g.restorePath(std.testing.io, cwd, "tracked.txt"));
+    try std.testing.expectEqualStrings("stash popped", g.stashPop(std.testing.io, cwd, 0));
+    try std.testing.expectEqual(@as(u32, 0), g.stash_count);
+    const popped = try tmp.dir.readFile(std.testing.io, "tracked.txt", &out);
+    try std.testing.expectEqualStrings("stash me\n", popped);
+
+    // Push again, then drop without applying: tree stays clean.
+    try std.testing.expectEqualStrings("restored", g.restorePath(std.testing.io, cwd, "tracked.txt"));
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "tracked.txt", .data = "drop me\n" });
+    try std.testing.expectEqualStrings("stashed", g.stashPush(std.testing.io, cwd));
+    try std.testing.expectEqualStrings("stash dropped", g.stashDrop(std.testing.io, cwd, 0));
+    try std.testing.expectEqual(@as(u32, 0), g.stash_count);
+    const dropped = try tmp.dir.readFile(std.testing.io, "tracked.txt", &out);
+    try std.testing.expectEqualStrings("original\n", dropped);
 }
 
 test "branch names that could inject options or break refs are rejected" {

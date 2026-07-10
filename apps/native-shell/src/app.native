@@ -160,6 +160,20 @@
                 <text-field grow="1" text="{newBranchText}" placeholder="New branch name..." on-input="update_new_branch_name" on-submit="create_git_branch" label="New branch name" />
                 <button size="sm" variant="secondary" icon="git-branch" on-press="create_git_branch" label="Create and switch to branch">Create</button>
               </row>
+              <row gap="4" cross="center">
+                <text size="sm" foreground="text_muted" grow="1">Stashes</text>
+                <button size="sm" variant="secondary" icon="archive" on-press="stash_push" label="Stash working tree changes">Stash</button>
+              </row>
+              <for each="git_stashes" key="id" as="stash">
+                <column gap="3" padding="4" background="surface_subtle">
+                  <text size="sm" wrap="false" overflow="ellipsis">{stash.subject}</text>
+                  <row gap="3">
+                    <button size="sm" variant="ghost" on-press="apply_git_stash:{stash.id}" label="Apply stash without dropping">Apply</button>
+                    <button size="sm" variant="ghost" on-press="pop_git_stash:{stash.id}" label="Apply and drop stash">Pop</button>
+                    <button size="sm" variant="ghost" on-press="drop_git_stash:{stash.id}" label="Drop stash without applying">Drop</button>
+                  </row>
+                </column>
+              </for>
               <separator />
               <text-field text="{commitMessageText}" placeholder="Commit message..." on-input="update_commit_message" on-submit="commit_changes" label="Commit message" />
               <row gap="4">
