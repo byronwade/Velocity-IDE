@@ -4,7 +4,7 @@
 ![screenshot](https://hediet-screenshots.azurewebsites.net/images/3992300a365cae00e6b78ab088bcd6562d1643534aa45f272b61c566c6b126e2)
 
 #### chat/aiCustomizations/aiCustomizationManagementEditor/AgentHostPromptMigration/Light
-![screenshot](https://hediet-screenshots.azurewebsites.net/images/70c9ac164e5358815b96da4db49b7a4d661be4d57b797e282a459142634e3fd3)
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/d5a03ced4bbabddd7b32bea62fbb2a9a929845816334df3f2c07716557f23dc6)
 
 #### editor/codeEditor/CodeEditor/Dark
 ![screenshot](https://hediet-screenshots.azurewebsites.net/images/af3df9d90346c8473e8576c2aab60a9cab514ed0a130a2208fa72851e4884852)
