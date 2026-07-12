@@ -64,7 +64,10 @@
 }
 
 .monaco-workbench .part.sessionspart > .title > .title-label h2 {
-	text-transform: uppercase;
+	/* Sentence case with a tight track reads cleaner and more app-like (v0-style)
+	 * than the traditional uppercase, letter-spaced IDE panel label. */
+	text-transform: none;
+	letter-spacing: -0.01em;
 }
 
 .monaco-workbench .part.sessionspart > .title > .composite-bar-container {

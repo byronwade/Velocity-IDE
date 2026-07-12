@@ -46,7 +46,7 @@ export const agentsPanelForeground = registerColor(
 
 export const agentsPanelBorder = registerColor(
 	'agentsPanel.border',
-	{ dark: transparent(foreground, 0.15), light: transparent(foreground, 0.15), hcDark: contrastBorder, hcLight: contrastBorder },
+	{ dark: transparent(foreground, 0.08), light: transparent(foreground, 0.08), hcDark: contrastBorder, hcLight: contrastBorder },
 	localize('agentsPanel.border', 'Border color of the card panels (chat, files, terminal) in the agent sessions window.')
 );
 
@@ -115,7 +115,10 @@ export const agentsChatInputBorder = registerColor(
 );
 
 export const agentsChatInputFocusBorder = registerColor(
-	'agentsChatInput.focusBorder', focusBorder,
+	'agentsChatInput.focusBorder',
+	// Monochrome, neutral focus ring (v0-style) instead of the brand accent. High-contrast
+	// themes keep the accessible `focusBorder` so the ring stays visible where it matters most.
+	{ dark: transparent(foreground, 0.6), light: transparent(foreground, 0.6), hcDark: focusBorder, hcLight: focusBorder },
 	localize('agentsChatInput.focusBorder', 'Border color of the chat input field when focused in the agent sessions window.')
 );
 

@@ -159,7 +159,7 @@
 	margin: 0 4px 4px 10px;
 	background: var(--part-background);
 	border: 1px solid var(--part-border-color, transparent);
-	border-radius: var(--vscode-cornerRadius-large);
+	border-radius: var(--vscode-cornerRadius-xLarge);
 	box-sizing: border-box;
 }
 
@@ -192,8 +192,8 @@
 	border-right-width: 0;
 	border-top-right-radius: 0;
 	border-bottom-right-radius: 0;
-	border-top-left-radius: 8px;
-	border-bottom-left-radius: 8px;
+	border-top-left-radius: var(--vscode-cornerRadius-xLarge);
+	border-bottom-left-radius: var(--vscode-cornerRadius-xLarge);
 	box-sizing: border-box;
 	overflow: hidden;
 }
@@ -207,8 +207,8 @@
  */
 .agent-sessions-workbench.noauxiliarybar .monaco-grid-view .part.editor:not(.modal-editor-part) {
 	border-right-width: var(--vscode-strokeThickness);
-	border-top-right-radius: 8px;
-	border-bottom-right-radius: 8px;
+	border-top-right-radius: var(--vscode-cornerRadius-xLarge);
+	border-bottom-right-radius: var(--vscode-cornerRadius-xLarge);
 }
 
 .agent-sessions-workbench .monaco-grid-view .part.editor:not(.modal-editor-part)::after {
@@ -233,8 +233,8 @@
 	/* Complete the card: right + bottom border and rounded right corners so the
 	 * editor + docked aux bar read as one bordered card. */
 	border-right-width: var(--vscode-strokeThickness);
-	border-top-right-radius: 8px;
-	border-bottom-right-radius: 8px;
+	border-top-right-radius: var(--vscode-cornerRadius-xLarge);
+	border-bottom-right-radius: var(--vscode-cornerRadius-xLarge);
 }
 
 .agent-sessions-workbench.dock-detail-panel .part.auxiliarybar {
@@ -290,16 +290,16 @@
 	border: 1px solid var(--part-border-color, transparent);
 	border-top-left-radius: 0;
 	border-bottom-left-radius: 0;
-	border-top-right-radius: 8px;
-	border-bottom-right-radius: 8px;
+	border-top-right-radius: var(--vscode-cornerRadius-xLarge);
+	border-bottom-right-radius: var(--vscode-cornerRadius-xLarge);
 	box-sizing: border-box;
 }
 
 .agent-sessions-workbench:not(.dock-detail-panel).nomaineditorarea .part.auxiliarybar {
 	margin-left: 5px;
 	padding-left: 0;
-	border-top-left-radius: 8px;
-	border-bottom-left-radius: 8px;
+	border-top-left-radius: var(--vscode-cornerRadius-xLarge);
+	border-bottom-left-radius: var(--vscode-cornerRadius-xLarge);
 }
 
 .agent-sessions-workbench:not(.dock-detail-panel).nopanel .part.auxiliarybar,
@@ -315,7 +315,7 @@
 	margin: 5px 0 0 10px;
 	background: var(--part-background);
 	border: 1px solid var(--part-border-color, transparent);
-	border-radius: var(--vscode-cornerRadius-large);
+	border-radius: var(--vscode-cornerRadius-xLarge);
 	box-sizing: border-box;
 }
 
@@ -426,6 +426,40 @@
 	max-width: 100%;
 }
 
+/* ---- Chat Typography ---- */
+
+/* Tighten heading letter-spacing in chat content for a cleaner, more editorial
+ * (v0-style) type hierarchy. Larger headings get a slightly tighter track. */
+.agent-sessions-workbench .interactive-session .rendered-markdown h1 {
+	letter-spacing: -0.02em;
+}
+
+.agent-sessions-workbench .interactive-session .rendered-markdown h2,
+.agent-sessions-workbench .interactive-session .rendered-markdown h3 {
+	letter-spacing: -0.01em;
+}
+
+/* ---- Editor View Mode ---- */
+
+/* Applied to the workbench container when the Agents window is in "Editor" view
+ * (code editor primary, agent docked in the auxiliary bar as a companion). Set by
+ * the two-view toggle (sessions.view.* actions). Editor-view chrome refinements
+ * hang off this class; the marker property below also exposes the mode to CSS. */
+.agent-sessions-workbench.view-editor {
+	--sessions-view-mode: editor;
+}
+
+/* ---- Pane Headers ---- */
+
+/* Drop the traditional uppercase, letter-spaced IDE pane-header label (e.g.
+ * "CHANGES", "OTHER FILES") in favor of sentence case with a tight track, so
+ * side-panel / changes-view section headers match the app-like sessions panel
+ * title. Scoped to the agents workbench; the main VS Code window is untouched. */
+.agent-sessions-workbench .monaco-pane-view .pane > .pane-header > .title {
+	text-transform: none;
+	letter-spacing: -0.01em;
+}
+
 /* ---- Chat Output ---- */
 
 /* Top fade overlay: dims content scrolled near the top edge of the chat bar card.
@@ -446,7 +480,7 @@
 /* ---- Chat Input ---- */
 
 .agent-sessions-workbench .interactive-session .chat-input-container {
-	border-radius: var(--vscode-cornerRadius-large);
+	border-radius: var(--vscode-cornerRadius-xLarge);
 	border-color: var(--vscode-agentsChatInput-border) !important;
 	background-color: var(--vscode-agentsChatInput-background);
 	color: var(--vscode-agentsChatInput-foreground);

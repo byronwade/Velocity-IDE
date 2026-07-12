@@ -20,7 +20,10 @@ import { ServicesAccessor } from '../../../../platform/instantiation/common/inst
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { KeybindingsRegistry, KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
-import { IWorkbenchContribution } from '../../../../workbench/common/contributions.js';
+import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+import { SessionsViewModeContext } from '../../../common/contextkeys.js';
+import { mainWindow } from '../../../../base/browser/window.js';
 import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../../../platform/quickinput/common/quickInput.js';
 import { EditorAreaFocusContext, IsAuxiliaryWindowContext, IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IWorkbenchLayoutService, Parts } from '../../../../workbench/services/layout/browser/layoutService.js';
@@ -1470,3 +1473,143 @@ registerAction2(class CloseEditorAreaAction extends Action2 {
 		layoutService.setPartHidden(true, Parts.EDITOR_PART);
 	}
 });
+
+//#region Two-view mode (Agent / Editor)
+//
+// The Agents window is AI-first: its default layout is chat-primary with the
+// editor area hidden (see `partVisibility` in workbench.ts). The two-view toggle
+// switches between that "Agent" preset and an "Editor" (IDE) preset that reveals
+// the code editor as the primary surface while keeping the auxiliary bar (the
+// docked agent/context companion) visible alongside it. State is persisted per
+// workspace and mirrored onto `SessionsViewModeContext` so UI can reflect it.
+
+type SessionsViewMode = 'agent' | 'editor';
+const SESSIONS_VIEW_MODE_STORAGE_KEY = 'sessions.viewMode';
+
+/** Applies a view preset by toggling part visibility through the public layout API. */
+function applySessionsViewMode(layoutService: IWorkbenchLayoutService, mode: SessionsViewMode): void {
+	// Editor view reveals the editor area; Agent view hides it so the chat is primary.
+	layoutService.setPartHidden(mode !== 'editor', Parts.EDITOR_PART);
+	// The auxiliary bar hosts the docked agent/context companion — kept visible in both.
+	layoutService.setPartHidden(false, Parts.AUXILIARYBAR_PART);
+	// Mark the workbench container so CSS can adapt the chrome to editor-primary mode
+	// (e.g. the docked companion). Guarded: the container may not exist very early.
+	layoutService.getContainer(mainWindow)?.classList.toggle('view-editor', mode === 'editor');
+}
+
+/** Reads the current mode from persisted storage (authoritative across reloads). */
+function readSessionsViewMode(storageService: IStorageService): SessionsViewMode {
+	return storageService.get(SESSIONS_VIEW_MODE_STORAGE_KEY, StorageScope.WORKSPACE, 'agent') === 'editor' ? 'editor' : 'agent';
+}
+
+/** Sets the mode: applies the layout preset, updates the context key, and persists. */
+function setSessionsViewMode(accessor: ServicesAccessor, mode: SessionsViewMode): void {
+	const layoutService = accessor.get(IWorkbenchLayoutService);
+	const storageService = accessor.get(IStorageService);
+	const contextKeyService = accessor.get(IContextKeyService);
+	SessionsViewModeContext.bindTo(contextKeyService).set(mode);
+	applySessionsViewMode(layoutService, mode);
+	storageService.store(SESSIONS_VIEW_MODE_STORAGE_KEY, mode, StorageScope.WORKSPACE, StorageTarget.USER);
+}
+
+/**
+ * Restores the persisted view mode after the workbench has finished restoring, so
+ * `setPartHidden` runs against a laid-out grid, and initializes the context key.
+ */
+class SessionsViewModeContribution extends Disposable implements IWorkbenchContribution {
+	static readonly ID = 'workbench.contrib.sessionsViewMode';
+
+	constructor(
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IStorageService storageService: IStorageService,
+		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
+	) {
+		super();
+		const mode = readSessionsViewMode(storageService);
+		SessionsViewModeContext.bindTo(contextKeyService).set(mode);
+		// Only the non-default preset needs applying; 'agent' is the constructed default.
+		if (mode === 'editor') {
+			applySessionsViewMode(layoutService, 'editor');
+		}
+	}
+}
+registerWorkbenchContribution2(SessionsViewModeContribution.ID, SessionsViewModeContribution, WorkbenchPhase.AfterRestored);
+
+registerAction2(class ShowAgentViewAction extends Action2 {
+	constructor() {
+		super({
+			id: 'sessions.view.agent',
+			title: localize2('sessions.view.agent', "Agent View (AI-first)"),
+			category: SessionsCategories.Sessions,
+			icon: Codicon.commentDiscussion,
+			f1: true,
+			precondition: IsSessionsWindowContext,
+			toggled: ContextKeyExpr.equals('agentSessionsViewMode', 'agent'),
+			keybinding: {
+				weight: KeybindingWeight.SessionsContrib,
+				when: IsSessionsWindowContext,
+				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyA,
+			},
+			menu: {
+				id: Menus.TitleBarCenterLeft,
+				when: IsSessionsWindowContext,
+				group: 'z_viewMode',
+				order: 1,
+			},
+		});
+	}
+	override run(accessor: ServicesAccessor): void {
+		setSessionsViewMode(accessor, 'agent');
+	}
+});
+
+registerAction2(class ShowEditorViewAction extends Action2 {
+	constructor() {
+		super({
+			id: 'sessions.view.editor',
+			title: localize2('sessions.view.editor', "Editor View (IDE)"),
+			category: SessionsCategories.Sessions,
+			icon: Codicon.code,
+			f1: true,
+			precondition: IsSessionsWindowContext,
+			toggled: ContextKeyExpr.equals('agentSessionsViewMode', 'editor'),
+			keybinding: {
+				weight: KeybindingWeight.SessionsContrib,
+				when: IsSessionsWindowContext,
+				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyE,
+			},
+			menu: {
+				id: Menus.TitleBarCenterLeft,
+				when: IsSessionsWindowContext,
+				group: 'z_viewMode',
+				order: 2,
+			},
+		});
+	}
+	override run(accessor: ServicesAccessor): void {
+		setSessionsViewMode(accessor, 'editor');
+	}
+});
+
+registerAction2(class ToggleSessionsViewModeAction extends Action2 {
+	constructor() {
+		super({
+			id: 'sessions.view.toggle',
+			title: localize2('sessions.view.toggle', "Toggle Agent / Editor View"),
+			category: SessionsCategories.Sessions,
+			f1: true,
+			precondition: IsSessionsWindowContext,
+			keybinding: {
+				weight: KeybindingWeight.SessionsContrib,
+				when: IsSessionsWindowContext,
+				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyV,
+			},
+		});
+	}
+	override run(accessor: ServicesAccessor): void {
+		const next: SessionsViewMode = readSessionsViewMode(accessor.get(IStorageService)) === 'editor' ? 'agent' : 'editor';
+		setSessionsViewMode(accessor, next);
+	}
+});
+
+//#endregion

@@ -108,6 +108,7 @@ export const CanGoForwardContext = new RawContextKey<boolean>('sessionsCanGoForw
 //#region < --- Editor --- >
 
 export const EditorMaximizedContext = new RawContextKey<boolean>('editorMaximized', false, localize('editorMaximized', "Whether the editor area is maximized"));
+export const SessionsViewModeContext = new RawContextKey<string>('agentSessionsViewMode', 'agent', localize('agentSessionsViewMode', "The active top-level view of the Agents window: 'agent' (AI-first, chat primary) or 'editor' (IDE, code primary with the agent docked)."));
 export const SinglePaneLayoutEnabledContext = new RawContextKey<boolean>('agentSessionsSinglePaneLayoutEnabled', false, localize('agentSessionsSinglePaneLayoutEnabled', "Whether the Agents window is using the single-pane (docked detail panel) layout. Single source of truth for gating single-pane behaviour — set once by the workbench from the layout it was constructed with; features must read this instead of the underlying setting"));
 export const HasDockedDetailsContext = new RawContextKey<boolean>('agentSessionsHasDockedDetails', false, localize('agentSessionsHasDockedDetails', "Whether the single-pane active editor has a docked detail panel (a managed Changes/Files tab or a text file editor)"));
 export const SinglePaneChangesTabMissingContext = new RawContextKey<boolean>('agentSessionsSinglePaneChangesTabMissing', false, localize('agentSessionsSinglePaneChangesTabMissing', "Whether the single-pane session supports a Changes editor but its tab is not currently open"));
