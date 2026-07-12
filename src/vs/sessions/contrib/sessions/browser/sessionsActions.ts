@@ -23,6 +23,7 @@ import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uri
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { SessionsViewModeContext } from '../../../common/contextkeys.js';
+import { mainWindow } from '../../../../base/browser/window.js';
 import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../../../platform/quickinput/common/quickInput.js';
 import { EditorAreaFocusContext, IsAuxiliaryWindowContext, IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IWorkbenchLayoutService, Parts } from '../../../../workbench/services/layout/browser/layoutService.js';
@@ -1491,6 +1492,9 @@ function applySessionsViewMode(layoutService: IWorkbenchLayoutService, mode: Ses
 	layoutService.setPartHidden(mode !== 'editor', Parts.EDITOR_PART);
 	// The auxiliary bar hosts the docked agent/context companion — kept visible in both.
 	layoutService.setPartHidden(false, Parts.AUXILIARYBAR_PART);
+	// Mark the workbench container so CSS can adapt the chrome to editor-primary mode
+	// (e.g. the docked companion). Guarded: the container may not exist very early.
+	layoutService.getContainer(mainWindow)?.classList.toggle('view-editor', mode === 'editor');
 }
 
 /** Reads the current mode from persisted storage (authoritative across reloads). */
@@ -1537,12 +1541,20 @@ registerAction2(class ShowAgentViewAction extends Action2 {
 			id: 'sessions.view.agent',
 			title: localize2('sessions.view.agent', "Agent View (AI-first)"),
 			category: SessionsCategories.Sessions,
+			icon: Codicon.commentDiscussion,
 			f1: true,
 			precondition: IsSessionsWindowContext,
+			toggled: ContextKeyExpr.equals('agentSessionsViewMode', 'agent'),
 			keybinding: {
 				weight: KeybindingWeight.SessionsContrib,
 				when: IsSessionsWindowContext,
 				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyA,
+			},
+			menu: {
+				id: Menus.TitleBarCenterLeft,
+				when: IsSessionsWindowContext,
+				group: 'z_viewMode',
+				order: 1,
 			},
 		});
 	}
@@ -1557,12 +1569,20 @@ registerAction2(class ShowEditorViewAction extends Action2 {
 			id: 'sessions.view.editor',
 			title: localize2('sessions.view.editor', "Editor View (IDE)"),
 			category: SessionsCategories.Sessions,
+			icon: Codicon.code,
 			f1: true,
 			precondition: IsSessionsWindowContext,
+			toggled: ContextKeyExpr.equals('agentSessionsViewMode', 'editor'),
 			keybinding: {
 				weight: KeybindingWeight.SessionsContrib,
 				when: IsSessionsWindowContext,
 				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyE,
+			},
+			menu: {
+				id: Menus.TitleBarCenterLeft,
+				when: IsSessionsWindowContext,
+				group: 'z_viewMode',
+				order: 2,
 			},
 		});
 	}

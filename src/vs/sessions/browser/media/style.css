@@ -439,6 +439,16 @@
 	letter-spacing: -0.01em;
 }
 
+/* ---- Editor View Mode ---- */
+
+/* Applied to the workbench container when the Agents window is in "Editor" view
+ * (code editor primary, agent docked in the auxiliary bar as a companion). Set by
+ * the two-view toggle (sessions.view.* actions). Editor-view chrome refinements
+ * hang off this class; the marker property below also exposes the mode to CSS. */
+.agent-sessions-workbench.view-editor {
+	--sessions-view-mode: editor;
+}
+
 /* ---- Pane Headers ---- */
 
 /* Drop the traditional uppercase, letter-spaced IDE pane-header label (e.g.
