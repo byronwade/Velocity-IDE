@@ -439,6 +439,17 @@
 	letter-spacing: -0.01em;
 }
 
+/* ---- Pane Headers ---- */
+
+/* Drop the traditional uppercase, letter-spaced IDE pane-header label (e.g.
+ * "CHANGES", "OTHER FILES") in favor of sentence case with a tight track, so
+ * side-panel / changes-view section headers match the app-like sessions panel
+ * title. Scoped to the agents workbench; the main VS Code window is untouched. */
+.agent-sessions-workbench .monaco-pane-view .pane > .pane-header > .title {
+	text-transform: none;
+	letter-spacing: -0.01em;
+}
+
 /* ---- Chat Output ---- */
 
 /* Top fade overlay: dims content scrolled near the top edge of the chat bar card.
